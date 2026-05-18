@@ -1,42 +1,42 @@
 /**
- * Feature-gate map.
- * Tiers (ordered): free < pro < enterprise
- * Phase 3 (RevenueCat) will flip subscription_tier on purchase.
+ * Feature-gate map — source of truth: SUBSCRIPTION_PLANS.md
+ * Tiers (ordered): free < pro < business
  */
-const TIER_RANK = { free: 0, pro: 1, enterprise: 2 };
+const TIER_RANK = { free: 0, pro: 1, business: 2 };
 
 const FEATURES = {
-  // Phase 1 — cloud sync (free tier uses local SQLite only)
-  cloud_sync:       'pro',
+  // Cloud sync — data stored locally on free tier only
+  cloud_sync:      'pro',
 
-  // Phase 5 — unlimited books (free tier capped)
-  unlimited_books:  'pro',
+  // PDF / Excel export and full report access
+  export_reports:  'pro',
 
-  // Phase 5 — PDF / Excel export
-  export_reports:   'pro',
+  // Book sharing / collaboration
+  book_sharing:    'pro',
 
-  // Phase 5 — advanced reports
-  advanced_reports: 'pro',
+  // Guest access (pro = 1, business = 10)
+  guest_access:    'pro',
 
-  // Phase 5 — book sharing / collaboration (pro = 1 guest, enterprise = unlimited)
-  book_sharing:     'pro',
+  // Backup history
+  backup_history:  'pro',
 
-  // Phase 5 — multiple currencies per book
-  multi_currency:   'pro',
-
-  // Phase 5 — attachment uploads
-  attachments:      'free',
-
-  // Phase 6 — guest access (pro = 1, enterprise = unlimited)
-  guest_access:     'pro',
+  // Attachments — available on all tiers
+  attachments:     'free',
 };
 
 /**
  * Per-feature limits per tier. Infinity = unlimited.
- * Only define entries where a tier has a non-unlimited cap.
+ * Only entries where a tier has a non-unlimited cap are listed.
  */
 const LIMITS = {
-  guest_access: { free: 0, pro: 1, enterprise: 10 },
+  // Owned cashbooks
+  books:          { free: 3,  pro: 15, business: Infinity },
+
+  // Invited guests per account
+  guest_access:   { free: 0,  pro: 1,  business: 10 },
+
+  // Backup history in days (0 = none)
+  backup_days:    { free: 0,  pro: 7,  business: 30 },
 };
 
 /**
@@ -51,10 +51,13 @@ export function canAccess(user, feature) {
 /**
  * Returns the numeric limit for a feature on the user's tier.
  * Returns Infinity if no cap is defined for that tier.
- *
- * Usage: getLimit(user, 'guest_access') → 1 (pro) or Infinity (enterprise)
  */
 export function getLimit(user, feature) {
   const userTier = user?.subscription_tier ?? 'free';
   return LIMITS[feature]?.[userTier] ?? Infinity;
 }
+
+/** Convenience constants — use instead of magic numbers in the UI. */
+export const FREE_BOOK_LIMIT     = LIMITS.books.free;     // 3
+export const PRO_BOOK_LIMIT      = LIMITS.books.pro;      // 15
+export const BUSINESS_BOOK_LIMIT = LIMITS.books.business; // Infinity

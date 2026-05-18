@@ -117,6 +117,7 @@ All routes are prefixed `/api/v1`. All protected routes require `Authorization: 
 |---|---|---|---|
 | GET | `` | Get authenticated user's profile | ✅ |
 | PUT | `` | Update own profile (full_name, phone, avatar_url) | ✅ |
+| PATCH | `/subscription` | Update own subscription tier (`free`/`pro`/`enterprise`) | ✅ |
 
 ---
 
@@ -279,6 +280,7 @@ Query params: `?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`
 class ProfileResponse:    id, email, full_name, phone, avatar_url, role, is_active, currency (default 'PKR'), is_dark_mode, subscription_tier (default 'free'), created_at, updated_at
 class ProfileUpdate:      full_name?, phone?, avatar_url?, currency?
 class UserWithStats:      ProfileResponse + book_count, entry_count, storage_mb
+class SubscriptionUpdate: subscription_tier: Literal["free","pro","enterprise"]
 class StatusUpdate:       is_active: bool
 ```
 

@@ -16,6 +16,9 @@ import { useCategories } from '../hooks/useCategories';
 import { usePaymentModes } from '../hooks/usePaymentModes';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { apiDeleteAllEntries, apiGetEntries, apiUpdateBookFieldSettings } from '../lib/dataSource';
+import { useAuthStore } from '../store/authStore';
+import { canAccess } from '../lib/canAccess';
+import CrownBadge from '../components/ui/CrownBadge';
 
 import SuccessDialog from '../components/ui/SuccessDialog';
 import DeleteAllEntriesSheet from '../components/ui/DeleteAllEntriesSheet';
@@ -56,8 +59,10 @@ export default function BookSettingsScreen() {
     return () => clearInterval(t);
   }, [isOwner, qc]);
   const sharedBook = !isOwner ? sharedBooks.find(b => b.id === id) : null;
-  const canEdit = isOwner || (sharedBook?.rights ?? 'view') !== 'view';
+  const canEdit  = isOwner || (sharedBook?.rights ?? 'view') !== 'view';
   const bookData = currentBook ?? sharedBook;
+  const authUser = useAuthStore(s => s.user);
+  const canShare = canAccess(authUser, 'book_sharing');
   const fields = {
     showCustomer:   bookData?.show_customer   ?? false,
     showSupplier:   bookData?.show_supplier   ?? false,
@@ -309,22 +314,28 @@ export default function BookSettingsScreen() {
         {isOwner && (
           <>
             <Text style={[s.sectionLabel, { marginTop: 24 }]}>COLLABORATION</Text>
-            <View style={[s.card, { backgroundColor: C.card, borderColor: C.border }]}>
+            <View style={[s.card, { backgroundColor: C.card, borderColor: canShare ? C.border : '#F59E0B44' }]}>
               <TouchableOpacity
                 style={s.row}
-                onPress={() => router.push({ pathname: `${basePath}/[id]/manage-shares`, params: { id, name: bookName } })}
+                onPress={() => {
+                  if (!canShare) { router.push('/(app)/settings/subscription'); return; }
+                  router.push({ pathname: `${basePath}/[id]/manage-shares`, params: { id, name: bookName } });
+                }}
                 activeOpacity={0.75}
               >
-                <View style={[s.iconBox, { backgroundColor: C.primaryLight }]}>
-                  <Feather name="users" size={18} color={C.primary} />
+                <View style={[s.iconBox, { backgroundColor: canShare ? C.primaryLight : '#F59E0B1A' }]}>
+                  <Feather name="users" size={18} color={canShare ? C.primary : '#F59E0B'} />
                 </View>
                 <View style={s.rowBody}>
-                  <Text style={s.rowLabel}>Manage Access</Text>
-                  <Text style={s.rowSub}>Share this book with other users</Text>
+                  <Text style={[s.rowLabel, { color: canShare ? C.text : '#F59E0B' }]}>Manage Access</Text>
+                  <Text style={s.rowSub}>
+                    {canShare ? 'Share this book with other users' : 'Requires Pro or Business plan'}
+                  </Text>
                 </View>
-                <View style={s.arrowActive}>
-                  <Feather name="chevron-right" size={15} color={C.primary} />
-                </View>
+                {canShare
+                  ? <View style={s.arrowActive}><Feather name="chevron-right" size={15} color={C.primary} /></View>
+                  : <CrownBadge tier="pro" size={11} />
+                }
               </TouchableOpacity>
             </View>
           </>

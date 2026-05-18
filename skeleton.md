@@ -26,6 +26,7 @@ App Start
 /(app)/settings/profile                   ProfileScreen
 /(app)/settings/business                  BusinessSettingsScreen
 /(app)/settings/currency                  CurrencyScreen
+/(app)/settings/subscription              SubscriptionScreen
 /(app)/dashboard/users                    AdminUsersScreen     [superadmin]
 /(app)/dashboard/books                    AdminBooksScreen     [superadmin]
 /(app)/dashboard/settings                 SettingsScreen       [superadmin]
@@ -704,6 +705,8 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 | Avatar / initials | — | Display only |
 | Full name | — | Display only |
 | Email | — | Display only |
+| Admin badge | — | Shown if superadmin |
+| **Tier chip** (Free / 👑 Pro / 👑 Enterprise) | Tap | Navigate to `/(app)/settings/subscription` |
 | **"Edit Profile"** button | Tap | Navigate to `/(app)/settings/profile` |
 
 ### Account Section
@@ -713,13 +716,19 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 | **Business Settings** | Tap | Navigate to `/(app)/settings/business` |
 | **Currency** | Tap | Navigate to `/(app)/settings/currency` |
 
-### App Section (all TODO)
-| Row | Intended Action |
-|---|---|
-| Notifications | Open notification preferences |
-| Privacy & Security | Open privacy settings |
-| Backup & Sync | Open backup settings |
-| Language | Open language picker |
+### Subscription Section
+| Row | Icon | Action | Result |
+|---|---|---|---|
+| **Subscription & Plans** | Diamond icon (tier color) | Tap | Navigate to `/(app)/settings/subscription` |
+
+### App Section
+| Row | Crown? | Action | Result |
+|---|---|---|---|
+| **Manage Access** | 👑 Pro (if free) | Tap | Navigate to manage-access (if Pro+) OR subscription screen (if free) |
+| **Notifications** | — | Tap | Navigate to notifications |
+| Privacy & Security | — | TODO | — |
+| **Backup & Sync** | 👑 Pro (if free) | Tap | Navigate to subscription (if free), TODO otherwise |
+| Language | — | TODO | — |
 
 ### Support Section (all TODO)
 | Row | Intended Action |
@@ -796,6 +805,43 @@ Allows user to set their preferred currency symbol.
 
 ---
 
+## 16. SubscriptionScreen — `/(app)/settings/subscription`
+
+**Purpose:** Show available subscription tiers and let the user activate a plan.
+
+**Navigation in:** SettingsScreen → Subscription & Plans row, tier chip tap, any crown-gated feature tap.
+
+### Current Plan Banner
+- Shows the user's active tier name + crown emoji (Pro/Enterprise)
+- Tapping navigates nowhere (informational only)
+
+### Plan Cards (stacked: Free → Pro → Enterprise)
+
+Each card shows:
+- Tier name + crown emoji (Pro/Enterprise), price, billing period
+- Feature list with ✓ (included, primary color) / ✗ (excluded, muted)
+- **"Activate [Plan]"** button OR **"✓ Active"** outline button (current plan)
+
+| Plan | Color | Crown | Price |
+|---|---|---|---|
+| Free | C.primary (teal) | — | $0/forever |
+| Pro | #F59E0B (amber) | 👑 | $4.99/mo |
+| Enterprise | #7C3AED (purple) | 👑 | $12.99/mo |
+
+### Activate Flow (no payment gateway yet)
+1. Tap "Activate Pro" / "Activate Enterprise"
+2. `Alert.alert` confirmation dialog
+3. On confirm → `PATCH /api/v1/profile/subscription { subscription_tier }` 
+4. `onSuccess`: `setUser(updatedProfile, session)` (updates authStore + SecureStore) + `qc.setQueryData(['profile'], updatedProfile)`
+5. UI updates instantly — current plan badge changes
+
+### Downgrade Flow
+1. Tap "Downgrade to Free"
+2. Alert warns that Pro/Enterprise features are removed
+3. On confirm → same API call with `tier: 'free'`
+
+---
+
 ## EntryForm Component (shared: AddEntry + EditEntry)
 
 `src/components/entry/EntryForm.jsx`
@@ -831,8 +877,10 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 | Feature | Screen | Status |
 |---|---|---|
 | Backup Entry | EntryDetailScreen ⋮ menu | Not implemented |
-| Export PDF | ReportsScreen | ✅ Complete |
-| Export Excel | ReportsScreen | ✅ Complete |
+| Export PDF | ReportsScreen | ✅ Complete (👑 Pro gate) |
+| Export Excel | ReportsScreen | ✅ Complete (👑 Pro gate) |
+| Subscription plans page | SubscriptionScreen | ✅ Complete |
+| Crown gates on locked features | SettingsScreen, ReportsScreen, BooksView | ✅ Complete |
 | Invite collaborator | BookDetailScreen user-plus icon | Not implemented |
 | Notifications settings | SettingsScreen | Not implemented |
 | Privacy & Security | SettingsScreen | Not implemented |

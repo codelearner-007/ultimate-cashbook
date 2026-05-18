@@ -13,7 +13,9 @@ class ProfileResponse(BaseModel):
     is_active: bool = True
     currency: str = "PKR"
     is_dark_mode: bool = False
-    subscription_tier: Literal["free", "pro", "enterprise"] = "free"
+    subscription_tier: Literal["free", "pro", "business"] = "free"
+    subscription_started_at: Optional[datetime] = None
+    subscription_billing_cycle: Literal["monthly", "yearly"] = "monthly"
     created_at: datetime
     updated_at: Optional[datetime] = None
 
@@ -30,6 +32,11 @@ class UserWithStats(ProfileResponse):
     book_count: int = 0
     entry_count: int = 0
     storage_mb: float = 0.0
+
+
+class SubscriptionUpdate(BaseModel):
+    subscription_tier: Literal["free", "pro", "business"]
+    billing_cycle: Literal["monthly", "yearly"] = "monthly"
 
 
 class StatusUpdate(BaseModel):

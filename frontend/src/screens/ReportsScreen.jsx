@@ -16,6 +16,9 @@ import { useRealtimeEntries } from '../hooks/useRealtimeSync';
 import { supabase } from '../lib/supabase';
 import { useCustomers, useSuppliers } from '../hooks/useContacts';
 import SearchBar from '../components/ui/SearchBar';
+import { useAuthStore } from '../store/authStore';
+import { canAccess } from '../lib/canAccess';
+import CrownBadge from '../components/ui/CrownBadge';
 
 const PAYMENT_LABEL = { cash: 'Cash', online: 'Online', cheque: 'Cheque', other: 'Other' };
 const PAYMENT_ICON  = { cash: 'dollar-sign', online: 'wifi', cheque: 'file-text', check: 'file-text', other: 'more-horizontal' };
@@ -78,6 +81,9 @@ export default function ReportsScreen() {
   } = useLocalSearchParams();
   const { C, Font } = useTheme();
   useRealtimeEntries(id);
+
+  const user       = useAuthStore(s => s.user);
+  const canExport  = canAccess(user, 'export_reports');
 
   const [filterDate,        setFilterDate]        = useState(initialDate || null);
   const [filterType,        setFilterType]        = useState(initialType     || null);
@@ -187,6 +193,14 @@ export default function ReportsScreen() {
     setReadyUri(null);
     setFileName('');
     setShowPreview(false);
+  };
+
+  const handleExportGated = (type) => {
+    if (!canExport) {
+      router.push('/(app)/settings/subscription');
+      return;
+    }
+    handleExport(type);
   };
 
   const handleExport = async (type) => {
@@ -723,28 +737,30 @@ export default function ReportsScreen() {
             ) : (
               <>
                 <TouchableOpacity
-                  style={[s.pvBottomBtn, { borderWidth: 1.5, borderColor: C.cashOut }, busy && { opacity: 0.5 }]}
+                  style={[s.pvBottomBtn, { borderWidth: 1.5, borderColor: canExport ? C.cashOut : '#F59E0B' }, busy && { opacity: 0.5 }]}
                   onPress={() => {
                     setShowPreview(false);
+                    if (!canExport) { setTimeout(() => router.push('/(app)/settings/subscription'), Platform.OS === 'ios' ? 350 : 0); return; }
                     setTimeout(() => handleExport('pdf'), Platform.OS === 'ios' ? 350 : 0);
                   }}
                   disabled={busy}
                   activeOpacity={0.75}
                 >
-                  <Text style={{ fontSize: 15 }}>📄</Text>
-                  <Text style={[s.pvBottomBtnLabel, { color: C.cashOut }]}>Export PDF</Text>
+                  <Text style={{ fontSize: 15 }}>{canExport ? '📄' : '👑'}</Text>
+                  <Text style={[s.pvBottomBtnLabel, { color: canExport ? C.cashOut : '#F59E0B' }]}>Export PDF</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[s.pvBottomBtn, { borderWidth: 1.5, borderColor: C.cashIn }, busy && { opacity: 0.5 }]}
+                  style={[s.pvBottomBtn, { borderWidth: 1.5, borderColor: canExport ? C.cashIn : '#F59E0B' }, busy && { opacity: 0.5 }]}
                   onPress={() => {
                     setShowPreview(false);
+                    if (!canExport) { setTimeout(() => router.push('/(app)/settings/subscription'), Platform.OS === 'ios' ? 350 : 0); return; }
                     setTimeout(() => handleExport('excel'), Platform.OS === 'ios' ? 350 : 0);
                   }}
                   disabled={busy}
                   activeOpacity={0.75}
                 >
-                  <Text style={{ fontSize: 15 }}>📊</Text>
-                  <Text style={[s.pvBottomBtnLabel, { color: C.cashIn }]}>Export Excel</Text>
+                  <Text style={{ fontSize: 15 }}>{canExport ? '📊' : '👑'}</Text>
+                  <Text style={[s.pvBottomBtnLabel, { color: canExport ? C.cashIn : '#F59E0B' }]}>Export Excel</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -764,16 +780,18 @@ export default function ReportsScreen() {
         <View style={s.headerBtns}>
           <TouchableOpacity
             style={[s.headerExportBtn, busy && { opacity: 0.5 }]}
-            onPress={() => handleExport('pdf')}
+            onPress={() => handleExportGated('pdf')}
             disabled={busy}
           >
+            {!canExport && <Text style={{ fontSize: 10, marginRight: 1 }}>👑</Text>}
             <Text style={s.headerExportText}>PDF</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[s.headerExportBtn, busy && { opacity: 0.5 }]}
-            onPress={() => handleExport('excel')}
+            onPress={() => handleExportGated('excel')}
             disabled={busy}
           >
+            {!canExport && <Text style={{ fontSize: 10, marginRight: 1 }}>👑</Text>}
             <Text style={s.headerExportText}>XLS</Text>
           </TouchableOpacity>
         </View>
@@ -924,7 +942,7 @@ export default function ReportsScreen() {
           {/* PDF button */}
           <TouchableOpacity
             style={[s.exportBtn, busy && s.exportBtnDisabled]}
-            onPress={() => handleExport('pdf')}
+            onPress={() => handleExportGated('pdf')}
             disabled={busy}
             activeOpacity={0.75}
           >
@@ -935,13 +953,16 @@ export default function ReportsScreen() {
               <Text style={s.exportBtnTitle}>Export as PDF</Text>
               <Text style={s.exportBtnSub}>A4 formatted report · Print · Share</Text>
             </View>
-            <Feather name="chevron-right" size={18} color={C.textMuted} />
+            {canExport
+              ? <Feather name="chevron-right" size={18} color={C.textMuted} />
+              : <CrownBadge tier="pro" size={11} />
+            }
           </TouchableOpacity>
 
           {/* Excel button */}
           <TouchableOpacity
             style={[s.exportBtn, busy && s.exportBtnDisabled]}
-            onPress={() => handleExport('excel')}
+            onPress={() => handleExportGated('excel')}
             disabled={busy}
             activeOpacity={0.75}
           >
@@ -952,15 +973,27 @@ export default function ReportsScreen() {
               <Text style={s.exportBtnTitle}>Export as Excel</Text>
               <Text style={s.exportBtnSub}>Spreadsheet · Filter · Analyse · Edit</Text>
             </View>
-            <Feather name="chevron-right" size={18} color={C.textMuted} />
+            {canExport
+              ? <Feather name="chevron-right" size={18} color={C.textMuted} />
+              : <CrownBadge tier="pro" size={11} />
+            }
           </TouchableOpacity>
 
           {/* Share hint */}
-          <View style={s.shareHint}>
-            <Text style={s.shareHintText}>
-              Share to WhatsApp, Email, Google Drive, or save to Files after export.
-            </Text>
-          </View>
+          {!canExport && (
+            <View style={[s.shareHint, { backgroundColor: '#F59E0B1A', borderRadius: 10, padding: 10, marginTop: 4 }]}>
+              <Text style={[s.shareHintText, { color: '#F59E0B' }]}>
+                👑 PDF & Excel export requires Pro or Enterprise. Tap any export button to upgrade.
+              </Text>
+            </View>
+          )}
+          {canExport && (
+            <View style={s.shareHint}>
+              <Text style={s.shareHintText}>
+                Share to WhatsApp, Email, Google Drive, or save to Files after export.
+              </Text>
+            </View>
+          )}
         </View>
 
         <View style={{ height: 48 }} />

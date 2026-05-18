@@ -63,6 +63,7 @@ frontend/
 │           ├── profile.jsx       # → ProfileScreen
 │           ├── currency.jsx      # → CurrencyScreen
 │           ├── manage-access.jsx # → ManageAccessScreen
+│           ├── subscription.jsx  # → SubscriptionScreen
 │           └── business/
 │               ├── index.jsx     # → BusinessSettingsScreen
 │               ├── profile.jsx   # → BusinessProfileScreen
@@ -82,6 +83,7 @@ frontend/
 │   │   └── ui/
 │   │       ├── Input.jsx
 │   │       ├── Icons.jsx
+│   │       ├── CrownBadge.jsx    # Inline tier badge (👑 Pro / Enterprise) for locked features
 │   │       ├── DatePickerModal.jsx
 │   │       └── TimePickerModal.jsx
 │   ├── hooks/
@@ -310,6 +312,7 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `apiSearchUsers(q)` | GET | `/api/v1/profile/search?q=...` — find user by email |
 | `apiGetProfile()` | GET | `/api/v1/profile` |
 | `apiUpdateProfile(payload)` | PUT | `/api/v1/profile` |
+| `apiUpdateSubscription(tier)` | PATCH | `/api/v1/profile/subscription` |
 | `apiUploadAvatar(uri, mimeType)` | POST | `/api/v1/upload/avatar` — multipart, returns `{ avatar_url }` |
 | `apiUploadAttachment(uri, mimeType, filename, entryId?)` | POST | `/api/v1/upload/attachment` — multipart, returns `{ attachment_url, path, provider }` |
 | `apiDeleteAttachment(path)` | DELETE | `/api/v1/upload/attachment?path=...` — removes file from Supabase Storage |

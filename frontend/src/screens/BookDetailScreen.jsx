@@ -15,6 +15,8 @@ import { useTheme } from '../hooks/useTheme';
 import { apiGetEntries, apiGetSummary, apiDeleteEntry, apiDeleteAllEntries } from '../lib/dataSource';
 import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
+import { useAuthStore } from '../store/authStore';
+import { canAccess } from '../lib/canAccess';
 import { useRealtimeEntries } from '../hooks/useRealtimeSync';
 import { useCustomers, useSuppliers } from '../hooks/useContacts';
 import SuccessDialog from '../components/ui/SuccessDialog';
@@ -284,6 +286,8 @@ export default function BookDetailScreen() {
   const currentBook = books?.find(b => b.id === id);
   const name = currentBook?.name ?? nameParam;
   const isOwner = !!currentBook;
+  const authUser = useAuthStore(s => s.user);
+  const canShare = canAccess(authUser, 'book_sharing');
   const sharedBook = !isOwner ? sharedBooks.find(b => b.id === id) : null;
   const rights = isOwner ? 'view_create_edit_delete' : (sharedBook?.rights ?? 'view');
   const canCreate = rights === 'view_create_edit' || rights === 'view_create_edit_delete';
@@ -564,10 +568,18 @@ export default function BookDetailScreen() {
           {isOwner && (
             <TouchableOpacity
               style={s.headerIconBtn}
-              onPress={() => router.push({ pathname: `${basePath}/[id]/manage-shares`, params: { id, name } })}
+              onPress={() => {
+                if (!canShare) { router.push('/(app)/settings/subscription'); return; }
+                router.push({ pathname: `${basePath}/[id]/manage-shares`, params: { id, name } });
+              }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <UserPlusIcon color="rgba(255,255,255,0.8)" size={20} />
+              {!canShare && (
+                <View style={{ position: 'absolute', top: -3, right: -3, zIndex: 10 }}>
+                  <Text style={{ fontSize: 9, lineHeight: 12 }}>👑</Text>
+                </View>
+              )}
+              <UserPlusIcon color={canShare ? 'rgba(255,255,255,0.8)' : '#F59E0B'} size={20} />
             </TouchableOpacity>
           )}
           <TouchableOpacity

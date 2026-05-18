@@ -22,6 +22,7 @@
 | Shared Books (Team) | No | Yes | Yes |
 | Backup History | No | 7 days | 30 days |
 | Guest Access | No | 1 guest (View / Edit / Full) | Up to 10 guests (View / Edit / Full — owner sets per guest) |
+| Receive Shared Access | Yes (cloud for shared books only — own books stay local) | Yes | Yes |
 
 ### Pricing
 
@@ -412,6 +413,22 @@ Added to backend **after** Phase 4 frontend is complete. Never trust the client 
   - On login, guest sees a "Shared Books" section on their BooksScreen
   - Guest can access the owner's cloud books per their permission level
   - Guest's own books remain local (Free tier) unless they have their own subscription
+
+- [ ] **Free-tier guest — hybrid access model:**
+
+  When a Business/Pro owner shares a book with a free-tier user, that user enters a **hybrid state**:
+
+  | Area | Storage | Behavior |
+  |---|---|---|
+  | Guest's own books | Local SQLite only | Unchanged — free-tier rules still apply (≤3 books, no cloud sync) |
+  | Shared book(s) from owner | Cloud (owner's Supabase) | Full cloud access scoped to those books only |
+
+  Implementation notes:
+  - The data source abstraction layer (Phase 1) must route shared books to the API, not SQLite, regardless of the guest's own tier
+  - Identify shared books in the data router by checking `sharedBooks` from `GET /api/v1/me/shared-books` — these always use the API path
+  - The free-tier "local-only" banner must **not** appear on shared books
+  - No paywall is shown for shared book actions (add entry, export, etc.) — the owner's tier grants those features; the backend enforces this by checking the book owner's tier, not the guest's tier
+  - If the owner downgrades or removes the guest, the shared book disappears from the guest's "Shared Books" section; their own local books are unaffected
 
 - [ ] Enforce guest limits per tier on both backend and frontend:
   - Pro: max 1 guest per book

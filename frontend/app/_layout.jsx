@@ -15,6 +15,8 @@ import {
 } from '@expo-google-fonts/inter';
 import { useAuthStore } from '../src/store/authStore';
 import { useThemeStore } from '../src/store/themeStore';
+import { useSyncStore }  from '../src/store/syncStore';
+import * as Network     from 'expo-network';
 import { supabase } from '../src/lib/supabase';
 import { apiGetProfile } from '../src/lib/api';
 import { useUnreadNotifications, useMarkNotificationRead } from '../src/hooks/useNotifications';
@@ -40,6 +42,26 @@ const queryClient = new QueryClient({
     queries: { staleTime: 2 * 60 * 1000, retry: 1 },
   },
 });
+
+function NetworkMonitor() {
+  const setOnline = useSyncStore(s => s.setOnline);
+  useEffect(() => {
+    // Initial check
+    Network.getNetworkStateAsync()
+      .then(state => setOnline(!!state.isConnected && !!state.isInternetReachable))
+      .catch(() => {});
+    // Re-check whenever the app comes to foreground
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        Network.getNetworkStateAsync()
+          .then(s => setOnline(!!s.isConnected && !!s.isInternetReachable))
+          .catch(() => {});
+      }
+    });
+    return () => sub.remove();
+  }, [setOnline]);
+  return null;
+}
 
 function AuthGuard() {
   const user     = useAuthStore((s) => s.user);
@@ -290,6 +312,7 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <NetworkMonitor />
       <SupabaseAuthListener />
       <AuthGuard />
       <Slot />

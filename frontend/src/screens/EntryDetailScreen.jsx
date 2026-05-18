@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal, Pressable,
-  StatusBar, ScrollView, Alert, Image, Linking,
+  StatusBar, ScrollView, Image, Linking,
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -9,10 +9,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../hooks/useTheme';
 import { useBookBasePath } from '../hooks/useBookBasePath';
 import { apiGetEntries, apiDeleteEntry } from '../lib/dataSource';
-import { ChevronLeftIcon, PencilIcon, DotsVerticalIcon, TrashIcon, CloudIcon } from '../components/ui/Icons';
+import { ChevronLeftIcon, PencilIcon, DotsVerticalIcon, TrashIcon } from '../components/ui/Icons';
 import { Feather } from '@expo/vector-icons';
 import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
+import DeleteEntrySheet from '../components/ui/DeleteEntrySheet';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -51,8 +52,9 @@ export default function EntryDetailScreen() {
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
   const qc = useQueryClient();
 
-  const [showMenu, setShowMenu] = useState(false);
+  const [showMenu,         setShowMenu]         = useState(false);
   const [showAttachViewer, setShowAttachViewer] = useState(false);
+  const [showDeleteSheet,  setShowDeleteSheet]  = useState(false);
 
   const { data: books = [] } = useBooks();
   const { data: sharedBooks = [] } = useSharedBooks();
@@ -85,10 +87,7 @@ export default function EntryDetailScreen() {
 
   const handleDelete = () => {
     setShowMenu(false);
-    Alert.alert('Delete Entry', 'Delete this entry? This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => deleteEntry.mutate() },
-    ]);
+    setShowDeleteSheet(true);
   };
 
   const isIn           = entry?.type === 'in';
@@ -228,24 +227,27 @@ export default function EntryDetailScreen() {
         <Pressable style={s.menuOverlay} onPress={() => setShowMenu(false)}>
           <Pressable style={[s.menuBox, { backgroundColor: C.card, borderColor: C.border }]} onPress={() => {}}>
 
-            <TouchableOpacity style={s.menuItem} activeOpacity={0.7} onPress={() => { setShowMenu(false); /* TODO: backup logic */ }}>
-              <CloudIcon color={C.primary} size={18} />
-              <Text style={[s.menuItemText, { color: C.text, fontFamily: Font.medium }]}>Backup Entry</Text>
-            </TouchableOpacity>
-
             {canDelete && (
-              <>
-                <View style={[s.menuDivider, { backgroundColor: C.border }]} />
-                <TouchableOpacity style={s.menuItem} activeOpacity={0.7} onPress={handleDelete}>
-                  <TrashIcon color={C.danger} size={18} />
-                  <Text style={[s.menuItemText, { color: C.danger, fontFamily: Font.medium }]}>Delete Entry</Text>
-                </TouchableOpacity>
-              </>
+              <TouchableOpacity style={s.menuItem} activeOpacity={0.7} onPress={handleDelete}>
+                <TrashIcon color={C.danger} size={18} />
+                <Text style={[s.menuItemText, { color: C.danger, fontFamily: Font.medium }]}>Delete Entry</Text>
+              </TouchableOpacity>
             )}
 
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Delete entry confirmation sheet */}
+      <DeleteEntrySheet
+        visible={showDeleteSheet}
+        entry={entry}
+        isLoading={deleteEntry.isPending}
+        onDismiss={() => setShowDeleteSheet(false)}
+        onConfirm={() => deleteEntry.mutate()}
+        C={C}
+        Font={Font}
+      />
     </SafeAreaView>
   );
 }

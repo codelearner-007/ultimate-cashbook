@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  StatusBar, ScrollView, Alert, useWindowDimensions,
+  StatusBar, ScrollView, useWindowDimensions,
 } from 'react-native';
 import { useReceivedInvitations } from '../hooks/useSharing';
 import { useRealtimeInvitations } from '../hooks/useRealtimeSync';
@@ -15,6 +15,9 @@ import { supabase } from '../lib/supabase';
 import { Font } from '../constants/fonts';
 import { getCurrency } from '../constants/currencies';
 import AdminPillBadge from '../components/ui/AdminPillBadge';
+import CrownBadge, { CROWN_COLORS } from '../components/ui/CrownBadge';
+import LogoutSheet from '../components/ui/LogoutSheet';
+import { canAccess } from '../lib/canAccess';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -134,6 +137,17 @@ const ShareIcon = ({ color, size = 14 }) => (
   </View>
 );
 
+const DiamondIcon = ({ color, size = 14 }) => (
+  <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{
+      width: size * 0.65, height: size * 0.65,
+      borderWidth: 1.5, borderColor: color,
+      transform: [{ rotate: '45deg' }],
+      borderRadius: 2,
+    }} />
+  </View>
+);
+
 const LogoutIcon = ({ color, size = 14 }) => (
   <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
     <View style={{ width: size * 0.55, height: size * 0.72, borderWidth: 1.5, borderColor: color, borderRightWidth: 0 }} />
@@ -155,16 +169,18 @@ const SUPPORT_SECTION = {
 
 // ── Setting Row ───────────────────────────────────────────────────────────────
 
-function SettingRow({ Icon, label, sub, route, isLast, onPress, badgeCount, C }) {
+function SettingRow({ Icon, label, sub, route, isLast, onPress, badgeCount, crown, iconAccent, C }) {
+  const iconBg    = iconAccent ? iconAccent + '1A' : C.primaryLight;
+  const iconColor = iconAccent ?? C.primary;
   return (
     <>
       <TouchableOpacity
         style={rowStyles.row}
         onPress={onPress}
-        activeOpacity={route ? 0.7 : 1}
+        activeOpacity={route || crown ? 0.7 : 1}
       >
-        <View style={[rowStyles.iconBox, { backgroundColor: C.primaryLight }]}>
-          <Icon color={C.primary} size={15} />
+        <View style={[rowStyles.iconBox, { backgroundColor: iconBg }]}>
+          <Icon color={iconColor} size={15} />
         </View>
         <View style={rowStyles.body}>
           <Text style={[rowStyles.label, { color: C.text, fontFamily: Font.semiBold }]}>{label}</Text>
@@ -175,6 +191,7 @@ function SettingRow({ Icon, label, sub, route, isLast, onPress, badgeCount, C })
             <Text style={[rowStyles.badgeText, { fontFamily: Font.bold }]}>{badgeCount}</Text>
           </View>
         )}
+        {crown && <View style={{ marginRight: 6 }}><CrownBadge tier={crown} size={11} /></View>}
         <ChevronRight color={C.textSubtle} />
       </TouchableOpacity>
       {!isLast && <View style={[rowStyles.divider, { backgroundColor: C.border }]} />}
@@ -223,40 +240,59 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
   const currencyEntry = getCurrency(currencyCode);
   const currencySub   = `${currencyEntry.code} – ${currencyEntry.name}`;
 
+  const tier        = user?.subscription_tier ?? 'free';
+  const tierLabel   = tier === 'business' ? 'Business' : tier === 'pro' ? 'Pro' : 'Free';
+  const tierColor   = tier === 'business' ? CROWN_COLORS.business : tier === 'pro' ? CROWN_COLORS.pro : C.primary;
+
+  const hasSharing  = canAccess(user, 'book_sharing');
+  const hasCloud    = canAccess(user, 'cloud_sync');
+
   const SECTIONS = useMemo(() => [
     {
       title: 'Account',
       items: [
-        { Icon: UserIcon,     label: 'Profile',           sub: null,          route: profileRoute,               accent: 'primary' },
-        { Icon: BuildingIcon, label: 'Business Settings', sub: 'My Business', route: '/(app)/settings/business', accent: 'primary' },
-        { Icon: CurrencyIcon, label: 'Currency',          sub: currencySub,   route: '/(app)/settings/currency', accent: 'primary' },
+        { Icon: UserIcon,     label: 'Profile',           sub: null,          route: profileRoute,               accent: null },
+        { Icon: BuildingIcon, label: 'Business Settings', sub: 'My Business', route: '/(app)/settings/business', accent: null },
+        { Icon: CurrencyIcon, label: 'Currency',          sub: currencySub,   route: '/(app)/settings/currency', accent: null },
+      ],
+    },
+    {
+      title: 'Subscription',
+      items: [
+        {
+          Icon:        DiamondIcon,
+          label:       'Subscription & Plans',
+          sub:         `Current plan: ${tierLabel}`,
+          route:       '/(app)/settings/subscription',
+          accent:      tierColor,
+          crown:       null,
+        },
       ],
     },
     {
       title: 'App',
       items: [
-        { Icon: ShareIcon,  label: 'Manage Access',     sub: 'Invitations & shared books', route: '/(app)/settings/manage-access', accent: 'primary', badge: pendingInviteCount },
-        { Icon: BellIcon,   label: 'Notifications',     sub: 'Manage alerts',              route: '/(app)/settings/notifications', accent: 'primary' },
-        { Icon: ShieldIcon, label: 'Privacy & Security', sub: 'PIN, biometric',            route: null, accent: 'primary' },
-        { Icon: CloudIcon,  label: 'Backup & Sync',     sub: 'Last synced: Now',           route: null, accent: 'primary' },
-        { Icon: GlobeIcon,  label: 'Language',          sub: 'English',                    route: null, accent: 'primary' },
+        { Icon: ShareIcon,  label: 'Manage Access',      sub: 'Invitations & shared books', route: hasSharing ? '/(app)/settings/manage-access' : '/(app)/settings/subscription', accent: null, badge: hasSharing ? pendingInviteCount : 0, crown: hasSharing ? null : 'pro' },
+        { Icon: BellIcon,   label: 'Notifications',      sub: 'Manage alerts',              route: '/(app)/settings/notifications', accent: null },
+        { Icon: ShieldIcon, label: 'Privacy & Security', sub: 'PIN, biometric',             route: null, accent: null },
+        { Icon: CloudIcon,  label: 'Backup & Sync',      sub: hasCloud ? 'Cloud sync active' : 'Requires Pro or Business', route: hasCloud ? '/(app)/settings/backup-sync' : '/(app)/settings/subscription', accent: null, crown: hasCloud ? null : 'pro' },
+        { Icon: GlobeIcon,  label: 'Language',           sub: 'English',                    route: null, accent: null },
       ],
     },
     SUPPORT_SECTION,
-  ], [currencySub, pendingInviteCount, profileRoute]);
+  ], [currencySub, pendingInviteCount, profileRoute, tierLabel, tierColor, hasSharing, hasCloud]);
 
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: async () => {
-          if (supabase) await supabase.auth.signOut();
-          clearUser(); // AuthGuard in _layout.jsx handles the redirect
-        },
-      },
-    ]);
+  const [logoutVisible, setLogoutVisible] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
+
+  const handleLogout = () => setLogoutVisible(true);
+
+  const confirmLogout = async () => {
+    setLogoutLoading(true);
+    if (supabase) await supabase.auth.signOut();
+    setLogoutLoading(false);
+    setLogoutVisible(false);
+    clearUser(); // AuthGuard in _layout.jsx handles the redirect
   };
 
   const s = useMemo(() => makeStyles(C, hPad, showBottomNav), [C, hPad, showBottomNav]);
@@ -302,10 +338,21 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
             {profile?.email ?? '—'}
           </Text>
           {isSuperAdmin && (
-            <View style={{ marginTop: 4, marginBottom: 12 }}>
+            <View style={{ marginTop: 4 }}>
               <AdminPillBadge />
             </View>
           )}
+          {/* Subscription tier badge */}
+          <TouchableOpacity
+            onPress={() => router.push('/(app)/settings/subscription')}
+            activeOpacity={0.8}
+            style={[s.tierChip, { backgroundColor: tierColor + '1A', borderColor: tierColor + '44' }]}
+          >
+            {(tier === 'pro' || tier === 'business') && <Text style={{ fontSize: 12, marginRight: 3 }}>👑</Text>}
+            <Text style={[s.tierChipText, { color: tierColor, fontFamily: Font.bold }]}>
+              {tierLabel} Plan
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[s.editBtn, { backgroundColor: C.primaryLight, borderColor: C.primary }]}
             onPress={() => router.push(profileRoute)}
@@ -332,6 +379,8 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
                   isLast={idx === section.items.length - 1}
                   onPress={() => item.route && router.push(item.route)}
                   badgeCount={item.badge ?? 0}
+                  crown={item.crown ?? null}
+                  iconAccent={item.accent}
                   C={C}
                 />
               ))}
@@ -357,6 +406,15 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
         <Text style={[s.version, { color: C.textSubtle, fontFamily: Font.regular }]}>CashBook v1.0.0</Text>
 
       </ScrollView>
+
+      <LogoutSheet
+        visible={logoutVisible}
+        onDismiss={() => setLogoutVisible(false)}
+        onConfirm={confirmLogout}
+        isLoading={logoutLoading}
+        C={C}
+        Font={Font}
+      />
 
       {/* ── Bottom nav (regular user only) ──────────────────────────────── */}
       {showBottomNav && (
@@ -409,6 +467,14 @@ const makeStyles = (C, hPad, showBottomNav) => StyleSheet.create({
   avatarInitials: { fontSize: 28, fontFamily: Font.extraBold, color: '#fff' },
   avatarName:  { fontSize: 18, marginBottom: 3 },
   avatarEmail: { fontSize: 13, marginBottom: 6 },
+
+  tierChip: {
+    flexDirection: 'row', alignItems: 'center',
+    borderRadius: 20, borderWidth: 1,
+    paddingHorizontal: 12, paddingVertical: 4,
+    marginTop: 8, marginBottom: 6,
+  },
+  tierChipText: { fontSize: 12 },
 
   editBtn: {
     paddingHorizontal: 22, paddingVertical: 9, borderRadius: 20, borderWidth: 1,

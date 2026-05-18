@@ -14,6 +14,8 @@ import { useQuery } from '@tanstack/react-query';
 import { shadow } from '../constants/shadows';
 import SuccessDialog from '../components/ui/SuccessDialog';
 import { RIGHTS, SCREENS, DEFAULT_SCREENS, getInitials } from '../constants/sharing';
+import { useAuthStore } from '../store/authStore';
+import { canAccess, getLimit } from '../lib/canAccess';
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +23,9 @@ export default function AddCollaboratorScreen() {
   const router = useRouter();
   const { id, name } = useLocalSearchParams();
   const { C, Font, isDark } = useTheme();
+
+  const authUser = useAuthStore(s => s.user);
+  const canShare = canAccess(authUser, 'book_sharing');
 
   const [searchInput,  setSearchInput]  = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
@@ -99,10 +104,34 @@ export default function AddCollaboratorScreen() {
         <View style={{ width: 40 }} />
       </View>
 
+      {/* ── Upgrade gate (free tier) ─────────────────────────────────────── */}
+      {!canShare && (
+        <View style={styles.gate}>
+          <View style={[styles.gateBox, { backgroundColor: '#F59E0B1A' }]}>
+            <Text style={{ fontSize: 42 }}>👑</Text>
+          </View>
+          <Text style={[styles.gateTitle, { color: C.text, fontFamily: Font.bold }]}>
+            Pro Feature
+          </Text>
+          <Text style={[styles.gateSub, { color: C.textMuted, fontFamily: Font.regular }]}>
+            Book sharing requires a Pro or Business plan. Invite collaborators and set granular access levels for each book.
+          </Text>
+          <TouchableOpacity
+            style={[styles.gateBtn, { backgroundColor: '#F59E0B' }]}
+            onPress={() => router.push('/(app)/settings/subscription')}
+            activeOpacity={0.85}
+          >
+            <Text style={{ fontSize: 16, marginRight: 8 }}>👑</Text>
+            <Text style={[styles.gateBtnText, { fontFamily: Font.bold }]}>Upgrade to Pro</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        style={!canShare ? { display: 'none' } : undefined}
       >
 
         {/* ── Step 1: Search ─────────────────────────────────────────────── */}
@@ -315,6 +344,13 @@ export default function AddCollaboratorScreen() {
 const styles = StyleSheet.create({
   safe:    { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 20 },
+
+  gate:        { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+  gateBox:     { width: 88, height: 88, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginBottom: 22 },
+  gateTitle:   { fontSize: 20, lineHeight: 28, marginBottom: 10 },
+  gateSub:     { fontSize: 14, lineHeight: 21, textAlign: 'center', marginBottom: 28 },
+  gateBtn:     { flexDirection: 'row', alignItems: 'center', borderRadius: 32, paddingHorizontal: 28, paddingVertical: 14 },
+  gateBtnText: { fontSize: 15, color: '#fff', lineHeight: 22 },
 
   header: {
     flexDirection: 'row', alignItems: 'center',

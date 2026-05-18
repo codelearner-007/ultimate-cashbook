@@ -124,6 +124,14 @@ export const apiUpdateProfile = async (payload) => {
   return (await api.put('/api/v1/profile', payload)).data;
 };
 
+/** PATCH /api/v1/profile/subscription */
+export const apiUpdateSubscription = async ({ tier, billing_cycle = 'monthly' }) => {
+  return (await api.patch('/api/v1/profile/subscription', {
+    subscription_tier: tier,
+    billing_cycle,
+  })).data;
+};
+
 /** POST /api/v1/upload/avatar — multipart upload, returns { avatar_url } */
 export const apiUploadAvatar = async (uri, mimeType = 'image/jpeg') => {
   const filename = uri.split('/').pop() || 'avatar.jpg';

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List
+from datetime import datetime, timezone
 from app.auth.jwt import get_current_user
 from app.db.supabase import get_supabase
-from app.models.profile import ProfileResponse, ProfileUpdate
+from app.models.profile import ProfileResponse, ProfileUpdate, SubscriptionUpdate
 from app.models.sharing import CollaboratorProfile
 
 router = APIRouter()
@@ -27,6 +28,28 @@ async def update_profile(
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
 
+    result = (
+        sb.table("profiles")
+        .update(update_data)
+        .eq("id", user_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return result.data[0]
+
+
+@router.patch("/subscription", response_model=ProfileResponse)
+async def update_subscription(
+    payload: SubscriptionUpdate,
+    user_id: str = Depends(get_current_user),
+):
+    sb = get_supabase()
+    update_data = {
+        "subscription_tier":         payload.subscription_tier,
+        "subscription_started_at":   datetime.now(timezone.utc).isoformat(),
+        "subscription_billing_cycle": payload.billing_cycle,
+    }
     result = (
         sb.table("profiles")
         .update(update_data)

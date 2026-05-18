@@ -2,27 +2,27 @@
 
 ## Feature Matrix
 
-| Feature | Free | Pro | Business |
-|---|---|---|---|
-| Books | 3 | 15 | Unlimited |
-| Entries | Unlimited | Unlimited | Unlimited |
-| Storage | Local only | Cloud sync | Cloud sync |
-| Multi-device | No | Yes | Yes |
-| PDF / Excel Export | No | Yes | Yes |
-| Customers & Suppliers | Full access | Full access | Full access |
-| Categories | Full access | Full access | Full access |
-| Reports | View only (no download/share) | Full access | Full access |
-| Shared Books (Team) | No | Yes | Yes |
-| Backup History | No | 7 days | 30 days |
-| Guest Access | No | 1 guest (View / Edit / Full — owner sets permission) | Up to 10 guests (View / Edit / Full — owner sets per guest) |
+| Feature                       | Free       | Pro        | Business   |
+|-------------------------------|------------|------------|------------|
+| Books                         | 3          | 15         | Unlimited  |
+| Entries                       | Unlimited  | Unlimited  | Unlimited  |
+| Storage                       | Local only | Cloud sync | Cloud sync |
+| Multi-device                  | No         | Yes        | Yes        |
+| PDF / Excel Export            | No         | Yes        | Yes        |
+| Customers & Suppliers         | Full access| Full access| Full access|
+| Categories                    | Full access| Full access| Full access|
+| Reports                       | View only  | Full access| Full access|
+| Shared Books                  | No         | Yes        | Yes        |
+| Backup History                | No         | 7 days     | 30 days    |
+| Guest Access                  | No         | 1 guest    | Up to 10 guests |
 
 ## Pricing
 
-| Plan | Monthly | Yearly | Yearly Savings |
-|---|---|---|---|
-| Free | $0 | $0 | — |
-| Pro | $4.99 / mo | $41.99 / yr | 30% off |
-| Business | $9.99 / mo | $83.99 / yr | 30% off |
+| Plan     | Monthly | Yearly | Yearly Savings |
+|----------|---------|--------|----------------|
+| Free     | $0      | $0     | —              |
+| Pro      | $4.99   | $41.99 | 30% off        |
+| Business | $9.99   | $83.99 | 30% off        |
 
 ## Plan Rules
 

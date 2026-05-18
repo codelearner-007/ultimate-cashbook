@@ -11,6 +11,7 @@ import { useBookShares, useRemoveCollaborator } from '../hooks/useSharing';
 import { useRealtimeCollaborators, useRealtimeGivenInvitations } from '../hooks/useRealtimeSync';
 import { useAuthStore } from '../store/authStore';
 import { useBookBasePath } from '../hooks/useBookBasePath';
+import { canAccess, getLimit } from '../lib/canAccess';
 import { RIGHTS_MAP, getInitials } from '../constants/sharing';
 import EditShareSheet from '../components/sharing/EditShareSheet';
 import RemoveAccessSheet from '../components/sharing/RemoveAccessSheet';
@@ -105,11 +106,18 @@ export default function ManageSharesScreen() {
   const { id, name } = useLocalSearchParams();
   const { C, Font, isDark } = useTheme();
 
-  const user = useAuthStore((s) => s.user);
+  const user       = useAuthStore((s) => s.user);
+  const canShare   = canAccess(user, 'book_sharing');
+  const guestLimit = getLimit(user, 'guest_access');   // 0 | 1 | 10
+
   const { data: shares = [], isLoading } = useBookShares(id);
   const removeCollaborator = useRemoveCollaborator(id);
   useRealtimeCollaborators(id);
   useRealtimeGivenInvitations(user?.id);
+
+  // Count active + pending (rejected rows are deleted from DB)
+  const activeGuestCount = shares.length;
+  const isAtGuestLimit   = guestLimit !== Infinity && activeGuestCount >= guestLimit;
 
   const [editShare, setEditShare]     = useState(null);
   const [removeShare, setRemoveShare] = useState(null);
@@ -131,8 +139,21 @@ export default function ManageSharesScreen() {
   }, [removeShare, removeCollaborator]);
 
   const openAdd = useCallback(() => {
+    if (!canShare) { router.push('/(app)/settings/subscription'); return; }
+    if (isAtGuestLimit) {
+      const tier = user?.subscription_tier ?? 'free';
+      const upgradeMsg = tier === 'pro'
+        ? 'Pro plan allows 1 guest. Upgrade to Business for up to 10 guests.'
+        : 'You have reached the maximum of 10 guests.';
+      Alert.alert('Guest limit reached', upgradeMsg,
+        tier === 'pro'
+          ? [{ text: 'Cancel', style: 'cancel' }, { text: 'Upgrade', onPress: () => router.push('/(app)/settings/subscription') }]
+          : [{ text: 'OK' }],
+      );
+      return;
+    }
     router.push({ pathname: `${basePath}/[id]/add-collaborator`, params: { id, name } });
-  }, [router, basePath, id, name]);
+  }, [router, basePath, id, name, canShare, isAtGuestLimit, user]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: C.background }]}>
@@ -154,81 +175,131 @@ export default function ManageSharesScreen() {
           </Text>
         </View>
         <TouchableOpacity
-          style={[styles.addBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]}
+          style={[styles.addBtn, {
+            backgroundColor: (!canShare || isAtGuestLimit)
+              ? 'rgba(245,158,11,0.28)'
+              : 'rgba(255,255,255,0.22)',
+          }]}
           onPress={openAdd}
           activeOpacity={0.8}
         >
-          <Feather name="user-plus" size={18} color="#fff" />
+          {(!canShare || isAtGuestLimit)
+            ? <Text style={{ fontSize: 16, lineHeight: 20 }}>👑</Text>
+            : <Feather name="user-plus" size={18} color="#fff" />
+          }
         </TouchableOpacity>
       </View>
 
-      {/* Info banner */}
-      <View style={[styles.banner, { backgroundColor: C.primaryLight, borderColor: C.primaryMid }]}>
-        <Feather name="info" size={14} color={C.primary} />
-        <Text style={[styles.bannerText, { color: C.primary, fontFamily: Font.regular }]}>
-          Tap any row to edit their access, or use the buttons to edit or remove.
-        </Text>
-      </View>
-
-      {/* List */}
-      {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={C.primary} size="large" />
-        </View>
-      ) : shares.length === 0 ? (
+      {/* ── Upgrade gate (free tier) ─────────────────────────────────────── */}
+      {!canShare ? (
         <View style={styles.empty}>
-          <View style={[styles.emptyBox, { backgroundColor: C.primaryLight }]}>
-            <Feather name="users" size={36} color={C.primary} />
+          <View style={[styles.emptyBox, { backgroundColor: '#F59E0B1A' }]}>
+            <Text style={{ fontSize: 38 }}>👑</Text>
           </View>
           <Text style={[styles.emptyTitle, { color: C.text, fontFamily: Font.bold }]}>
-            No collaborators yet
+            Pro Feature
           </Text>
           <Text style={[styles.emptySub, { color: C.textMuted, fontFamily: Font.regular }]}>
-            Tap + to share this book with someone
+            Book sharing requires a Pro or Business plan. Collaborate with others and grant custom access to your cashbooks.
           </Text>
           <TouchableOpacity
-            style={[styles.emptyAddBtn, { backgroundColor: C.primary }]}
-            onPress={openAdd}
+            style={[styles.emptyAddBtn, { backgroundColor: '#F59E0B' }]}
+            onPress={() => router.push('/(app)/settings/subscription')}
             activeOpacity={0.85}
           >
-            <Feather name="user-plus" size={16} color="#fff" />
+            <Text style={{ fontSize: 16, marginRight: 6 }}>👑</Text>
             <Text style={[styles.emptyAddBtnText, { fontFamily: Font.bold }]}>
-              Add Collaborator
+              Upgrade to Pro
             </Text>
           </TouchableOpacity>
         </View>
       ) : (
-        <FlatList
-          data={shares}
-          keyExtractor={item => item.id}
-          renderItem={({ item }) => (
-            <CollaboratorRow
-              item={item}
-              onEdit={handleEdit}
-              onRemove={handleRemove}
-              C={C}
-              Font={Font}
-              isDark={isDark}
-            />
-          )}
-          contentContainerStyle={styles.list}
-          ListHeaderComponent={
-            <View style={{ marginHorizontal: 16, marginTop: 20, marginBottom: 6 }}>
-              <Text style={[styles.listHeader, { color: C.textMuted, fontFamily: Font.semiBold }]}>
-                {shares.length} {shares.length === 1 ? 'COLLABORATOR' : 'COLLABORATORS'}
+        <>
+          {/* Info banner */}
+          <View style={[styles.banner, { backgroundColor: C.primaryLight, borderColor: C.primaryMid }]}>
+            <Feather name="info" size={14} color={C.primary} />
+            <Text style={[styles.bannerText, { color: C.primary, fontFamily: Font.regular }]}>
+              Tap any row to edit their access, or use the buttons to edit or remove.
+            </Text>
+          </View>
+
+          {/* Guest limit banner (Pro at limit) */}
+          {isAtGuestLimit && (user?.subscription_tier ?? 'free') === 'pro' && (
+            <View style={[styles.banner, { backgroundColor: '#FEF3C7', borderColor: '#D97706', marginTop: 0 }]}>
+              <Text style={{ fontSize: 13, marginRight: 6 }}>👑</Text>
+              <Text style={[styles.bannerText, { color: '#B45309', fontFamily: Font.regular, flex: 1 }]}>
+                Pro plan: 1 guest limit reached.{' '}
               </Text>
-              {shares.some(s => s.status === 'pending') && (
-                <View style={[styles.statusNote, { backgroundColor: '#FEF3C7', borderColor: '#D97706' }]}>
-                  <Feather name="clock" size={12} color="#D97706" />
-                  <Text style={[styles.statusNoteText, { fontFamily: Font.regular, color: '#D97706' }]}>
-                    {shares.filter(s => s.status === 'pending').length} awaiting response
+              <TouchableOpacity onPress={() => router.push('/(app)/settings/subscription')} activeOpacity={0.8}>
+                <Text style={[styles.bannerText, { color: '#D97706', fontFamily: Font.bold }]}>Upgrade →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* List */}
+          {isLoading ? (
+            <View style={styles.center}>
+              <ActivityIndicator color={C.primary} size="large" />
+            </View>
+          ) : shares.length === 0 ? (
+            <View style={styles.empty}>
+              <View style={[styles.emptyBox, { backgroundColor: C.primaryLight }]}>
+                <Feather name="users" size={36} color={C.primary} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: C.text, fontFamily: Font.bold }]}>
+                No collaborators yet
+              </Text>
+              <Text style={[styles.emptySub, { color: C.textMuted, fontFamily: Font.regular }]}>
+                Tap + to share this book with someone
+              </Text>
+              {!isAtGuestLimit && (
+                <TouchableOpacity
+                  style={[styles.emptyAddBtn, { backgroundColor: C.primary }]}
+                  onPress={openAdd}
+                  activeOpacity={0.85}
+                >
+                  <Feather name="user-plus" size={16} color="#fff" />
+                  <Text style={[styles.emptyAddBtnText, { fontFamily: Font.bold }]}>
+                    Add Collaborator
                   </Text>
-                </View>
+                </TouchableOpacity>
               )}
             </View>
-          }
-          showsVerticalScrollIndicator={false}
-        />
+          ) : (
+            <FlatList
+              data={shares}
+              keyExtractor={item => item.id}
+              renderItem={({ item }) => (
+                <CollaboratorRow
+                  item={item}
+                  onEdit={handleEdit}
+                  onRemove={handleRemove}
+                  C={C}
+                  Font={Font}
+                  isDark={isDark}
+                />
+              )}
+              contentContainerStyle={styles.list}
+              ListHeaderComponent={
+                <View style={{ marginHorizontal: 16, marginTop: 20, marginBottom: 6 }}>
+                  <Text style={[styles.listHeader, { color: C.textMuted, fontFamily: Font.semiBold }]}>
+                    {shares.length} {shares.length === 1 ? 'COLLABORATOR' : 'COLLABORATORS'}
+                    {guestLimit !== Infinity ? `  ·  ${shares.length}/${guestLimit}` : ''}
+                  </Text>
+                  {shares.some(s => s.status === 'pending') && (
+                    <View style={[styles.statusNote, { backgroundColor: '#FEF3C7', borderColor: '#D97706' }]}>
+                      <Feather name="clock" size={12} color="#D97706" />
+                      <Text style={[styles.statusNoteText, { fontFamily: Font.regular, color: '#D97706' }]}>
+                        {shares.filter(s => s.status === 'pending').length} awaiting response
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              }
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </>
       )}
 
       {/* Edit sheet */}

@@ -15,6 +15,7 @@ import { useSharedBooks, useLeaveSharedBook, useReceivedInvitations } from '../.
 import { useRealtimeInvitations, useRealtimeBooks } from '../../hooks/useRealtimeSync';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import Toast from '../../lib/toast';
+import { getLimit } from '../../lib/canAccess';
 import { shadow } from '../../constants/shadows';
 import { CARD_ACCENTS } from '../../constants/colors';
 import SortSheet from './SortSheet';
@@ -419,6 +420,9 @@ export default function BooksView({
   const renameBook = useRenameBook();
   const deleteBook = useDeleteBook();
 
+  const bookLimit  = getLimit(user, 'books');   // 3 (free) | 15 (pro) | Infinity (business)
+  const canAddBook = books.length < bookLimit;
+
   const { data: sharedBooks = [], isLoading: sharedLoading } = useSharedBooks();
   const leaveSharedBook = useLeaveSharedBook();
   const { data: receivedInvitations = [] } = useReceivedInvitations();
@@ -808,11 +812,25 @@ export default function BooksView({
       {activeWorkspace === 'personal' && (
         <TouchableOpacity
           style={[s.fab, { bottom: fabBottom }]}
-          onPress={() => setShowModal(true)}
+          onPress={() => {
+            if (!canAddBook) {
+              router.push('/(app)/settings/subscription');
+              return;
+            }
+            setShowModal(true);
+          }}
           activeOpacity={0.85}
         >
-          <PlusIcon color={C.onPrimary} size={16} />
-          <Text style={s.fabText}>ADD NEW BOOK</Text>
+          {canAddBook
+            ? <PlusIcon color={C.onPrimary} size={16} />
+            : <Text style={{ fontSize: 15 }}>👑</Text>
+          }
+          <Text style={s.fabText}>
+            {canAddBook
+              ? 'ADD NEW BOOK'
+              : bookLimit === 3 ? 'UPGRADE — FREE LIMIT (3)' : `UPGRADE — PRO LIMIT (${bookLimit})`
+            }
+          </Text>
         </TouchableOpacity>
       )}
 

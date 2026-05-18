@@ -51,3 +51,12 @@ export async function registerPushToken() {
 export function addNotificationTapListener(callback) {
   return Notifications.addNotificationResponseReceivedListener(callback);
 }
+
+export async function scheduleLocalNotification(title, body) {
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body, sound: 'default' },
+      trigger: null,
+    });
+  } catch (_) {}
+}

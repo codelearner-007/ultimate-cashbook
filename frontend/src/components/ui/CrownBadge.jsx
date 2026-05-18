@@ -13,7 +13,7 @@ export const CROWN_COLORS = {
  */
 export default function CrownBadge({ tier = 'pro', size = 12 }) {
   const color = CROWN_COLORS[tier] ?? CROWN_COLORS.pro;
-  const label = tier === 'business' ? 'Business' : 'Pro';
+  const label = tier === 'business' ? 'Business' : 'Upgrade';
   return (
     <View style={{
       flexDirection: 'row', alignItems: 'center',

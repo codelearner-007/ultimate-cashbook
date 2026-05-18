@@ -1,12 +1,27 @@
 /**
- * Data source router.
+ * Data source router — offline-first with cloud backup.
  *
- * Free tier + online  → local SQLite only   (no cloud)
- * Paid tier + online  → cloud API
- * Any tier + offline  → local SQLite (writes queued; auto-syncs when online)
+ * Read routing:
+ *   Paid + online  → cloud API (freshest multi-device data)
+ *   Free / offline → local SQLite
  *
- * Exports the same function names as api.js so callers only need to
- * change one import path: `from '../lib/api'` → `from '../lib/dataSource'`
+ * Write routing (CREATE / UPDATE / DELETE):
+ *   Free / offline → local SQLite only
+ *   Paid + online  → cloud API (primary) + local SQLite (backup)
+ *
+ * Why dual-write on paid+online:
+ *   If a user creates data while on a paid plan and later downgrades to free,
+ *   the local DB must already have that data — otherwise it disappears.
+ *   Cloud is the authoritative source while the plan is active; local is the
+ *   safety net that survives plan changes and offline transitions.
+ *
+ * ID bridge:
+ *   Cloud and local use different UUIDs for the same book. The `cloud_id`
+ *   column on the local `books` table links them. It is populated:
+ *     (a) when a book is created on paid+online (apiCreateBook dual-write), and
+ *     (b) when syncLocalToCloud runs (syncManager sets cloud_id on matched books).
+ *   All other entity backups (entries, categories, etc.) look up the local book
+ *   via its cloud_id to find the correct local book_id for insertion.
  */
 
 import { useAuthStore } from '../store/authStore';
@@ -49,10 +64,8 @@ import {
 } from './api';
 
 /**
- * Returns true when the app should read/write from local SQLite.
- * Conditions:
- *   - User is on the free tier (always local), OR
- *   - User is on a paid tier but the device is currently offline.
+ * Returns true when ALL operations should stay in local SQLite.
+ * False means: cloud is primary, but local gets a backup copy of every write.
  */
 function useLocalDb() {
   const tier     = useAuthStore.getState().subscription_tier ?? 'free';
@@ -60,53 +73,194 @@ function useLocalDb() {
   return tier === 'free' || !isOnline;
 }
 
+/**
+ * Resolve the local book record that corresponds to a cloud book ID.
+ * Returns null if the mapping has not been established yet (no sync has run).
+ */
+function localBookForCloud(cloudBookId) {
+  return L.localGetBookByCloudId(cloudBookId);
+}
+
 // ── Books ──────────────────────────────────────────────────────────────────────
 
-export const apiGetBooks                = ()          => useLocalDb() ? Promise.resolve(L.localGetBooks())                     : _apiGetBooks();
-export const apiCreateBook              = (name, cur) => useLocalDb() ? Promise.resolve(L.localCreateBook(name, cur))          : _apiCreateBook(name, cur);
-export const apiUpdateBook              = (id, p)     => useLocalDb() ? Promise.resolve(L.localUpdateBook(id, p))              : _apiUpdateBook(id, p);
-export const apiDeleteBook              = (id)        => useLocalDb() ? Promise.resolve(L.localDeleteBook(id))                 : _apiDeleteBook(id);
-export const apiUpdateBookFieldSettings = (id, s)     => useLocalDb() ? Promise.resolve(L.localUpdateBookFieldSettings(id, s)) : _apiUpdateBookFieldSettings(id, s);
+export const apiGetBooks = () =>
+  useLocalDb() ? L.localGetBooks() : _apiGetBooks();
+
+export const apiCreateBook = async (name, cur) => {
+  if (useLocalDb()) return L.localCreateBook(name, cur);
+
+  // Paid + online: cloud is primary; backup to local and link IDs
+  const cloudBook = await _apiCreateBook(name, cur);
+  const localBook = await L.localCreateBook(name, cur).catch(() => null);
+  if (localBook) {
+    L.localSetBookCloudId(localBook.id, cloudBook.id).catch(() => {});
+  }
+  return cloudBook;
+};
+
+export const apiUpdateBook = async (id, p) => {
+  if (useLocalDb()) return L.localUpdateBook(id, p);
+
+  const result = await _apiUpdateBook(id, p);
+  const local  = await localBookForCloud(id);
+  if (local) L.localUpdateBook(local.id, p).catch(() => {});
+  return result;
+};
+
+export const apiDeleteBook = async (id) => {
+  if (useLocalDb()) return L.localDeleteBook(id);
+
+  await _apiDeleteBook(id);
+  const local = await localBookForCloud(id);
+  if (local) L.localDeleteBook(local.id).catch(() => {});
+};
+
+export const apiUpdateBookFieldSettings = async (id, s) => {
+  if (useLocalDb()) return L.localUpdateBookFieldSettings(id, s);
+
+  const result = await _apiUpdateBookFieldSettings(id, s);
+  const local  = await localBookForCloud(id);
+  if (local) L.localUpdateBookFieldSettings(local.id, s).catch(() => {});
+  return result;
+};
 
 // ── Entries ────────────────────────────────────────────────────────────────────
 
-export const apiGetEntries       = (bookId, params) => useLocalDb() ? Promise.resolve(L.localGetEntries(bookId, params))    : _apiGetEntries(bookId, params);
-export const apiGetSummary       = (bookId)         => useLocalDb() ? Promise.resolve(L.localGetSummary(bookId))            : _apiGetSummary(bookId);
-export const apiCreateEntry      = (bookId, p)      => useLocalDb() ? Promise.resolve(L.localCreateEntry(bookId, p))        : _apiCreateEntry(bookId, p);
-export const apiUpdateEntry      = (bookId, id, p)  => useLocalDb() ? Promise.resolve(L.localUpdateEntry(bookId, id, p))    : _apiUpdateEntry(bookId, id, p);
-export const apiDeleteEntry      = (bookId, id)     => useLocalDb() ? Promise.resolve(L.localDeleteEntry(bookId, id))       : _apiDeleteEntry(bookId, id);
-export const apiDeleteAllEntries = (bookId)         => useLocalDb() ? Promise.resolve(L.localDeleteAllEntries(bookId))      : _apiDeleteAllEntries(bookId);
+export const apiGetEntries = (bookId, params) =>
+  useLocalDb() ? L.localGetEntries(bookId, params) : _apiGetEntries(bookId, params);
+
+export const apiGetSummary = (bookId) =>
+  useLocalDb() ? L.localGetSummary(bookId) : _apiGetSummary(bookId);
+
+export const apiCreateEntry = async (bookId, p) => {
+  if (useLocalDb()) return L.localCreateEntry(bookId, p);
+
+  // Paid + online: cloud is primary; backup to local
+  const cloudEntry = await _apiCreateEntry(bookId, p);
+  const local      = await localBookForCloud(bookId);
+  if (local) {
+    // Null-out cloud FK IDs — local has different ID space; text snapshots are preserved
+    L.localCreateEntry(local.id, {
+      ...p,
+      category_id:     null,
+      customer_id:     null,
+      supplier_id:     null,
+      payment_mode_id: null,
+    }).catch(() => {});
+  }
+  return cloudEntry;
+};
+
+export const apiUpdateEntry = (bookId, id, p) =>
+  useLocalDb() ? L.localUpdateEntry(bookId, id, p) : _apiUpdateEntry(bookId, id, p);
+
+export const apiDeleteEntry = (bookId, id) =>
+  useLocalDb() ? L.localDeleteEntry(bookId, id) : _apiDeleteEntry(bookId, id);
+
+export const apiDeleteAllEntries = async (bookId) => {
+  if (useLocalDb()) return L.localDeleteAllEntries(bookId);
+
+  await _apiDeleteAllEntries(bookId);
+  const local = await localBookForCloud(bookId);
+  if (local) L.localDeleteAllEntries(local.id).catch(() => {});
+};
 
 // ── Categories ─────────────────────────────────────────────────────────────────
 
-export const apiGetCategories      = (bookId)        => useLocalDb() ? Promise.resolve(L.localGetCategories(bookId))          : _apiGetCategories(bookId);
-export const apiCreateCategory     = (bookId, payload) => useLocalDb() ? L.localCreateCategory(bookId, typeof payload === 'object' ? payload.name : payload) : _apiCreateCategory(bookId, payload);
-export const apiUpdateCategory     = (bookId, id, p) => useLocalDb() ? Promise.resolve(L.localUpdateCategory(bookId, id, p))  : _apiUpdateCategory(bookId, id, p);
-export const apiDeleteCategory     = (bookId, id)    => useLocalDb() ? Promise.resolve(L.localDeleteCategory(bookId, id))     : _apiDeleteCategory(bookId, id);
-export const apiGetCategoryEntries = (bookId, id)    => useLocalDb() ? Promise.resolve(L.localGetCategoryEntries(bookId, id)) : _apiGetCategoryEntries(bookId, id);
+export const apiGetCategories = (bookId) =>
+  useLocalDb() ? L.localGetCategories(bookId) : _apiGetCategories(bookId);
+
+export const apiCreateCategory = async (bookId, payload) => {
+  const name = typeof payload === 'object' ? payload.name : payload;
+  if (useLocalDb()) return L.localCreateCategory(bookId, name);
+
+  const cloudResult = await _apiCreateCategory(bookId, payload);
+  const local       = await localBookForCloud(bookId);
+  if (local) L.localCreateCategory(local.id, name).catch(() => {});
+  return cloudResult;
+};
+
+export const apiUpdateCategory = (bookId, id, p) =>
+  useLocalDb() ? L.localUpdateCategory(bookId, id, p) : _apiUpdateCategory(bookId, id, p);
+
+export const apiDeleteCategory = (bookId, id) =>
+  useLocalDb() ? L.localDeleteCategory(bookId, id) : _apiDeleteCategory(bookId, id);
+
+export const apiGetCategoryEntries = (bookId, id) =>
+  useLocalDb() ? L.localGetCategoryEntries(bookId, id) : _apiGetCategoryEntries(bookId, id);
 
 // ── Customers ──────────────────────────────────────────────────────────────────
 
-export const apiGetCustomers       = (bookId)        => useLocalDb() ? Promise.resolve(L.localGetCustomers(bookId))           : _apiGetCustomers(bookId);
-export const apiCreateCustomer     = (bookId, p)     => useLocalDb() ? Promise.resolve(L.localCreateCustomer(bookId, p))      : _apiCreateCustomer(bookId, p);
-export const apiGetCustomer        = (bookId, id)    => useLocalDb() ? Promise.resolve(L.localGetCustomer(bookId, id))        : _apiGetCustomer(bookId, id);
-export const apiUpdateCustomer     = (bookId, id, p) => useLocalDb() ? Promise.resolve(L.localUpdateCustomer(bookId, id, p))  : _apiUpdateCustomer(bookId, id, p);
-export const apiDeleteCustomer     = (bookId, id)    => useLocalDb() ? Promise.resolve(L.localDeleteCustomer(bookId, id))     : _apiDeleteCustomer(bookId, id);
-export const apiGetCustomerEntries = (bookId, id)    => useLocalDb() ? Promise.resolve(L.localGetCustomerEntries(bookId, id)) : _apiGetCustomerEntries(bookId, id);
+export const apiGetCustomers = (bookId) =>
+  useLocalDb() ? L.localGetCustomers(bookId) : _apiGetCustomers(bookId);
+
+export const apiCreateCustomer = async (bookId, p) => {
+  if (useLocalDb()) return L.localCreateCustomer(bookId, p);
+
+  const cloudResult = await _apiCreateCustomer(bookId, p);
+  const local       = await localBookForCloud(bookId);
+  if (local) L.localCreateCustomer(local.id, p).catch(() => {});
+  return cloudResult;
+};
+
+export const apiGetCustomer = (bookId, id) =>
+  useLocalDb() ? L.localGetCustomer(bookId, id) : _apiGetCustomer(bookId, id);
+
+export const apiUpdateCustomer = (bookId, id, p) =>
+  useLocalDb() ? L.localUpdateCustomer(bookId, id, p) : _apiUpdateCustomer(bookId, id, p);
+
+export const apiDeleteCustomer = (bookId, id) =>
+  useLocalDb() ? L.localDeleteCustomer(bookId, id) : _apiDeleteCustomer(bookId, id);
+
+export const apiGetCustomerEntries = (bookId, id) =>
+  useLocalDb() ? L.localGetCustomerEntries(bookId, id) : _apiGetCustomerEntries(bookId, id);
 
 // ── Suppliers ──────────────────────────────────────────────────────────────────
 
-export const apiGetSuppliers       = (bookId)        => useLocalDb() ? Promise.resolve(L.localGetSuppliers(bookId))           : _apiGetSuppliers(bookId);
-export const apiCreateSupplier     = (bookId, p)     => useLocalDb() ? Promise.resolve(L.localCreateSupplier(bookId, p))      : _apiCreateSupplier(bookId, p);
-export const apiGetSupplier        = (bookId, id)    => useLocalDb() ? Promise.resolve(L.localGetSupplier(bookId, id))        : _apiGetSupplier(bookId, id);
-export const apiUpdateSupplier     = (bookId, id, p) => useLocalDb() ? Promise.resolve(L.localUpdateSupplier(bookId, id, p))  : _apiUpdateSupplier(bookId, id, p);
-export const apiDeleteSupplier     = (bookId, id)    => useLocalDb() ? Promise.resolve(L.localDeleteSupplier(bookId, id))     : _apiDeleteSupplier(bookId, id);
-export const apiGetSupplierEntries = (bookId, id)    => useLocalDb() ? Promise.resolve(L.localGetSupplierEntries(bookId, id)) : _apiGetSupplierEntries(bookId, id);
+export const apiGetSuppliers = (bookId) =>
+  useLocalDb() ? L.localGetSuppliers(bookId) : _apiGetSuppliers(bookId);
+
+export const apiCreateSupplier = async (bookId, p) => {
+  if (useLocalDb()) return L.localCreateSupplier(bookId, p);
+
+  const cloudResult = await _apiCreateSupplier(bookId, p);
+  const local       = await localBookForCloud(bookId);
+  if (local) L.localCreateSupplier(local.id, p).catch(() => {});
+  return cloudResult;
+};
+
+export const apiGetSupplier = (bookId, id) =>
+  useLocalDb() ? L.localGetSupplier(bookId, id) : _apiGetSupplier(bookId, id);
+
+export const apiUpdateSupplier = (bookId, id, p) =>
+  useLocalDb() ? L.localUpdateSupplier(bookId, id, p) : _apiUpdateSupplier(bookId, id, p);
+
+export const apiDeleteSupplier = (bookId, id) =>
+  useLocalDb() ? L.localDeleteSupplier(bookId, id) : _apiDeleteSupplier(bookId, id);
+
+export const apiGetSupplierEntries = (bookId, id) =>
+  useLocalDb() ? L.localGetSupplierEntries(bookId, id) : _apiGetSupplierEntries(bookId, id);
 
 // ── Payment Modes ──────────────────────────────────────────────────────────────
 
-export const apiGetPaymentModes       = (bookId)        => useLocalDb() ? Promise.resolve(L.localGetPaymentModes(bookId))             : _apiGetPaymentModes(bookId);
-export const apiCreatePaymentMode     = (bookId, p)     => useLocalDb() ? L.localCreatePaymentMode(bookId, typeof p === 'object' ? p.name : p) : _apiCreatePaymentMode(bookId, p);
-export const apiUpdatePaymentMode     = (bookId, id, p) => useLocalDb() ? Promise.resolve(L.localUpdatePaymentMode(bookId, id, p))    : _apiUpdatePaymentMode(bookId, id, p);
-export const apiDeletePaymentMode     = (bookId, id)    => useLocalDb() ? Promise.resolve(L.localDeletePaymentMode(bookId, id))       : _apiDeletePaymentMode(bookId, id);
-export const apiGetPaymentModeEntries = (bookId, id)    => useLocalDb() ? Promise.resolve(L.localGetPaymentModeEntries(bookId, id))   : _apiGetPaymentModeEntries(bookId, id);
+export const apiGetPaymentModes = (bookId) =>
+  useLocalDb() ? L.localGetPaymentModes(bookId) : _apiGetPaymentModes(bookId);
+
+export const apiCreatePaymentMode = async (bookId, p) => {
+  const name = typeof p === 'object' ? p.name : p;
+  if (useLocalDb()) return L.localCreatePaymentMode(bookId, name);
+
+  const cloudResult = await _apiCreatePaymentMode(bookId, p);
+  const local       = await localBookForCloud(bookId);
+  if (local) L.localCreatePaymentMode(local.id, name).catch(() => {});
+  return cloudResult;
+};
+
+export const apiUpdatePaymentMode = (bookId, id, p) =>
+  useLocalDb() ? L.localUpdatePaymentMode(bookId, id, p) : _apiUpdatePaymentMode(bookId, id, p);
+
+export const apiDeletePaymentMode = (bookId, id) =>
+  useLocalDb() ? L.localDeletePaymentMode(bookId, id) : _apiDeletePaymentMode(bookId, id);
+
+export const apiGetPaymentModeEntries = (bookId, id) =>
+  useLocalDb() ? L.localGetPaymentModeEntries(bookId, id) : _apiGetPaymentModeEntries(bookId, id);

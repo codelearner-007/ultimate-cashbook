@@ -26,7 +26,9 @@ import {
   setupNotificationHandlers,
   registerPushToken,
   addNotificationTapListener,
+  scheduleLocalNotification,
 } from '../src/lib/pushNotifications';
+import { getLocalStats, syncLocalToCloud } from '../src/lib/syncManager';
 import { useNotificationPopupStore } from '../src/store/notificationPopupStore';
 import { useNotifications } from '../src/hooks/useNotifications';
 
@@ -50,16 +52,96 @@ function NetworkMonitor() {
     Network.getNetworkStateAsync()
       .then(state => setOnline(!!state.isConnected && !!state.isInternetReachable))
       .catch(() => {});
-    // Re-check whenever the app comes to foreground
-    const sub = AppState.addEventListener('change', (state) => {
+    // Real-time connectivity changes (fires immediately when network toggles)
+    const netSub = Network.addNetworkStateListener(state => {
+      setOnline(!!state.isConnected && !!state.isInternetReachable);
+    });
+    // Also re-verify when the app returns to foreground
+    const appSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         Network.getNetworkStateAsync()
           .then(s => setOnline(!!s.isConnected && !!s.isInternetReachable))
           .catch(() => {});
       }
     });
-    return () => sub.remove();
+    return () => {
+      netSub.remove();
+      appSub.remove();
+    };
   }, [setOnline]);
+  return null;
+}
+
+function AutoSyncMonitor() {
+  const user        = useAuthStore(s => s.user);
+  const tier        = useAuthStore(s => s.subscription_tier);
+  const isOnline    = useSyncStore(s => s.isOnline);
+  const isSyncing   = useSyncStore(s => s.isSyncing);
+  const startSync   = useSyncStore(s => s.startSync);
+  const setProgress = useSyncStore(s => s.setProgress);
+  const finishSync  = useSyncStore(s => s.finishSync);
+  const failSync    = useSyncStore(s => s.failSync);
+
+  const wasOnline = useRef(isOnline);
+  const syncLock  = useRef(false);
+
+  useEffect(() => {
+    const prevOnline = wasOnline.current;
+    wasOnline.current = isOnline;
+
+    // Only act on the offline → online transition
+    if (!prevOnline && isOnline && user && !isSyncing && !syncLock.current) {
+      // Free-tier users always stay local — nothing to sync
+      if (!tier || tier === 'free') return;
+
+      syncLock.current = true;
+      getLocalStats()
+        .then(stats => {
+          if (stats.total === 0) { syncLock.current = false; return; }
+
+          startSync();
+          Toast.show({
+            type: 'info',
+            text1: 'Back online — syncing...',
+            text2: 'Uploading offline data to cloud',
+            visibilityTime: 3000,
+          });
+
+          return syncLocalToCloud((done, total, step) => setProgress(done, total, step))
+            .then(result => {
+              finishSync(new Date().toISOString());
+              const alreadySynced = result.alreadySynced ?? 0;
+              const allAlready = result.synced === 0 && alreadySynced > 0;
+              scheduleLocalNotification(
+                allAlready ? 'Already synced ✓' : 'All data synced ✓',
+                allAlready
+                  ? 'Everything is already synced to cloud'
+                  : `${result.synced} item${result.synced !== 1 ? 's' : ''} uploaded to cloud successfully`,
+              );
+              Toast.show({
+                type: 'success',
+                text1: allAlready ? 'Already synced!' : 'All data synced!',
+                text2: allAlready
+                  ? 'Everything is already in the cloud'
+                  : `${result.synced} item${result.synced !== 1 ? 's' : ''} uploaded to cloud`,
+                visibilityTime: 4000,
+              });
+            })
+            .catch(err => {
+              failSync(err?.message ?? 'Sync failed');
+              Toast.show({
+                type: 'error',
+                text1: 'Sync failed',
+                text2: 'You can retry from Backup & Sync in Settings',
+                visibilityTime: 4000,
+              });
+            });
+        })
+        .catch(() => {})
+        .finally(() => { syncLock.current = false; });
+    }
+  }, [isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return null;
 }
 
@@ -313,6 +395,7 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <NetworkMonitor />
+      <AutoSyncMonitor />
       <SupabaseAuthListener />
       <AuthGuard />
       <Slot />

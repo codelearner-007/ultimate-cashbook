@@ -46,24 +46,24 @@ App Start
 
 ### UI Elements
 
-| Element | Action | Result |
-|---|---|---|
-| "Continue with Google" button | Tap | `supabase.auth.signInWithOAuth({ provider: 'google' })` — opens browser OAuth flow |
-| "Continue with Email" button | Tap | Opens EmailModal (Step 1) |
+| Element                           | Action | Result                                                                              |
+|-----------------------------------|--------|-------------------------------------------------------------------------------------|
+| "Continue with Google" button     | Tap    | `supabase.auth.signInWithOAuth({ provider: 'google' })` — opens browser OAuth flow |
+| "Continue with Email" button      | Tap    | Opens EmailModal (Step 1)                                                           |
 
 ### EmailModal — Step 1 (Email input)
-| Element | Action | Result |
-|---|---|---|
-| Email input | Type | Updates local state |
-| "Send OTP" / "Continue" button | Tap | `supabase.auth.signInWithOtp({ email })` → advances to OTP step |
-| Close / Back | Tap | Closes modal |
+| Element                           | Action | Result                                                           |
+|-----------------------------------|--------|------------------------------------------------------------------|
+| Email input                       | Type   | Updates local state                                              |
+| "Send OTP" / "Continue" button    | Tap    | `supabase.auth.signInWithOtp({ email })` → advances to OTP step |
+| Close / Back                      | Tap    | Closes modal                                                     |
 
 ### EmailModal — Step 2 (OTP verification)
-| Element | Action | Result |
-|---|---|---|
-| 6-digit OTP input | Type | Updates local state |
-| "Verify" button | Tap | `supabase.auth.verifyOtp({ email, token, type: 'email' })` |
-| "Resend OTP" | Tap | Re-calls `signInWithOtp` |
+| Element               | Action | Result                                                     |
+|-----------------------|--------|------------------------------------------------------------|
+| 6-digit OTP input     | Type   | Updates local state                                        |
+| "Verify" button       | Tap    | `supabase.auth.verifyOtp({ email, token, type: 'email' })` |
+| "Resend OTP"          | Tap    | Re-calls `signInWithOtp`                                   |
 
 ### After Successful Login
 1. `SupabaseAuthListener` detects `SIGNED_IN` event
@@ -83,79 +83,88 @@ App Start
 **Component:** `BooksScreen.jsx` → delegates entirely to `BooksView.jsx`
 
 ### Header Row
-| Element | Action | Result |
-|---|---|---|
-| "Personal Workspace ▾" title | Tap | (No action — display only) |
-| Theme toggle (moon/sun icon) | Tap | `toggleTheme()` — switches dark/light mode globally |
-| Avatar (top-right) | Tap | Navigate to `/(app)/settings` |
+| Element                                | Action | Result                                                          |
+|----------------------------------------|--------|-----------------------------------------------------------------|
+| Avatar (top-left)                      | Tap    | Navigate to `/(app)/settings/profile`                           |
+| User name                              | —      | Display only                                                    |
+| Tier chip (FREE / PRO / BUSINESS)      | Tap    | Navigate to `/(app)/settings/subscription`                      |
+| "Personal Workspace" subtitle          | —      | Display only; tappable workspace switcher if shared books exist  |
+| Theme toggle (moon/sun icon)           | Tap    | `toggleTheme()` — switches dark/light mode globally             |
+
+**Tier chip colours (on teal header):** FREE → semi-transparent white pill; PRO → amber pill (`#FCD34D`); BUSINESS → purple pill (`#C4B5FD`). Always visible.
+
+### Free Plan Banner (free tier only)
+| Element                                                              | Action | Result                                     |
+|----------------------------------------------------------------------|--------|--------------------------------------------|
+| "Free plan · Data stored on this device only. Tap to upgrade."       | Tap    | Navigate to `/(app)/settings/subscription` |
 
 ### Search Bar
-| Element | Action | Result |
-|---|---|---|
-| Search input | Type | Filters books list by name (client-side, instant) |
-| Clear (✕) button | Tap | Clears search query |
+| Element           | Action | Result                                            |
+|-------------------|--------|---------------------------------------------------|
+| Search input      | Type   | Filters books list by name (client-side, instant) |
+| Clear (✕) button  | Tap    | Clears search query                               |
 
 ### Sort Button / Sort Sheet
-| Element | Action | Result |
-|---|---|---|
-| Sort label / icon | Tap | Opens `SortSheet` bottom sheet |
-| **Last Updated** option | Tap | Sorts by `updated_at` descending |
-| **Created At** option | Tap | Sorts by `created_at` descending |
-| **Alphabetical** option | Tap | Sorts A→Z by book name |
-| **Drag to Reorder** option | Tap | Activates drag-handle on each card |
+| Element                     | Action | Result                                    |
+|-----------------------------|--------|-------------------------------------------|
+| Sort label / icon           | Tap    | Opens `SortSheet` bottom sheet            |
+| **Last Updated** option     | Tap    | Sorts by `updated_at` descending          |
+| **Created At** option       | Tap    | Sorts by `created_at` descending          |
+| **Alphabetical** option     | Tap    | Sorts A→Z by book name                    |
+| **Drag to Reorder** option  | Tap    | Activates drag-handle on each card        |
 
 ### Book Card
-| Element | Action | Result |
-|---|---|---|
-| Card body | Tap | Navigate to `/(app)/books/[id]` (BookDetailScreen) |
-| ⋮ (3-dot menu) | Tap | Opens `BookMenu` bottom sheet |
+| Element          | Action | Result                                             |
+|------------------|--------|----------------------------------------------------|
+| Card body        | Tap    | Navigate to `/(app)/books/[id]` (BookDetailScreen) |
+| ⋮ (3-dot menu)  | Tap    | Opens `BookMenu` bottom sheet                      |
 
 ### BookMenu Bottom Sheet
-| Element | Action | Result |
-|---|---|---|
-| **Rename** | Tap | Opens rename modal with current name pre-filled |
-| **Delete** | Tap | Opens delete confirmation modal |
-| Dismiss / drag down | — | Closes sheet |
+| Element              | Action | Result                                          |
+|----------------------|--------|-------------------------------------------------|
+| **Rename**           | Tap    | Opens rename modal with current name pre-filled |
+| **Delete**           | Tap    | Opens delete confirmation modal                 |
+| Dismiss / drag down  | —      | Closes sheet                                    |
 
 #### Rename Modal
-| Element | Action | Result |
-|---|---|---|
-| Name input | Edit | Updates new name state |
-| "Save" / confirm button | Tap | `useRenameBook().mutate({ bookId, name })` → optimistic update + refetch |
-| Cancel | Tap | Closes modal without saving |
+| Element                  | Action | Result                                                                   |
+|--------------------------|--------|--------------------------------------------------------------------------|
+| Name input               | Edit   | Updates new name state                                                   |
+| "Save" / confirm button  | Tap    | `useRenameBook().mutate({ bookId, name })` → optimistic update + refetch |
+| Cancel                   | Tap    | Closes modal without saving                                              |
 
 #### Delete Confirmation Modal
-| Element | Action | Result |
-|---|---|---|
-| "Delete" confirm button | Tap | `useDeleteBook().mutate(bookId)` → optimistic removal → `DELETE /api/v1/books/:id` → refetch |
-| Cancel | Tap | Closes modal |
+| Element                  | Action | Result                                                                                       |
+|--------------------------|--------|----------------------------------------------------------------------------------------------|
+| "Delete" confirm button  | Tap    | `useDeleteBook().mutate(bookId)` → optimistic removal → `DELETE /api/v1/books/:id` → refetch |
+| Cancel                   | Tap    | Closes modal                                                                                 |
 
 ### FAB ("+ Add New Book")
-| Element | Action | Result |
-|---|---|---|
-| FAB button | Tap | Opens "Add New Book" modal |
+| Element    | Action | Result                     |
+|------------|--------|----------------------------|
+| FAB button | Tap    | Opens "Add New Book" modal |
 
 #### Add New Book Modal
-| Element | Action | Result |
-|---|---|---|
-| Book name input | Type | Updates `newBookName` state |
-| "Create" button | Tap | `useCreateBook().mutate({ name })` → optimistic prepend → `POST /api/v1/books` → refetch |
-| Cancel / close | Tap | Closes modal, clears input |
+| Element          | Action | Result                                                                                    |
+|------------------|--------|-------------------------------------------------------------------------------------------|
+| Book name input  | Type   | Updates `newBookName` state                                                               |
+| "Create" button  | Tap    | `useCreateBook().mutate({ name })` → optimistic prepend → `POST /api/v1/books` → refetch |
+| Cancel / close   | Tap    | Closes modal, clears input                                                                |
 
 ### Bottom Navigation Bar
-| Tab | Action | Result |
-|---|---|---|
-| **Cashbooks** (active) | Tap | Already on this screen |
-| **Help** | Tap | (TODO — no-op or placeholder) |
-| **Settings** | Tap | Navigate to `/(app)/settings` |
+| Tab                     | Action | Result                         |
+|-------------------------|--------|--------------------------------|
+| **Cashbooks** (active)  | Tap    | Already on this screen         |
+| **Help**                | Tap    | (TODO — no-op or placeholder)  |
+| **Settings**            | Tap    | Navigate to `/(app)/settings`  |
 
 ### Loading / Error / Empty States
-| State | Display |
-|---|---|
-| Loading | Skeleton cards (animated placeholders) |
-| Error | Error message + "Retry" button → re-triggers `useBooks()` |
-| Empty (no books) | Empty state illustration + "Create your first book" |
-| Empty search results | "No books match your search" |
+| State                | Display                                                    |
+|----------------------|------------------------------------------------------------|
+| Loading              | Skeleton cards (animated placeholders)                     |
+| Error                | Error message + "Retry" button → re-triggers `useBooks()`  |
+| Empty (no books)     | Empty state illustration + "Create your first book"        |
+| Empty search results | "No books match your search"                               |
 
 ---
 
@@ -178,12 +187,12 @@ All interactions, mutations, states, and API calls are identical to BooksScreen.
 - **Settings** → SettingsScreen
 
 ### Header Row
-| Element | Action | Result |
-|---|---|---|
-| Avatar (top-left) | Tap | Navigate to admin profile screen |
-| "Dashboard" title | — | Display only |
-| SuperAdmin badge (animated sparks) | — | Display only |
-| Theme toggle | Tap | `toggleTheme()` |
+| Element                              | Action | Result                           |
+|--------------------------------------|--------|----------------------------------|
+| Avatar (top-left)                    | Tap    | Navigate to admin profile screen |
+| "Dashboard" title                    | —      | Display only                     |
+| SuperAdmin badge (animated sparks)   | —      | Display only                     |
+| Theme toggle                         | Tap    | `toggleTheme()`                  |
 
 ### Stats Row (auto-refreshed every 10 s)
 - Total Users count + active sub-count
@@ -191,67 +200,67 @@ All interactions, mutations, states, and API calls are identical to BooksScreen.
 - Storage used
 
 ### Search Bar
-| Element | Action | Result |
-|---|---|---|
-| Search input | Type | Filters user list by name or email (client-side) |
-| Clear (✕) | Tap | Clears query |
+| Element       | Action | Result                                           |
+|---------------|--------|--------------------------------------------------|
+| Search input  | Type   | Filters user list by name or email (client-side) |
+| Clear (✕)     | Tap    | Clears query                                     |
 
 ### Date Filter Chips (horizontal scroll)
-| Chip | Action | Result |
-|---|---|---|
-| **All Time** | Tap | Shows users registered at any date (default) |
-| **Today** | Tap | Shows users registered today |
-| **Last 7 Days** | Tap | Shows users registered in last 7 days |
-| **This Month** | Tap | Shows users registered this calendar month |
-| **This Year** | Tap | Shows users registered this calendar year |
+| Chip             | Action | Result                                       |
+|------------------|--------|----------------------------------------------|
+| **All Time**     | Tap    | Shows users registered at any date (default) |
+| **Today**        | Tap    | Shows users registered today                 |
+| **Last 7 Days**  | Tap    | Shows users registered in last 7 days        |
+| **This Month**   | Tap    | Shows users registered this calendar month   |
+| **This Year**    | Tap    | Shows users registered this calendar year    |
 Filtering is client-side against `created_at`. Active chip highlights in primary color.
 
 ### Status Filter (select dropdown)
-| Element | Action | Result |
-|---|---|---|
-| Status dropdown button | Tap | Opens **Status Picker Sheet** |
+| Element                 | Action | Result                        |
+|-------------------------|--------|-------------------------------|
+| Status dropdown button  | Tap    | Opens **Status Picker Sheet** |
 
 #### Status Picker Sheet
-| Option | Action | Result |
-|---|---|---|
-| **All Users** | Tap | Shows all users (default) |
-| **Active** | Tap | Shows only active users |
-| **Inactive** | Tap | Shows only inactive users |
+| Option          | Action | Result                    |
+|-----------------|--------|---------------------------|
+| **All Users**   | Tap    | Shows all users (default) |
+| **Active**      | Tap    | Shows only active users   |
+| **Inactive**    | Tap    | Shows only inactive users |
 Selected option shown with checkmark; backdrop tap closes sheet.
 
 Both filters compose (date + status applied together).
 
 ### User Card
-| Element | Action | Result |
-|---|---|---|
-| Card | Tap | Opens **User Detail Modal** |
+| Element | Action | Result                      |
+|---------|--------|-----------------------------|
+| Card    | Tap    | Opens **User Detail Modal** |
 
 ### User Detail Modal
-| Element | Action | Result |
-|---|---|---|
-| Avatar, name, email | — | Display only |
-| Stats: Books / Entries / Storage | — | Display only |
-| Status pill (Active / Inactive) | — | Display only |
-| **Account Status toggle** | Tap | Opens **Confirm Status Change Modal** |
-| Close / backdrop tap | Tap | Closes modal |
+| Element                            | Action | Result                                |
+|------------------------------------|--------|---------------------------------------|
+| Avatar, name, email                | —      | Display only                          |
+| Stats: Books / Entries / Storage   | —      | Display only                          |
+| Status pill (Active / Inactive)    | —      | Display only                          |
+| **Account Status toggle**          | Tap    | Opens **Confirm Status Change Modal** |
+| Close / backdrop tap               | Tap    | Closes modal                          |
 
 ### Confirm Status Change Modal
-| Element | Action | Result |
-|---|---|---|
-| "Activate" or "Deactivate" button | Tap | `PATCH /api/v1/admin/users/:id/status` → optimistic cache update + refetch |
-| Cancel | Tap | Closes confirmation, no change |
+| Element                            | Action | Result                                                                      |
+|------------------------------------|--------|-----------------------------------------------------------------------------|
+| "Activate" or "Deactivate" button  | Tap    | `PATCH /api/v1/admin/users/:id/status` → optimistic cache update + refetch  |
+| Cancel                             | Tap    | Closes confirmation, no change                                              |
 
 ### Polling
 - `GET /api/v1/admin/users` is called every **10 seconds** while screen is focused
 - New users appear automatically without manual refresh
 
 ### Error / Empty States
-| State | Display |
-|---|---|
-| Loading | Skeleton rows |
-| Error | Error text + retry |
-| Empty search | "No users found" |
-| No users | "No users registered yet" |
+| State         | Display                      |
+|---------------|------------------------------|
+| Loading       | Skeleton rows                |
+| Error         | Error text + retry           |
+| Empty search  | "No users found"             |
+| No users      | "No users registered yet"    |
 
 ---
 
@@ -260,61 +269,61 @@ Both filters compose (date + status applied together).
 **Purpose:** View and manage all entries in a single book.
 
 ### Header Row
-| Element | Action | Result |
-|---|---|---|
-| Back (←) | Tap | Navigate back to BooksScreen |
-| Book name (title) | — | Display only |
-| User-plus icon | Tap | (TODO — invite collaborator, not yet implemented) |
-| ⋮ (3-dot menu) | Tap | Opens dropdown menu |
+| Element            | Action | Result                                            |
+|--------------------|--------|---------------------------------------------------|
+| Back (←)           | Tap    | Navigate back to BooksScreen                      |
+| Book name (title)  | —      | Display only                                      |
+| User-plus icon     | Tap    | (TODO — invite collaborator, not yet implemented) |
+| ⋮ (3-dot menu)    | Tap    | Opens dropdown menu                               |
 
 ### Dropdown Menu
-| Option | Action | Result |
-|---|---|---|
-| **Book Settings** | Tap | Navigate to `/(app)/books/[id]/book-settings` |
-| **Delete All Entries** | Tap | Opens `DeleteAllEntriesSheet` confirmation sheet |
+| Option                  | Action | Result                                           |
+|-------------------------|--------|--------------------------------------------------|
+| **Book Settings**       | Tap    | Navigate to `/(app)/books/[id]/book-settings`    |
+| **Delete All Entries**  | Tap    | Opens `DeleteAllEntriesSheet` confirmation sheet |
 
 ### DeleteAllEntriesSheet
-| Element | Action | Result |
-|---|---|---|
-| Entry count display | — | Shows "X entries will be deleted" |
-| "Delete All" confirm | Tap | `DELETE /api/v1/books/:id/entries` (all) → success dialog |
-| Cancel / drag down | — | Closes sheet |
+| Element               | Action | Result                                                    |
+|-----------------------|--------|-----------------------------------------------------------|
+| Entry count display   | —      | Shows "X entries will be deleted"                         |
+| "Delete All" confirm  | Tap    | `DELETE /api/v1/books/:id/entries` (all) → success dialog |
+| Cancel / drag down    | —      | Closes sheet                                              |
 
 ### Search Bar
-| Element | Action | Result |
-|---|---|---|
-| Search input | Type | Filters entries by remark or amount (client-side) |
-| Clear (✕) | Tap | Clears search |
+| Element       | Action | Result                                             |
+|---------------|--------|----------------------------------------------------|
+| Search input  | Type   | Filters entries by remark or amount (client-side)  |
+| Clear (✕)     | Tap    | Clears search                                      |
 
 ### Filter Chips Row
 Each chip shows the active filter (or default label). Tap to open picker.
 
-| Chip | Picker Options | Applies |
-|---|---|---|
-| **Date** | Today / Yesterday / This Week / This Month / Custom range | Filters by `entry_date` |
-| **Entry Type** | Cash In / Cash Out | Filters by `type` |
-| **Contact** | List of Customers & Suppliers | Filters by `customer_id` or `supplier_id` |
-| **Category** | List of book categories | Filters by `category_id` |
-| **Payment Mode** | Cash / Online / Cheque / Other | Filters by `payment_mode` |
+| Chip              | Picker Options                                             | Applies                                    |
+|-------------------|------------------------------------------------------------|--------------------------------------------|
+| **Date**          | Today / Yesterday / This Week / This Month / Custom range  | Filters by `entry_date`                    |
+| **Entry Type**    | Cash In / Cash Out                                         | Filters by `type`                          |
+| **Contact**       | List of Customers & Suppliers                              | Filters by `customer_id` or `supplier_id`  |
+| **Category**      | List of book categories                                    | Filters by `category_id`                   |
+| **Payment Mode**  | Cash / Online / Cheque / Other                             | Filters by `payment_mode`                  |
 
 Active filter chips show a colored indicator. Tap active chip → clears that filter.
 
 ### Balance Summary Card
-| Element | Action | Result |
-|---|---|---|
-| Net Balance | — | Display only (from `books.net_balance`) |
-| Total In | — | Display only (from summary) |
-| Total Out | — | Display only (from summary) |
-| **"VIEW REPORTS"** button | Tap | Navigate to `/(app)/books/[id]/reports` |
+| Element              | Action | Result                                      |
+|----------------------|--------|---------------------------------------------|
+| Net Balance          | —      | Display only (from `books.net_balance`)     |
+| Total In             | —      | Display only (from summary)                 |
+| Total Out            | —      | Display only (from summary)                 |
+| **"VIEW REPORTS"** button | Tap | Navigate to `/(app)/books/[id]/reports`  |
 
 ### Entry List (grouped by date)
 Sections collapsed/expanded per date.
 
-| Element | Action | Result |
-|---|---|---|
-| Date section header | Tap | Toggles collapse/expand for that date group |
-| Entry card | Tap | Navigate to `/(app)/books/[id]/entry-detail` with entry data |
-| Entry card | Long press | Alert: "Delete this entry?" → confirm → `DELETE /api/v1/books/:id/entries/:entry_id` |
+| Element              | Action      | Result                                                                               |
+|----------------------|-------------|--------------------------------------------------------------------------------------|
+| Date section header  | Tap         | Toggles collapse/expand for that date group                                          |
+| Entry card           | Tap         | Navigate to `/(app)/books/[id]/entry-detail` with entry data                         |
+| Entry card           | Long press  | Alert: "Delete this entry?" → confirm → `DELETE /api/v1/books/:id/entries/:entry_id` |
 
 #### Entry Card displays:
 - Payment mode badge (Cash / Online / Cheque / Other)
@@ -324,18 +333,18 @@ Sections collapsed/expanded per date.
 - Amount (green = Cash In, red = Cash Out)
 
 ### Sticky Action Buttons (bottom)
-| Button | Action | Result |
-|---|---|---|
-| **CASH IN** | Tap | Navigate to `/(app)/books/[id]/add-entry?type=in` |
-| **CASH OUT** | Tap | Navigate to `/(app)/books/[id]/add-entry?type=out` |
+| Button       | Action | Result                                                |
+|--------------|--------|-------------------------------------------------------|
+| **CASH IN**  | Tap    | Navigate to `/(app)/books/[id]/add-entry?type=in`     |
+| **CASH OUT** | Tap    | Navigate to `/(app)/books/[id]/add-entry?type=out`    |
 
 ### Loading / Error / Empty States
-| State | Display |
-|---|---|
-| Loading entries | Skeleton list |
-| Error | Error message + retry |
-| Empty book | "No entries yet. Add your first entry." |
-| Empty filter result | "No entries match your filters" with clear-filters button |
+| State                | Display                                                    |
+|----------------------|------------------------------------------------------------|
+| Loading entries      | Skeleton list                                              |
+| Error                | Error message + retry                                      |
+| Empty book           | "No entries yet. Add your first entry."                    |
+| Empty filter result  | "No entries match your filters" with clear-filters button  |
 
 ---
 
@@ -344,56 +353,56 @@ Sections collapsed/expanded per date.
 **Purpose:** Create a new Cash In or Cash Out entry.
 
 ### Header
-| Element | Action | Result |
-|---|---|---|
-| Back (←) | Tap | Navigate back to BookDetailScreen |
-| "Cash In" or "Cash Out" title | — | Derived from route param `type` |
+| Element                         | Action | Result                          |
+|---------------------------------|--------|---------------------------------|
+| Back (←)                        | Tap    | Navigate back to BookDetailScreen |
+| "Cash In" or "Cash Out" title   | —      | Derived from route param `type` |
 
 ### EntryForm Fields
 
-| Field | Visibility | Behavior |
-|---|---|---|
-| **Amount** | Always | Auto-focused; numeric keyboard; required |
-| **Remark** | Always | Optional text; max length not enforced |
-| **Category** | If `book.show_category = true` | Tap → opens CategoryPickerModal |
-| **Customer / Supplier** | If `book.show_customer` or `book.show_supplier` | Tap → opens ContactPickerModal |
-| **Payment Mode** | Always | Tap → opens dropdown; **required** |
-| **Date** | Always | Tap → opens DatePickerModal (defaults today) |
-| **Time** | Always | Tap → opens TimePickerModal (defaults now) |
-| **Attachment** | If `book.show_attachment = true` | Tap → opens attachment picker sheet |
+| Field                    | Visibility                                       | Behavior                                      |
+|--------------------------|--------------------------------------------------|-----------------------------------------------|
+| **Amount**               | Always                                           | Auto-focused; numeric keyboard; required      |
+| **Remark**               | Always                                           | Optional text; max length not enforced        |
+| **Category**             | If `book.show_category = true`                   | Tap → opens CategoryPickerModal               |
+| **Customer / Supplier**  | If `book.show_customer` or `book.show_supplier`  | Tap → opens ContactPickerModal                |
+| **Payment Mode**         | Always                                           | Tap → opens dropdown; **required**            |
+| **Date**                 | Always                                           | Tap → opens DatePickerModal (defaults today)  |
+| **Time**                 | Always                                           | Tap → opens TimePickerModal (defaults now)    |
+| **Attachment**           | If `book.show_attachment = true`                 | Tap → opens attachment picker sheet           |
 
 #### CategoryPickerModal
-| Element | Action | Result |
-|---|---|---|
-| Search input | Type | Filters categories by name |
-| Category row | Tap | Selects category, closes modal |
-| "+ Create Category" | Tap | Creates category inline + selects it |
+| Element              | Action | Result                                |
+|----------------------|--------|---------------------------------------|
+| Search input         | Type   | Filters categories by name            |
+| Category row         | Tap    | Selects category, closes modal        |
+| "+ Create Category"  | Tap    | Creates category inline + selects it  |
 
 #### ContactPickerModal
-| Tab | Content |
-|---|---|
-| **Customers** | List of customers for this book |
-| **Suppliers** | List of suppliers for this book |
+| Tab            | Content                             |
+|----------------|-------------------------------------|
+| **Customers**  | List of customers for this book     |
+| **Suppliers**  | List of suppliers for this book     |
 
-| Element | Action | Result |
-|---|---|---|
-| Search input | Type | Filters contacts by name or phone |
-| Contact row | Tap | Selects contact, closes modal |
-| "+ Add Customer/Supplier" | Tap | Navigates to contact creation screen |
+| Element                    | Action | Result                               |
+|----------------------------|--------|--------------------------------------|
+| Search input               | Type   | Filters contacts by name or phone    |
+| Contact row                | Tap    | Selects contact, closes modal        |
+| "+ Add Customer/Supplier"  | Tap    | Navigates to contact creation screen |
 
 #### Attachment Picker Sheet
-| Option | Action | Result |
-|---|---|---|
-| **Take Photo** | Tap | Opens device camera; captured image is compressed (1000 px wide, 0.55 JPEG quality) |
-| **Choose from Gallery** | Tap | Opens image picker; image compressed same way |
-| **Choose PDF / Document** | Tap | Opens file picker; PDF uploaded as-is |
-| Max size | — | 6 MB limit; over-limit shows toast error |
+| Option                      | Action | Result                                                                              |
+|-----------------------------|--------|-------------------------------------------------------------------------------------|
+| **Take Photo**              | Tap    | Opens device camera; captured image is compressed (1000 px wide, 0.55 JPEG quality) |
+| **Choose from Gallery**     | Tap    | Opens image picker; image compressed same way                                       |
+| **Choose PDF / Document**   | Tap    | Opens file picker; PDF uploaded as-is                                               |
+| Max size                    | —      | 6 MB limit; over-limit shows toast error                                            |
 
 ### Save Button
-| State | Behavior |
-|---|---|
-| Disabled | While save is in progress |
-| Enabled | Tap → validates form (amount + payment mode required) → `POST /api/v1/books/:id/entries` → on success navigate back |
+| State     | Behavior                                                                                                         |
+|-----------|------------------------------------------------------------------------------------------------------------------|
+| Disabled  | While save is in progress                                                                                        |
+| Enabled   | Tap → validates form (amount + payment mode required) → `POST /api/v1/books/:id/entries` → on success navigate back |
 
 ### Error States
 - Amount missing → inline validation error "Amount is required"
@@ -408,11 +417,11 @@ Sections collapsed/expanded per date.
 **Purpose:** Edit an existing entry; pre-fills EntryForm with current values.
 
 ### Header
-| Element | Action | Result |
-|---|---|---|
-| Back (←) | Tap | Navigate back |
-| "Edit Entry" title | — | Display |
-| Trash icon | Tap | Opens animated DeleteSheet |
+| Element             | Action | Result                       |
+|---------------------|--------|------------------------------|
+| Back (←)            | Tap    | Navigate back                |
+| "Edit Entry" title  | —      | Display                      |
+| Trash icon          | Tap    | Opens animated DeleteSheet   |
 
 ### EntryForm
 - Same fields as AddEntryScreen
@@ -422,16 +431,16 @@ Sections collapsed/expanded per date.
 - If linked category was deleted → category shows "(deleted)"
 
 ### Update Button
-| State | Behavior |
-|---|---|
-| Disabled | If contact or category is deleted, or while saving |
-| Enabled | Tap → validate → `PUT /api/v1/books/:id/entries/:entry_id` → navigate back on success |
+| State     | Behavior                                                                              |
+|-----------|---------------------------------------------------------------------------------------|
+| Disabled  | If contact or category is deleted, or while saving                                    |
+| Enabled   | Tap → validate → `PUT /api/v1/books/:id/entries/:entry_id` → navigate back on success |
 
 ### Delete Sheet (animated bottom sheet)
-| Element | Action | Result |
-|---|---|---|
-| "Delete Entry" button | Tap | Alert confirm → `DELETE /api/v1/books/:id/entries/:entry_id` → navigate back |
-| Cancel | Tap | Closes sheet |
+| Element                | Action | Result                                                                        |
+|------------------------|--------|-------------------------------------------------------------------------------|
+| "Delete Entry" button  | Tap    | Alert confirm → `DELETE /api/v1/books/:id/entries/:entry_id` → navigate back  |
+| Cancel                 | Tap    | Closes sheet                                                                  |
 
 ---
 
@@ -440,17 +449,17 @@ Sections collapsed/expanded per date.
 **Purpose:** Read-only view of a single entry with all details.
 
 ### Header
-| Element | Action | Result |
-|---|---|---|
-| Back (←) | Tap | Navigate back |
-| "Entry Detail" title | — | Display |
-| ⋮ (3-dot menu) | Tap | Opens dropdown |
+| Element               | Action | Result         |
+|-----------------------|--------|----------------|
+| Back (←)              | Tap    | Navigate back  |
+| "Entry Detail" title  | —      | Display        |
+| ⋮ (3-dot menu)       | Tap    | Opens dropdown |
 
 ### Dropdown Menu
-| Option | Action | Result |
-|---|---|---|
-| **Backup Entry** | Tap | (TODO — not implemented) |
-| **Delete Entry** | Tap | Alert "Delete this entry?" → confirm → `DELETE` → navigate back |
+| Option             | Action | Result                                                          |
+|--------------------|--------|-----------------------------------------------------------------|
+| **Backup Entry**   | Tap    | (TODO — not implemented)                                        |
+| **Delete Entry**   | Tap    | Alert "Delete this entry?" → confirm → `DELETE` → navigate back |
 
 ### Amount Card
 - Large amount display with +/− sign
@@ -458,33 +467,33 @@ Sections collapsed/expanded per date.
 - Date and time
 
 ### Detail Rows
-| Row | Content |
-|---|---|
-| Remark | Entry remark text |
-| Category | Category name (or "—" if none) |
-| Payment Mode | Mode name |
-| Customer / Supplier | Contact name (or "—") |
-| Date | Formatted date |
-| Time | Formatted time |
-| Entry by | User's name |
+| Row                    | Content                         |
+|------------------------|---------------------------------|
+| Remark                 | Entry remark text               |
+| Category               | Category name (or "—" if none)  |
+| Payment Mode           | Mode name                       |
+| Customer / Supplier    | Contact name (or "—")           |
+| Date                   | Formatted date                  |
+| Time                   | Formatted time                  |
+| Entry by               | User's name                     |
 
 ### Attachment Card (shown only if attachment exists)
-| Element | Action | Result |
-|---|---|---|
-| Image thumbnail | Tap | Opens full-screen image viewer modal |
-| PDF icon | Tap | Opens PDF URL in system browser / viewer |
-| "View" button | Tap | Same as tapping thumbnail/icon |
+| Element           | Action  | Result                                   |
+|-------------------|---------|------------------------------------------|
+| Image thumbnail   | Tap     | Opens full-screen image viewer modal     |
+| PDF icon          | Tap     | Opens PDF URL in system browser / viewer |
+| "View" button     | Tap     | Same as tapping thumbnail/icon           |
 
 ### Image Viewer Modal
-| Element | Action | Result |
-|---|---|---|
-| Full-screen image | Pinch/zoom | Zoom in/out |
-| Close (✕) button | Tap | Closes modal |
+| Element            | Action      | Result       |
+|--------------------|-------------|--------------|
+| Full-screen image  | Pinch/zoom  | Zoom in/out  |
+| Close (✕) button   | Tap         | Closes modal |
 
 ### Bottom Bar
-| Button | Action | Result |
-|---|---|---|
-| **"Edit Entry"** | Tap | Navigate to `/(app)/books/[id]/edit-entry` with entry data |
+| Button            | Action | Result                                                         |
+|-------------------|--------|----------------------------------------------------------------|
+| **"Edit Entry"**  | Tap    | Navigate to `/(app)/books/[id]/edit-entry` with entry data     |
 
 ---
 
@@ -493,11 +502,11 @@ Sections collapsed/expanded per date.
 **Purpose:** View all entries belonging to one category within a book.
 
 ### Header
-| Element | Action | Result |
-|---|---|---|
-| Back (←) | Tap | Navigate back |
-| Category name | — | Display |
-| "Category Balance" | — | Display |
+| Element              | Action | Result            |
+|----------------------|--------|-------------------|
+| Back (←)             | Tap    | Navigate back     |
+| Category name        | —      | Display           |
+| "Category Balance"   | —      | Display           |
 
 ### Summary Card
 - Cash In total
@@ -505,16 +514,16 @@ Sections collapsed/expanded per date.
 - Cash Out total
 
 ### Search Bar
-| Element | Action | Result |
-|---|---|---|
-| Search input | Type | Filters entries by remark, payment mode, or amount |
-| Clear | Tap | Clears search |
+| Element       | Action | Result                                               |
+|---------------|--------|------------------------------------------------------|
+| Search input  | Type   | Filters entries by remark, payment mode, or amount   |
+| Clear         | Tap    | Clears search                                        |
 
 ### Entry List (grouped by date, collapsible)
-| Element | Action | Result |
-|---|---|---|
-| Date section header | Tap | Toggles collapse/expand |
-| Entry card | Tap | Navigate to EntryDetailScreen |
+| Element              | Action | Result                        |
+|----------------------|--------|-------------------------------|
+| Date section header  | Tap    | Toggles collapse/expand       |
+| Entry card           | Tap    | Navigate to EntryDetailScreen |
 
 #### Entry Card displays:
 - Left color border (green = in, red = out)
@@ -524,10 +533,10 @@ Sections collapsed/expanded per date.
 - Amount
 
 ### Loading / Empty States
-| State | Display |
-|---|---|
-| Loading | Skeleton |
-| Empty | "No entries in this category" |
+| State    | Display                       |
+|----------|-------------------------------|
+| Loading  | Skeleton                      |
+| Empty    | "No entries in this category" |
 
 ---
 
@@ -538,10 +547,10 @@ Sections collapsed/expanded per date.
 **Navigation in:** `CategoriesSettingsScreen` → tap any category card
 
 ### Header
-| Element | Action | Result |
-|---|---|---|
-| Back (←) | Tap | Navigate back to Categories list |
-| "Category Details" | — | Display |
+| Element              | Action | Result                           |
+|----------------------|--------|----------------------------------|
+| Back (←)             | Tap    | Navigate back to Categories list |
+| "Category Details"   | —      | Display                          |
 
 ### Avatar Card
 - Tag icon + category name + "Category" badge
@@ -553,9 +562,9 @@ Sections collapsed/expanded per date.
 - Values read from `categories` list cache (no separate API call)
 
 ### Category Info
-| Element | Action | Result |
-|---|---|---|
-| Name field (AppInput) | Edit | Marks form dirty; editable only if `canEdit` |
+| Element               | Action | Result                                    |
+|-----------------------|--------|-------------------------------------------|
+| Name field (AppInput) | Edit   | Marks form dirty; editable only if `canEdit` |
 
 ### Save Changes Button
 - Visible only when `canEdit`
@@ -563,9 +572,9 @@ Sections collapsed/expanded per date.
 - On tap: `PUT /api/v1/books/:id/categories/:id` → invalidate `['categories', bookId]` → `SuccessDialog`
 
 ### View All Entries Button
-| Element | Action | Result |
-|---|---|---|
-| "View All Entries" | Tap | Navigate to `CategoryDetailScreen` (entries list) |
+| Element             | Action | Result                                            |
+|---------------------|--------|---------------------------------------------------|
+| "View All Entries"  | Tap    | Navigate to `CategoryDetailScreen` (entries list) |
 
 ### Danger Zone
 - Visible only when `canDelete`
@@ -573,10 +582,10 @@ Sections collapsed/expanded per date.
 - On confirm: `DELETE /api/v1/books/:id/categories/:id` → `router.back()`
 
 ### States
-| State | Behaviour |
-|---|---|
-| Loading (first paint) | `ActivityIndicator` while categories fetch |
-| View-only collaborator | Name field read-only; Save button hidden; Danger Zone hidden |
+| State                   | Behaviour                                                     |
+|-------------------------|---------------------------------------------------------------|
+| Loading (first paint)   | `ActivityIndicator` while categories fetch                    |
+| View-only collaborator  | Name field read-only; Save button hidden; Danger Zone hidden  |
 
 ---
 
@@ -585,27 +594,27 @@ Sections collapsed/expanded per date.
 **Status: Complete.**
 
 ### Header
-| Element | Action | Result |
-|---|---|---|
-| Back (‹) | Tap | Navigate back |
-| "Reports" + book name | — | Display only |
+| Element                | Action | Result        |
+|------------------------|--------|---------------|
+| Back (‹)               | Tap    | Navigate back |
+| "Reports" + book name  | —      | Display only  |
 
 ### Date Filter Chips (horizontal scroll)
-| Chip | Effect |
-|---|---|
-| This Month | Sets `date_from` = first day of current month, `date_to` = today |
-| Last Month | Sets `date_from` / `date_to` to previous calendar month |
-| Last 3 Months | Sets `date_from` = 3 months ago (first of month), `date_to` = today |
-| All Time | No date filter — loads all entries |
-| Custom | Shows two date picker buttons (From / To) using DateTimePickerModal |
+| Chip             | Effect                                                                           |
+|------------------|----------------------------------------------------------------------------------|
+| This Month       | Sets `date_from` = first day of current month, `date_to` = today                |
+| Last Month       | Sets `date_from` / `date_to` to previous calendar month                          |
+| Last 3 Months    | Sets `date_from` = 3 months ago (first of month), `date_to` = today             |
+| All Time         | No date filter — loads all entries                                               |
+| Custom           | Shows two date picker buttons (From / To) using DateTimePickerModal              |
 
 Selecting any chip triggers a React Query refetch with the new date range.
 
 ### Custom Date Pickers (visible only when "Custom" chip is active)
-| Element | Action | Result |
-|---|---|---|
-| "From" button | Tap | Opens DateTimePickerModal (date mode) → sets `customFrom` |
-| "To" button | Tap | Opens DateTimePickerModal (date mode) → sets `customTo` |
+| Element        | Action | Result                                                    |
+|----------------|--------|-----------------------------------------------------------|
+| "From" button  | Tap    | Opens DateTimePickerModal (date mode) → sets `customFrom` |
+| "To" button    | Tap    | Opens DateTimePickerModal (date mode) → sets `customTo`   |
 
 ### Date Range Label
 - Displays the active period (e.g. "Jan 1, 2025 – May 12, 2025") or "All entries"
@@ -631,20 +640,20 @@ All values are computed client-side from the filtered entries list.
 ### Export Section
 Data loaded: React Query key `['report-entries', bookId, dateFrom, dateTo]` via `GET /api/v1/books/:id/entries?date_from=&date_to=`.
 
-| Button | Action | Result |
-|---|---|---|
-| **Export as PDF** (red border) | Tap | `FileSystem.downloadAsync` → `GET /api/v1/books/:id/report/pdf?date_from=&date_to=` with Bearer token → saves to cache dir → `Sharing.shareAsync()` opens native share sheet |
-| **Export as Excel** (green border) | Tap | Same flow but `GET /api/v1/books/:id/report/excel` → `.xlsx` → `Sharing.shareAsync()` |
+| Button                              | Action | Result                                                                                                                                                   |
+|-------------------------------------|--------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Export as PDF** (red border)      | Tap    | `FileSystem.downloadAsync` → `GET /api/v1/books/:id/report/pdf?date_from=&date_to=` with Bearer token → saves to cache dir → `Sharing.shareAsync()` opens native share sheet |
+| **Export as Excel** (green border)  | Tap    | Same flow but `GET /api/v1/books/:id/report/excel` → `.xlsx` → `Sharing.shareAsync()`                                                                   |
 
 Both buttons show `ActivityIndicator` while downloading.  Both buttons disabled while an export is in progress.  Share sheet includes: Save to Files, WhatsApp, Email, Google Drive, Dropbox, and any installed app that handles PDF or XLSX.
 
 ### Loading / Error / Empty States
-| State | UI |
-|---|---|
-| Loading entries | ActivityIndicator next to date range label |
-| No entries in range | "No entries for this period" in entries section |
-| Export error | `Alert.alert('Export Failed', message)` |
-| Sharing unavailable | `Alert.alert('File Saved', localPath)` |
+| State                  | UI                                                |
+|------------------------|---------------------------------------------------|
+| Loading entries        | ActivityIndicator next to date range label        |
+| No entries in range    | "No entries for this period" in entries section   |
+| Export error           | `Alert.alert('Export Failed', message)`           |
+| Sharing unavailable    | `Alert.alert('File Saved', localPath)`            |
 
 ---
 
@@ -653,45 +662,45 @@ Both buttons show `ActivityIndicator` while downloading.  Both buttons disabled 
 **Purpose:** Configure which fields are visible in the EntryForm for this book.
 
 ### Header
-| Element | Action | Result |
-|---|---|---|
-| Back (←) | Tap | Navigate back |
-| Book name | — | Display |
+| Element    | Action | Result        |
+|------------|--------|---------------|
+| Back (←)   | Tap    | Navigate back |
+| Book name  | —      | Display       |
 
 ### Field Visibility Toggles
 Each toggle calls `PATCH /api/v1/books/:id/field-settings` on change.
 
-| Toggle | Controls |
-|---|---|
-| Show Category | Hides/shows category picker in EntryForm |
-| Show Customer | Hides/shows contact picker (customer tab) |
-| Show Supplier | Hides/shows contact picker (supplier tab) |
-| Show Attachment | Hides/shows attachment picker in EntryForm |
+| Toggle             | Controls                                        |
+|--------------------|-------------------------------------------------|
+| Show Category      | Hides/shows category picker in EntryForm        |
+| Show Customer      | Hides/shows contact picker (customer tab)       |
+| Show Supplier      | Hides/shows contact picker (supplier tab)       |
+| Show Attachment    | Hides/shows attachment picker in EntryForm      |
 
 ### Tabs in BookSettingsScreen
 BookSettingsScreen has multiple tabs:
 
-| Tab | Content |
-|---|---|
-| **Fields** | Toggle field visibility (above) |
-| **Categories** | List all categories; add / rename / delete |
-| **Customers** | List all customers; add / edit / delete |
-| **Suppliers** | List all suppliers; add / edit / delete |
-| **Payment Modes** | List payment modes; add / reorder / delete |
+| Tab                 | Content                                      |
+|---------------------|----------------------------------------------|
+| **Fields**          | Toggle field visibility (above)              |
+| **Categories**      | List all categories; add / rename / delete   |
+| **Customers**       | List all customers; add / edit / delete      |
+| **Suppliers**       | List all suppliers; add / edit / delete      |
+| **Payment Modes**   | List payment modes; add / reorder / delete   |
 
 #### Categories Tab
-| Element | Action | Result |
-|---|---|---|
-| "+ Add Category" (FAB) | Tap | Opens add-category modal → `POST /api/v1/books/:id/categories` |
-| Category row | Tap | Navigate to `CategoryProfileScreen` |
+| Element                  | Action | Result                                                          |
+|--------------------------|--------|-----------------------------------------------------------------|
+| "+ Add Category" (FAB)   | Tap    | Opens add-category modal → `POST /api/v1/books/:id/categories`  |
+| Category row             | Tap    | Navigate to `CategoryProfileScreen`                             |
 
 #### Customers / Suppliers Tabs
-| Element | Action | Result |
-|---|---|---|
-| "+ Add Contact" | Tap | Opens add-contact form |
-| Contact row | Tap | Opens contact detail / edit screen |
-| Contact row ⋮ | Tap | Opens `ContactMenuSheet` (Edit / Delete) |
-| **Delete** | Tap | Opens `DeleteContactSheet` confirm → `DELETE` |
+| Element           | Action | Result                                       |
+|-------------------|--------|----------------------------------------------|
+| "+ Add Contact"   | Tap    | Opens add-contact form                       |
+| Contact row       | Tap    | Opens contact detail / edit screen           |
+| Contact row ⋮    | Tap    | Opens `ContactMenuSheet` (Edit / Delete)     |
+| **Delete**        | Tap    | Opens `DeleteContactSheet` confirm → `DELETE` |
 
 ---
 
@@ -700,90 +709,90 @@ BookSettingsScreen has multiple tabs:
 Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 
 ### Avatar Card
-| Element | Action | Result |
-|---|---|---|
-| Avatar / initials | — | Display only |
-| Full name | — | Display only |
-| Email | — | Display only |
-| Admin badge | — | Shown if superadmin |
-| **Tier chip** (Free / 👑 Pro / 👑 Enterprise) | Tap | Navigate to `/(app)/settings/subscription` |
-| **"Edit Profile"** button | Tap | Navigate to `/(app)/settings/profile` |
+| Element                                        | Action | Result                                     |
+|------------------------------------------------|--------|--------------------------------------------|
+| Avatar / initials                              | —      | Display only                               |
+| Full name                                      | —      | Display only                               |
+| Email                                          | —      | Display only                               |
+| Admin badge                                    | —      | Shown if superadmin                        |
+| **Tier chip** (Free / 👑 Pro / 👑 Enterprise)  | Tap    | Navigate to `/(app)/settings/subscription` |
+| **"Edit Profile"** button                      | Tap    | Navigate to `/(app)/settings/profile`      |
 
 ### Account Section
-| Row | Action | Result |
-|---|---|---|
-| **Profile** | Tap | Navigate to `/(app)/settings/profile` |
-| **Business Settings** | Tap | Navigate to `/(app)/settings/business` |
-| **Currency** | Tap | Navigate to `/(app)/settings/currency` |
+| Row                    | Action | Result                                  |
+|------------------------|--------|-----------------------------------------|
+| **Profile**            | Tap    | Navigate to `/(app)/settings/profile`   |
+| **Business Settings**  | Tap    | Navigate to `/(app)/settings/business`  |
+| **Currency**           | Tap    | Navigate to `/(app)/settings/currency`  |
 
 ### Subscription Section
-| Row | Icon | Action | Result |
-|---|---|---|---|
-| **Subscription & Plans** | Diamond icon (tier color) | Tap | Navigate to `/(app)/settings/subscription` |
+| Row                       | Icon                       | Action | Result                                     |
+|---------------------------|----------------------------|--------|--------------------------------------------|
+| **Subscription & Plans**  | Diamond icon (tier color)  | Tap    | Navigate to `/(app)/settings/subscription` |
 
 ### App Section
-| Row | Crown? | Action | Result |
-|---|---|---|---|
-| **Manage Access** | 👑 Pro (if free) | Tap | Navigate to manage-access (if Pro+) OR subscription screen (if free) |
-| **Notifications** | — | Tap | Navigate to notifications |
-| Privacy & Security | — | TODO | — |
-| **Backup & Sync** | 👑 Pro (if free) | Tap | Navigate to subscription (if free), TODO otherwise |
-| Language | — | TODO | — |
+| Row                   | Crown?             | Action | Result                                                               |
+|-----------------------|--------------------|--------|----------------------------------------------------------------------|
+| **Manage Access**     | 👑 Pro (if free)  | Tap    | Navigate to manage-access (if Pro+) OR subscription screen (if free) |
+| **Notifications**     | —                  | Tap    | Navigate to notifications                                            |
+| Privacy & Security    | —                  | TODO   | —                                                                    |
+| **Backup & Sync**     | 👑 Pro (if free)  | Tap    | Navigate to subscription (if free), TODO otherwise                   |
+| Language              | —                  | TODO   | —                                                                    |
 
 ### Support Section (all TODO)
-| Row | Intended Action |
-|---|---|
-| Help & FAQ | Open help center |
-| Rate the App | Open app store rating |
-| Share App | Open OS share sheet |
+| Row           | Intended Action         |
+|---------------|-------------------------|
+| Help & FAQ    | Open help center        |
+| Rate the App  | Open app store rating   |
+| Share App     | Open OS share sheet     |
 
 ### Logout
-| Element | Action | Result |
-|---|---|---|
-| **Logout** button / row | Tap | Alert "Are you sure?" → confirm → `supabase.auth.signOut()` + `clearUser()` → redirect to `/login` |
+| Element                  | Action | Result                                                                                    |
+|--------------------------|--------|-------------------------------------------------------------------------------------------|
+| **Logout** button / row  | Tap    | Alert "Are you sure?" → confirm → `supabase.auth.signOut()` + `clearUser()` → redirect to `/login` |
 
 ---
 
 ## 13. ProfileScreen — `/(app)/settings/profile`
 
 ### Header
-| Element | Action | Result |
-|---|---|---|
-| Back (←) | Tap | Navigate back |
-| "Profile" title | — | Display |
+| Element          | Action | Result        |
+|------------------|--------|---------------|
+| Back (←)         | Tap    | Navigate back |
+| "Profile" title  | —      | Display       |
 
 ### Avatar Card (overlapping top)
-| Element | Action | Result |
-|---|---|---|
-| Avatar image or initials | Tap | Opens **Photo Picker Sheet** |
-| Camera icon (overlay) | Tap | Opens Photo Picker Sheet |
+| Element                   | Action | Result                       |
+|---------------------------|--------|------------------------------|
+| Avatar image or initials  | Tap    | Opens **Photo Picker Sheet** |
+| Camera icon (overlay)     | Tap    | Opens Photo Picker Sheet     |
 
 ### Photo Picker Sheet
-| Option | Action | Result |
-|---|---|---|
-| **View Photo** | Tap | Opens image viewer modal (full-screen) |
-| **Take Photo** | Tap | Opens camera → captured image uploaded via `useUploadAvatar()` |
-| **Choose from Gallery** | Tap | Opens image library → selected image uploaded |
-| Cancel | Tap | Closes sheet |
+| Option                   | Action | Result                                                         |
+|--------------------------|--------|----------------------------------------------------------------|
+| **View Photo**           | Tap    | Opens image viewer modal (full-screen)                         |
+| **Take Photo**           | Tap    | Opens camera → captured image uploaded via `useUploadAvatar()` |
+| **Choose from Gallery**  | Tap    | Opens image library → selected image uploaded                  |
+| Cancel                   | Tap    | Closes sheet                                                   |
 
 ### Form Fields
-| Field | Editable | Validation |
-|---|---|---|
-| Full Name | Yes | Required, non-empty |
-| Email | No (read-only) | Shows "Verified" badge |
-| Phone Number | Yes | Optional |
+| Field          | Editable        | Validation              |
+|----------------|-----------------|-------------------------|
+| Full Name      | Yes             | Required, non-empty     |
+| Email          | No (read-only)  | Shows "Verified" badge  |
+| Phone Number   | Yes             | Optional                |
 
 ### Update Button
-| State | Behavior |
-|---|---|
-| Disabled | No changes made or save in progress |
-| Enabled | Tap → `useUpdateProfile().mutate(...)` → `PUT /api/v1/profile` → success toast |
+| State     | Behavior                                                                       |
+|-----------|--------------------------------------------------------------------------------|
+| Disabled  | No changes made or save in progress                                            |
+| Enabled   | Tap → `useUpdateProfile().mutate(...)` → `PUT /api/v1/profile` → success toast |
 
 ### Image Viewer Modal
-| Element | Action | Result |
-|---|---|---|
-| Full-screen photo | — | Display current avatar |
-| Close (✕) | Tap | Closes modal |
+| Element            | Action | Result                  |
+|--------------------|--------|-------------------------|
+| Full-screen photo  | —      | Display current avatar  |
+| Close (✕)          | Tap    | Closes modal            |
 
 ### Loading State
 - Skeleton loader while profile is fetching
@@ -822,11 +831,11 @@ Each card shows:
 - Feature list with ✓ (included, primary color) / ✗ (excluded, muted)
 - **"Activate [Plan]"** button OR **"✓ Active"** outline button (current plan)
 
-| Plan | Color | Crown | Price |
-|---|---|---|---|
-| Free | C.primary (teal) | — | $0/forever |
-| Pro | #F59E0B (amber) | 👑 | $4.99/mo |
-| Enterprise | #7C3AED (purple) | 👑 | $12.99/mo |
+| Plan        | Color              | Crown | Price       |
+|-------------|--------------------|-------|-------------|
+| Free        | C.primary (teal)   | —     | $0/forever  |
+| Pro         | #F59E0B (amber)    | 👑    | $4.99/mo    |
+| Enterprise  | #7C3AED (purple)   | 👑    | $12.99/mo   |
 
 ### Activate Flow (no payment gateway yet)
 1. Tap "Activate Pro" / "Activate Enterprise"
@@ -834,6 +843,25 @@ Each card shows:
 3. On confirm → `PATCH /api/v1/profile/subscription { subscription_tier }` 
 4. `onSuccess`: `setUser(updatedProfile, session)` (updates authStore + SecureStore) + `qc.setQueryData(['profile'], updatedProfile)`
 5. UI updates instantly — current plan badge changes
+
+### Post-Upgrade: UpgradeSyncSheet (welcome modal)
+Triggered when a **free-tier user** activates any paid plan. Skipped for cycle-only switches.
+
+**On open:** calls `getCloudDeltaStats()` which fetches cloud books + entries and diffs against local SQLite.
+
+- While loading: spinner row "Comparing with cloud…" shown below subtitle
+- **Delta chips** (shown after load, 3 possible variants):
+  - `upload-cloud` icon (accent color) — **X new entries** / **X new books** → items in local not in cloud (new or edited since last sync)
+  - `check-circle` icon (green `#10B981`) — **X already synced** → local entries with matching cloud fingerprint
+  - `cloud` icon (amber `#F59E0B`) — **X only in cloud** → cloud entries not found locally (deleted locally or old versions of edited entries)
+- Subtitle text adapts:
+  - `toUpload > 0`: "You have changes since your last sync. Upload to keep your cloud backup up to date."
+  - `toUpload === 0 && onlyInCloud > 0`: "Your local data is synced. The cloud has N entries not on this device."
+  - `toUpload === 0 && onlyInCloud === 0`: "Your local data is already fully synced with the cloud."
+  - No previous cloud data (fresh upgrade): "You have local data on this device. Upload it to the cloud now."
+- **Upload button**: "Upload N Item(s)" (only shown if `toUpload > 0`); pressing → `syncLocalToCloud()` → progress text → done state
+- **"Already in Sync" button** (green): shown when `toUpload === 0` (nothing to upload)
+- **"Later"** outline button: always present when upload is available; dismisses sheet to success dialog
 
 ### Downgrade Flow
 1. Tap "Downgrade to Free"
@@ -851,17 +879,17 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 - `validate()` — returns `true` if form passes validation
 
 ### Field render conditions
-| Field | Renders when |
-|---|---|
-| Type toggle (In/Out) | `showTypeToggle` prop is `true` (EditEntry only) |
-| Category picker | `book.show_category === true` |
-| Contact picker | `book.show_customer === true` OR `book.show_supplier === true` |
-| Attachment picker | `book.show_attachment === true` |
-| Payment Mode | Always |
-| Amount | Always |
-| Remark | Always |
-| Date | Always |
-| Time | Always |
+| Field                  | Renders when                                                   |
+|------------------------|----------------------------------------------------------------|
+| Type toggle (In/Out)   | `showTypeToggle` prop is `true` (EditEntry only)               |
+| Category picker        | `book.show_category === true`                                  |
+| Contact picker         | `book.show_customer === true` OR `book.show_supplier === true` |
+| Attachment picker      | `book.show_attachment === true`                                |
+| Payment Mode           | Always                                                         |
+| Amount                 | Always                                                         |
+| Remark                 | Always                                                         |
+| Date                   | Always                                                         |
+| Time                   | Always                                                         |
 
 ### Attachment rules
 - Images: compressed to 1000 px wide, 0.55 JPEG quality before upload
@@ -874,40 +902,40 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 
 ## Known TODOs / Incomplete Features
 
-| Feature | Screen | Status |
-|---|---|---|
-| Backup Entry | EntryDetailScreen ⋮ menu | Not implemented |
-| Export PDF | ReportsScreen | ✅ Complete (👑 Pro gate) |
-| Export Excel | ReportsScreen | ✅ Complete (👑 Pro gate) |
-| Subscription plans page | SubscriptionScreen | ✅ Complete |
-| Crown gates on locked features | SettingsScreen, ReportsScreen, BooksView | ✅ Complete |
-| Invite collaborator | BookDetailScreen user-plus icon | Not implemented |
-| Notifications settings | SettingsScreen | Not implemented |
-| Privacy & Security | SettingsScreen | Not implemented |
-| Backup & Sync | SettingsScreen | Not implemented |
-| Language picker | SettingsScreen | Not implemented |
-| Help & FAQ | SettingsScreen | Not implemented |
-| Rate the App | SettingsScreen | Not implemented |
-| Share App | SettingsScreen | Not implemented |
-| Business Settings | BusinessSettingsScreen | Skeleton only |
-| Currency picker | CurrencyScreen | Skeleton only |
-| Reports charts | ReportsScreen | ✅ Complete |
+| Feature                           | Screen                                    | Status                    |
+|-----------------------------------|-------------------------------------------|---------------------------|
+| Backup Entry                      | EntryDetailScreen ⋮ menu                  | Not implemented           |
+| Export PDF                        | ReportsScreen                             | ✅ Complete (👑 Pro gate) |
+| Export Excel                      | ReportsScreen                             | ✅ Complete (👑 Pro gate) |
+| Subscription plans page           | SubscriptionScreen                        | ✅ Complete               |
+| Crown gates on locked features    | SettingsScreen, ReportsScreen, BooksView  | ✅ Complete               |
+| Invite collaborator               | BookDetailScreen user-plus icon           | Not implemented           |
+| Notifications settings            | SettingsScreen                            | Not implemented           |
+| Privacy & Security                | SettingsScreen                            | Not implemented           |
+| Backup & Sync                     | SettingsScreen                            | Not implemented           |
+| Language picker                   | SettingsScreen                            | Not implemented           |
+| Help & FAQ                        | SettingsScreen                            | Not implemented           |
+| Rate the App                      | SettingsScreen                            | Not implemented           |
+| Share App                         | SettingsScreen                            | Not implemented           |
+| Business Settings                 | BusinessSettingsScreen                    | Skeleton only             |
+| Currency picker                   | CurrencyScreen                            | Skeleton only             |
+| Reports charts                    | ReportsScreen                             | ✅ Complete               |
 
 ---
 
 ## Common Error Patterns (App-wide)
 
-| Error | Trigger | Display |
-|---|---|---|
-| 401 Unauthorized | Expired/invalid JWT | Auto sign-out → redirect to login |
-| 403 Forbidden | Role mismatch | Auto sign-out → redirect to login |
-| Network error | No connectivity | Toast with message |
-| Inactive account | `is_active = false` on profile fetch | Toast + sign-out |
-| Validation (client) | Missing required field | Inline field error |
-| File too large | Attachment > 6 MB | Toast "File too large (max 6 MB)" |
-| Duplicate category | Same name in book | Toast from API error |
+| Error                | Trigger                             | Display                                |
+|----------------------|-------------------------------------|----------------------------------------|
+| 401 Unauthorized     | Expired/invalid JWT                 | Auto sign-out → redirect to login      |
+| 403 Forbidden        | Role mismatch                       | Auto sign-out → redirect to login      |
+| Network error        | No connectivity                     | Toast with message                     |
+| Inactive account     | `is_active = false` on profile fetch | Toast + sign-out                      |
+| Validation (client)  | Missing required field              | Inline field error                     |
+| File too large       | Attachment > 6 MB                   | Toast "File too large (max 6 MB)"      |
+| Duplicate category   | Same name in book                   | Toast from API error                   |
 
 ---
 
-*Last updated: 2026-05-12*
+*Last updated: 2026-05-18*
 *Update this file whenever any screen, button, navigation flow, or API call changes.*

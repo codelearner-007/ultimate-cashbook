@@ -28,18 +28,21 @@ async function getDb() {
     `);
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS entries (
-        id           TEXT PRIMARY KEY,
-        book_id      TEXT NOT NULL,
-        user_id      TEXT NOT NULL,
-        type         TEXT NOT NULL,
-        amount       REAL NOT NULL,
-        remark       TEXT,
-        category     TEXT,
-        payment_mode TEXT NOT NULL DEFAULT 'cash',
-        contact_name TEXT,
-        entry_date   TEXT NOT NULL,
-        entry_time   TEXT NOT NULL DEFAULT '00:00',
-        created_at   TEXT NOT NULL,
+        id                  TEXT PRIMARY KEY,
+        book_id             TEXT NOT NULL,
+        user_id             TEXT NOT NULL,
+        type                TEXT NOT NULL,
+        amount              REAL NOT NULL,
+        remark              TEXT,
+        category            TEXT,
+        payment_mode        TEXT NOT NULL DEFAULT 'cash',
+        contact_name        TEXT,
+        entry_date          TEXT NOT NULL,
+        entry_time          TEXT NOT NULL DEFAULT '00:00',
+        attachment_url      TEXT,
+        attachment_path     TEXT,
+        attachment_provider TEXT,
+        created_at          TEXT NOT NULL,
         FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
       );
     `);
@@ -105,12 +108,16 @@ async function getDb() {
         UNIQUE (book_id, name)
       );
     `);
-    // Add ID columns introduced after initial schema — safe to run every time
+    // Add columns introduced after initial schema — safe to run every time (errors ignored)
     for (const ddl of [
-      'ALTER TABLE entries ADD COLUMN customer_id     TEXT',
-      'ALTER TABLE entries ADD COLUMN supplier_id     TEXT',
-      'ALTER TABLE entries ADD COLUMN category_id     TEXT',
-      'ALTER TABLE entries ADD COLUMN payment_mode_id TEXT',
+      'ALTER TABLE entries ADD COLUMN customer_id          TEXT',
+      'ALTER TABLE entries ADD COLUMN supplier_id          TEXT',
+      'ALTER TABLE entries ADD COLUMN category_id          TEXT',
+      'ALTER TABLE entries ADD COLUMN payment_mode_id      TEXT',
+      'ALTER TABLE entries ADD COLUMN attachment_url       TEXT',
+      'ALTER TABLE entries ADD COLUMN attachment_path      TEXT',
+      'ALTER TABLE entries ADD COLUMN attachment_provider  TEXT',
+      'ALTER TABLE books   ADD COLUMN cloud_id             TEXT',
     ]) {
       await db.execAsync(ddl).catch(() => {});
     }
@@ -329,21 +336,26 @@ export async function localCreateEntry(bookId, payload) {
         category, category_id,
         payment_mode, payment_mode_id,
         contact_name, customer_id, supplier_id,
-        entry_date, entry_time, created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        entry_date, entry_time,
+        attachment_url, attachment_path, attachment_provider,
+        created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       id, bookId, currentUserId(),
       payload.type, payload.amount,
-      payload.remark          ?? null,
-      payload.category        ?? null,
-      payload.category_id     ?? null,
-      payload.payment_mode    ?? 'cash',
-      payload.payment_mode_id ?? null,
-      payload.contact_name    ?? null,
-      payload.customer_id     ?? null,
-      payload.supplier_id     ?? null,
+      payload.remark              ?? null,
+      payload.category            ?? null,
+      payload.category_id         ?? null,
+      payload.payment_mode        ?? 'cash',
+      payload.payment_mode_id     ?? null,
+      payload.contact_name        ?? null,
+      payload.customer_id         ?? null,
+      payload.supplier_id         ?? null,
       payload.entry_date,
-      payload.entry_time      ?? '00:00',
+      payload.entry_time          ?? '00:00',
+      payload.attachment_url      ?? null,
+      payload.attachment_path     ?? null,
+      payload.attachment_provider ?? null,
       ts,
     ],
   );
@@ -360,7 +372,7 @@ export async function localUpdateEntry(bookId, entryId, payload) {
   const old    = await db.getFirstAsync(`SELECT * FROM entries WHERE id = ?`, [entryId]);
   const fields = [];
   const values = [];
-  for (const k of ['type', 'amount', 'remark', 'category', 'category_id', 'payment_mode', 'payment_mode_id', 'contact_name', 'customer_id', 'supplier_id', 'entry_date', 'entry_time']) {
+  for (const k of ['type', 'amount', 'remark', 'category', 'category_id', 'payment_mode', 'payment_mode_id', 'contact_name', 'customer_id', 'supplier_id', 'entry_date', 'entry_time', 'attachment_url', 'attachment_path', 'attachment_provider']) {
     if (payload[k] !== undefined) { fields.push(`${k} = ?`); values.push(payload[k]); }
   }
   if (fields.length) {
@@ -678,4 +690,16 @@ export async function localClearAll() {
   await db.runAsync(`DELETE FROM customers  WHERE user_id = ?`, [userId]);
   await db.runAsync(`DELETE FROM suppliers  WHERE user_id = ?`, [userId]);
   await db.runAsync(`DELETE FROM books      WHERE user_id = ?`, [userId]);
+}
+
+// ── Cloud-ID bridge (links local books to their cloud counterparts) ─────────────
+
+export async function localGetBookByCloudId(cloudId) {
+  const db = await getDb();
+  return db.getFirstAsync(`SELECT * FROM books WHERE cloud_id = ?`, [cloudId]);
+}
+
+export async function localSetBookCloudId(localId, cloudId) {
+  const db = await getDb();
+  await db.runAsync(`UPDATE books SET cloud_id = ? WHERE id = ?`, [cloudId, localId]);
 }

@@ -420,6 +420,7 @@ export default function BooksView({
   const renameBook = useRenameBook();
   const deleteBook = useDeleteBook();
 
+  const tier       = user?.subscription_tier ?? 'free';
   const bookLimit  = getLimit(user, 'books');   // 3 (free) | 15 (pro) | Infinity (business)
   const canAddBook = books.length < bookLimit;
 
@@ -673,7 +674,21 @@ export default function BooksView({
               }
             </TouchableOpacity>
             <View style={{ flex: 1 }}>
-              <Text style={s.bizName} numberOfLines={1}>{userName || 'My Account'}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+                <Text style={[s.bizName, { flexShrink: 1 }]} numberOfLines={1}>{userName || 'My Account'}</Text>
+                <TouchableOpacity
+                  onPress={() => router.push('/(app)/settings/subscription')}
+                  style={[s.tierChip, { backgroundColor: 'rgba(255,255,255,0.22)' }]}
+                  activeOpacity={0.75}
+                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                >
+                  <Text style={[s.tierChipText, {
+                    color: tier === 'pro' ? '#F59E0B' : tier === 'business' ? '#8B5CF6' : C.onPrimary,
+                  }]}>
+                    {tier === 'free' ? 'FREE' : tier === 'pro' ? 'PRO' : 'BUSINESS'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
               {sharedBooks.length > 0 ? (
                 <TouchableOpacity onPress={() => setShowWorkspaceSwitcher(true)} activeOpacity={0.7}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
@@ -721,13 +736,18 @@ export default function BooksView({
       {ListHeader}
 
       {/* ── Free tier banner ────────────────────────────────────────────── */}
-      {(user?.subscription_tier ?? 'free') === 'free' && (
-        <View style={[s.freeBanner, { backgroundColor: C.cashInLight, borderColor: C.cashIn }]}>
+      {tier === 'free' && (
+        <TouchableOpacity
+          style={[s.freeBanner, { backgroundColor: C.cashInLight, borderColor: C.cashIn }]}
+          onPress={() => router.push('/(app)/settings/subscription')}
+          activeOpacity={0.8}
+        >
           <Feather name="smartphone" size={13} color={C.cashIn} />
           <Text style={[s.freeBannerText, { color: C.cashIn, fontFamily: Font.medium }]}>
-            Your data is stored only on this device. Upgrade to back it up to the cloud.
+            Free plan · Data stored on this device only. Tap to upgrade.
           </Text>
-        </View>
+          <Feather name="chevron-right" size={13} color={C.cashIn} />
+        </TouchableOpacity>
       )}
 
       {/* ── Pending invitations banner ──────────────────────────────────── */}
@@ -1018,6 +1038,9 @@ const makeStyles = (C, Font) => StyleSheet.create({
   bizIconText: { fontSize: 17, fontFamily: Font.extraBold, color: C.onPrimary },
   bizName:     { fontSize: 15, fontFamily: Font.bold,      color: C.onPrimary,      lineHeight: 22 },
   bizSub:      { fontSize: 12, fontFamily: Font.regular,   color: C.onPrimaryMuted, lineHeight: 18, marginTop: 1 },
+
+  tierChip:     { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  tierChipText: { fontSize: 10, fontFamily: Font.bold, letterSpacing: 0.8, lineHeight: 14 },
 
   iconBtn:      { width: 44, height: 44, borderRadius: 22, backgroundColor: C.onPrimaryIconBg, alignItems: 'center', justifyContent: 'center' },
   avatarCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.onPrimaryIconBg, borderWidth: 2, borderColor: C.onPrimarySubtle, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },

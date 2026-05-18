@@ -6,3 +6,5 @@ export async function registerPushToken() {}
 export function addNotificationTapListener(_cb) {
   return { remove: () => {} };
 }
+
+export function scheduleLocalNotification() {}

@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  StatusBar, ScrollView, Alert,
+  StatusBar, ScrollView, Alert, Animated,
 } from 'react-native';
 import * as Network from 'expo-network';
 import { Feather } from '@expo/vector-icons';
@@ -12,7 +12,7 @@ import { useTheme } from '../hooks/useTheme';
 import { useAuthStore } from '../store/authStore';
 import { useSyncStore }  from '../store/syncStore';
 import { Font } from '../constants/fonts';
-import { getLocalStats, syncLocalToCloud } from '../lib/syncManager';
+import { getLocalStats, syncLocalToCloud, getCloudDeltaStats } from '../lib/syncManager';
 import { localClearAll } from '../lib/localDb';
 import { canAccess } from '../lib/canAccess';
 import SuccessDialog from '../components/ui/SuccessDialog';
@@ -81,27 +81,51 @@ export default function BackupSyncScreen() {
   const [stats,        setStats]        = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [netState,     setNetState]     = useState(null);
+  const [delta,        setDelta]        = useState(null);
+  const [deltaLoading, setDeltaLoading] = useState(true);
   const [showSuccess,     setShowSuccess]     = useState(false);
-  const [syncResult,      setSyncResult]      = useState({ synced: 0, skipped: 0 });
+  const [syncResult,      setSyncResult]      = useState({ synced: 0, skipped: 0, alreadySynced: 0 });
   const [showSyncConfirm,  setShowSyncConfirm]  = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing,       setIsClearing]       = useState(false);
 
-  // Load local stats + network state
+  const dotOpacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!isOnline) { dotOpacity.setValue(1); return; }
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(dotOpacity, { toValue: 0.15, duration: 800, useNativeDriver: true }),
+        Animated.timing(dotOpacity, { toValue: 1,    duration: 800, useNativeDriver: true }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [isOnline]);
+
+  // Load local stats + network state + cloud delta in parallel
   useEffect(() => {
     let mounted = true;
     (async () => {
-      const [s, net] = await Promise.all([
+      const [s, net, d] = await Promise.all([
         getLocalStats(),
         Network.getNetworkStateAsync().catch(() => null),
+        getCloudDeltaStats(),
       ]);
-      if (mounted) { setStats(s); setNetState(net); setStatsLoading(false); }
+      if (mounted) {
+        setStats(s);
+        setNetState(net);
+        setStatsLoading(false);
+        setDelta(d);
+        setDeltaLoading(false);
+      }
     })();
     return () => { mounted = false; };
   }, []);
 
+  const isAlreadySynced = !deltaLoading && delta !== null && delta.toUpload === 0 && (stats?.total ?? 0) > 0;
+
   const handleSync = useCallback(() => {
-    if (isSyncing) return;
+    if (isSyncing || isAlreadySynced) return;
     if (!isOnline) {
       Alert.alert('No connection', 'Please connect to the internet to sync your data.');
       return;
@@ -115,7 +139,7 @@ export default function BackupSyncScreen() {
       return;
     }
     setShowSyncConfirm(true);
-  }, [isSyncing, isOnline, canSync, stats]);
+  }, [isSyncing, isAlreadySynced, isOnline, canSync, stats]);
 
   const doSync = useCallback(async () => {
     startSync();
@@ -127,9 +151,10 @@ export default function BackupSyncScreen() {
       finishSync(ts);
       setShowSyncConfirm(false);
       qc.invalidateQueries();
-      const newStats = await getLocalStats();
+      const [newStats, newDelta] = await Promise.all([getLocalStats(), getCloudDeltaStats()]);
       setStats(newStats);
-      setSyncResult({ synced: result.synced, skipped: result.skipped });
+      setDelta(newDelta);
+      setSyncResult({ synced: result.synced, skipped: result.skipped, alreadySynced: result.alreadySynced ?? 0 });
       setShowSuccess(true);
     } catch (err) {
       setShowSyncConfirm(false);
@@ -179,7 +204,7 @@ export default function BackupSyncScreen() {
         {/* ── Status card ── */}
         <View style={[s.card, { borderColor: isOnline ? C.cashIn + '66' : C.danger + '66' }]}>
           <View style={s.statusRow}>
-            <View style={[s.statusDot, { backgroundColor: isOnline ? C.cashIn : C.danger }]} />
+            <Animated.View style={[s.statusDot, { backgroundColor: isOnline ? C.cashIn : C.danger, opacity: dotOpacity }]} />
             <Text style={[s.statusText, { color: C.text, fontFamily: Font.semiBold }]}>
               {isOnline ? 'Online' : 'Offline'}
             </Text>
@@ -262,14 +287,27 @@ export default function BackupSyncScreen() {
           <View style={s.actionsCol}>
             {/* Sync Now */}
             <TouchableOpacity
-              style={[s.syncBtn, { backgroundColor: isSyncing ? C.primaryLight : C.primary }]}
+              style={[
+                s.syncBtn,
+                {
+                  backgroundColor: isSyncing
+                    ? C.primaryLight
+                    : isAlreadySynced
+                      ? C.cashInLight
+                      : C.primary,
+                },
+              ]}
               onPress={handleSync}
-              disabled={isSyncing}
+              disabled={isSyncing || isAlreadySynced}
               activeOpacity={0.85}
             >
-              <Feather name={isSyncing ? 'loader' : 'upload-cloud'} size={18} color={isSyncing ? C.primary : '#fff'} />
-              <Text style={[s.syncBtnText, { color: isSyncing ? C.primary : '#fff', fontFamily: Font.bold }]}>
-                {isSyncing ? 'Syncing…' : 'Sync Local Data to Cloud'}
+              <Feather
+                name={isSyncing ? 'loader' : isAlreadySynced ? 'check-circle' : 'upload-cloud'}
+                size={18}
+                color={isSyncing ? C.primary : isAlreadySynced ? C.cashIn : '#fff'}
+              />
+              <Text style={[s.syncBtnText, { color: isSyncing ? C.primary : isAlreadySynced ? C.cashIn : '#fff', fontFamily: Font.bold }]}>
+                {isSyncing ? 'Syncing…' : isAlreadySynced ? 'All Data Synced' : 'Sync Local Data to Cloud'}
               </Text>
             </TouchableOpacity>
 
@@ -326,7 +364,13 @@ export default function BackupSyncScreen() {
         visible={showSuccess}
         onDismiss={() => setShowSuccess(false)}
         title="Sync Complete"
-        subtitle={`${syncResult.synced} item(s) uploaded to cloud.${syncResult.skipped > 0 ? ` ${syncResult.skipped} skipped.` : ''}`}
+        subtitle={
+          syncResult.synced === 0 && syncResult.alreadySynced > 0
+            ? 'Everything is already synced to cloud. No new data to upload.'
+            : syncResult.synced > 0 && syncResult.alreadySynced > 0
+              ? `${syncResult.synced} new item(s) uploaded. ${syncResult.alreadySynced} item(s) were already synced.${syncResult.skipped > 0 ? ` ${syncResult.skipped} skipped.` : ''}`
+              : `${syncResult.synced} item(s) uploaded to cloud.${syncResult.skipped > 0 ? ` ${syncResult.skipped} skipped.` : ''}`
+        }
       />
     </SafeAreaView>
   );

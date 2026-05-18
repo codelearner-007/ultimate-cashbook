@@ -228,9 +228,6 @@ function PlanCard({ plan, isCurrent, isSwitchCycle, isActivating, billing, onAct
           {isActivating
             ? <ActivityIndicator color="#fff" size="small" />
             : <>
-                <Text style={{ fontSize: 14, lineHeight: 18 }}>
-                  {billing === 'yearly' ? '💰' : '🔄'}
-                </Text>
                 <Text style={[cardStyles.btnText, { fontFamily: Font.bold }]}>
                   Switch to {billing === 'yearly' ? 'Yearly' : 'Monthly'}
                 </Text>
@@ -355,10 +352,6 @@ function ActivatePlanSheet({ visible, plan, billing, currentTier, isLoading, onD
     : isCycleSwitch ? `Switch to ${isToYearly ? 'Yearly' : 'Monthly'}`
     : isDowngrade   ? 'Downgrade'
     : `Activate ${plan.name}`;
-  const confirmEmoji = isCycleSwitch ? (isToYearly ? '💰' : '🔄')
-    : isDowngrade ? '⬇'
-    : '👑';
-
   return (
     <Modal transparent visible animationType="none" onRequestClose={close} statusBarTranslucent>
       <Animated.View style={[StyleSheet.absoluteFill, sheetS.dim, { opacity: bgOpacity }]}>
@@ -368,13 +361,6 @@ function ActivatePlanSheet({ visible, plan, billing, currentTier, isLoading, onD
       <View style={sheetS.anchor} pointerEvents="box-none">
         <Animated.View style={[sheetS.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
           <View style={[sheetS.handle, { backgroundColor: C.border }]} />
-
-          {/* ── Icon circle ── */}
-          <View style={sheetS.iconRow}>
-            <View style={[sheetS.iconCircle, { backgroundColor: accentColor + '18', borderColor: accentColor + '33' }]}>
-              <Text style={sheetS.iconEmoji}>{confirmEmoji}</Text>
-            </View>
-          </View>
 
           {/* ── Title ── */}
           <Text style={[sheetS.title, { color: C.text, fontFamily: Font.bold }]}>
@@ -505,10 +491,7 @@ function ActivatePlanSheet({ visible, plan, billing, currentTier, isLoading, onD
               disabled={isLoading}
               activeOpacity={0.85}
             >
-              {isLoading
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={{ fontSize: 15 }}>{confirmEmoji}</Text>
-              }
+              {isLoading && <ActivityIndicator size="small" color="#fff" />}
               <Text style={[sheetS.btnText, { color: '#fff', fontFamily: Font.bold }]}>
                 {isLoading ? 'Processing…' : confirmLabel}
                 {isCycleSwitch && isToYearly && proration && !isLoading

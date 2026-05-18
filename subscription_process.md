@@ -16,12 +16,12 @@
 | Storage | Local only | Cloud sync | Cloud sync |
 | Multi-device | No | Yes | Yes |
 | PDF / Excel Export | No | Yes | Yes |
-| Customers & Suppliers | View only | Full access | Full access |
-| Categories | View only | Full access | Full access |
+| Customers & Suppliers | Full access | Full access | Full access |
+| Categories | Full access | Full access | Full access |
 | Reports | View only (no download / share) | Full access | Full access |
 | Shared Books (Team) | No | Yes | Yes |
 | Backup History | No | 7 days | 30 days |
-| Guest Access | No | No | Up to 10 guests (View / Edit / Full — owner sets per guest) |
+| Guest Access | No | 1 guest (View / Edit / Full) | Up to 10 guests (View / Edit / Full — owner sets per guest) |
 
 ### Pricing
 
@@ -31,7 +31,7 @@
 | Pro | $4.99 / mo | $41.99 / yr | 30% off |
 | Business | $9.99 / mo | $83.99 / yr | 30% off |
 
-### Guest Access Permission Levels (Business only)
+### Guest Access Permission Levels (Pro: 1 guest · Business: up to 10 guests)
 
 | Permission | View entries | Add entries | Edit / Delete | Manage books & categories |
 |---|---|---|---|---|
@@ -161,40 +161,204 @@ RevenueCat's own dashboard lets you simulate subscription renewals, cancellation
 
 ---
 
-### Phase 4 — Feature Gates & Paywall UI
+### Phase 4 — Feature Gates, Crown Badge & Paywall UI
 
-- [ ] Build `canAccess(feature)` utility — reads `subscription_tier` from `authStore` and returns `true` / `false`
+**Golden rule for this phase:** existing code must run exactly as before for every paid user. Only the behavior for under-tier users changes. Never hide a gated element — always render it, add the crown badge, and intercept the press.
 
-  | Feature key | Free | Pro | Business |
-  |---|---|---|---|
-  | `add_book` (beyond 3) | ❌ | ❌ (beyond 15) | ✅ |
-  | `cloud_sync` | ❌ | ✅ | ✅ |
-  | `multi_device` | ❌ | ✅ | ✅ |
-  | `export_pdf_excel` | ❌ | ✅ | ✅ |
-  | `customers_suppliers_write` | ❌ | ✅ | ✅ |
-  | `categories_write` | ❌ | ✅ | ✅ |
-  | `reports_download_share` | ❌ | ✅ | ✅ |
-  | `shared_books` | ❌ | ✅ | ✅ |
-  | `backup_history` | ❌ | ✅ (7 days) | ✅ (30 days) |
-  | `guest_access` | ❌ | ❌ | ✅ (up to 10) |
+---
 
-- [ ] Build reusable `PaywallSheet` bottom sheet component:
-  - Shows what plan unlocks the feature
-  - "See Plans" button → navigates to Plans screen
-  - "Maybe Later" dismisses
+#### 4.1 — `canAccess(feature)` Utility
 
-- [ ] Wire gates at each touch point:
-  - FAB on BooksScreen: if free user has 3 books → `PaywallSheet` (Pro)
-  - Pro user has 15 books → `PaywallSheet` (Business)
-  - "+ Add" in Customers & Suppliers tab (free) → `PaywallSheet` (Pro)
-  - "+ Add" in Categories tab (free) → `PaywallSheet` (Pro)
-  - Export buttons in ReportsScreen (free) → `PaywallSheet` (Pro)
-  - Share button in ReportsScreen (free) → `PaywallSheet` (Pro)
-  - Invite Guest button (free + pro) → `PaywallSheet` (Business)
+**File:** `frontend/src/lib/subscriptionGate.js` _(new file)_
 
-- [ ] **Backend enforcement** (defence in depth — never trust client alone):
-  - `POST /api/v1/books` → check book count vs tier limit; return `403` if exceeded
-  - Export endpoints → check tier; return `403` if free
+Reads `subscription_tier` from `authStore` synchronously — no network call, no async. Returns `true` (allowed) or `false` (blocked). Also exports `bookLimit(tier)` → `3 | 15 | Infinity`.
+
+| Feature key | FREE | PRO | BUSINESS |
+|---|---|---|---|
+| `add_book` | ❌ if books ≥ 3 | ❌ if books ≥ 15 | ✅ unlimited |
+| `export_pdf_excel` | ❌ | ✅ | ✅ |
+| `reports_download_share` | ❌ | ✅ | ✅ |
+| `shared_books` | ❌ | ✅ | ✅ |
+| `backup_history` | ❌ | ✅ (7 days) | ✅ (30 days) |
+| `guest_access` | ❌ | ✅ 1 guest | ✅ up to 10 |
+| `manage_access` | ❌ | ✅ (1 guest limit) | ✅ (10 guest limit) |
+
+**Note:** Customers & Suppliers and Categories are fully available (add/edit/delete) on all tiers including Free. These are local-data features — no gate applies.
+
+`add_book` takes `bookCount` as a second argument:
+```js
+canAccess('add_book', books.length)  // returns false when limit reached for tier
+```
+
+---
+
+#### 4.2 — `CrownBadge` Reusable Component
+
+**File:** `frontend/src/components/ui/CrownBadge.jsx` _(new file)_
+
+A small visual badge placed on or next to any gated UI element. It never handles touch — the parent element intercepts the press and opens the `PaywallSheet`.
+
+**Props:**
+| Prop | Type | Values | Notes |
+|---|---|---|---|
+| `tier` | string | `'pro'` \| `'business'` | Controls color + icon |
+| `size` | string | `'sm'` (default) \| `'md'` | `sm` = 16×16, `md` = 22×22 |
+| `style` | object | — | Extra style on the wrapper |
+
+**Visual spec:**
+- Icon: `MaterialCommunityIcons` `crown` — already a dep via react-native-vector-icons
+- Pro badge: amber/gold fill `#F59E0B`, white crown icon
+- Business badge: purple fill `#7C3AED`, white crown icon
+- Shape: circle with `borderRadius: size/2`, background color, 1px white border (so it pops on any bg)
+- `sm` (16px): icon size 10; used for FAB overlay and toggle row
+- `md` (22px): icon size 14; used for button overlays and navigation rows
+
+**Usage variants (all via the same component):**
+
+| Variant | How to position |
+|---|---|
+| FAB corner overlay | Wrap FAB in `<View style={{ position:'relative' }}>`, render `<CrownBadge tier="pro" style={{ position:'absolute', top:-4, right:-4 }} />` |
+| Export / action button overlay | Same pattern — absolute top-right on button wrapper |
+| Settings row right-side inline | Render `<CrownBadge tier="pro" />` to the left of the row's right arrow, replacing the arrow |
+| Toggle switch next to label | Render `<CrownBadge tier="pro" size="sm" />` to the right of the label; Switch rendered with `disabled={true}` + 40% opacity |
+
+---
+
+#### 4.3 — `PaywallSheet` Reusable Component
+
+**File:** `frontend/src/components/ui/PaywallSheet.jsx` _(new file)_
+
+Follows the exact bottom-sheet pattern already used in `DeleteAllEntriesSheet.jsx` (handle bar, rounded top, keyboard-aware, `C.overlay` backdrop).
+
+**Props:**
+| Prop | Type | Notes |
+|---|---|---|
+| `visible` | bool | Controls sheet open/close |
+| `onClose` | fn | Called on "Maybe Later" or backdrop tap |
+| `requiredTier` | `'pro'` \| `'business'` | Controls copy and crown color |
+| `featureLabel` | string | e.g. `'PDF & Excel Export'`, `'Guest Access'` |
+
+**Layout (top → bottom inside sheet):**
+1. Handle bar (36×4, `C.border` color, centered)
+2. Large crown icon — 52×52 circle, amber bg for Pro / purple bg for Business, white crown 28px
+3. Heading: `"Upgrade to Pro"` / `"Upgrade to Business"` — `Font.bold`, 18px, `C.text`
+4. Subtext: `"Unlock [featureLabel] and more"` — `Font.regular`, 13px, `C.subtext`
+5. 3 bullet rows (Feather check icon `C.cashIn`, 13px text) — showing the top 3 benefits of the required tier (hardcoded per tier, not dynamic)
+6. Primary CTA button: `"See Plans"` — full width, `C.primary` bg, `C.onPrimary` text → `router.push('/(app)/settings/plans')`
+7. Secondary: `"Maybe Later"` — plain text link, `C.subtext`, centered → `onClose()`
+
+---
+
+#### 4.4 — Touch Point Implementation Map
+
+Every element below must: (a) always render, (b) show `CrownBadge`, (c) intercept press → `PaywallSheet` when tier is insufficient. Existing behavior for allowed tiers is untouched.
+
+---
+
+**`frontend/src/components/books/BooksView.jsx`**
+
+| Element | Current behavior | Gate condition | Crown placement | PaywallSheet tier |
+|---|---|---|---|---|
+| FAB "+" (personal workspace) | Opens "Add New Book" modal | Free AND `books.length >= 3`; OR Pro AND `books.length >= 15` | `CrownBadge size="sm"` overlaid top-right on FAB circle | `'pro'` (if Free) or `'business'` (if Pro at limit) |
+
+Implementation notes:
+- FAB is at line ~797 in `BooksView.jsx` (`onPress={() => setShowModal(true)}`)
+- Wrap press handler: `if (!canAccess('add_book', books.length)) { setPaywall({ visible: true, tier: ..., label: 'More Books' }); return; }`
+- `CrownBadge` renders conditionally only when `!canAccess('add_book', books.length)` — hidden for users within their limit
+- State: add `const [paywallConfig, setPaywall] = useState(null)` + render `<PaywallSheet>` at bottom of component
+
+---
+
+**`frontend/src/screens/ReportsScreen.jsx`**
+
+All 8 gated elements below share the same gate: `canAccess('export_pdf_excel')` and `canAccess('reports_download_share')`.
+
+| Element | Current location | Crown placement |
+|---|---|---|
+| Header PDF button | ~line 765 | `CrownBadge size="sm"` top-right overlay on button wrapper |
+| Header XLS button | ~line 772 | same |
+| Export section "Export as PDF" card | ~line 925 | `CrownBadge size="md"` top-right on card |
+| Export section "Export as Excel" card | ~line 942 | same |
+| Preview modal Download button | ~line 714 | `CrownBadge size="sm"` overlay |
+| Preview modal Share button | ~line 718 | `CrownBadge size="sm"` overlay |
+| Preview header Download icon | ~line 597 | `CrownBadge size="sm"` overlay on icon wrapper |
+| Preview header Share icon | ~line 600 | `CrownBadge size="sm"` overlay on icon wrapper |
+
+Implementation notes:
+- `featureLabel` for PaywallSheet: `'PDF & Excel Export'`
+- "Preview Report" button (`setShowPreview(true)`) is **NOT gated** — free users can view the report on screen
+- Add single `paywallVisible` state; all 8 buttons funnel to the same `PaywallSheet` instance
+
+---
+
+**`frontend/src/screens/BookSettingsScreen.jsx`**
+
+| Element | Current behavior | Gate | Crown placement | PaywallSheet label |
+|---|---|---|---|---|
+| Customers toggle (Switch) | Toggles `show_customer` field | ✅ No gate — free on all tiers | — | — |
+| Suppliers toggle (Switch) | Toggles `show_supplier` field | ✅ No gate — free on all tiers | — | — |
+| Categories toggle (Switch) | Toggles `show_category` field | ✅ No gate — free on all tiers | — | — |
+| Customers row (navigate) | → `ContactsListScreen` | ✅ No gate — free on all tiers | — | — |
+| Suppliers row (navigate) | → `ContactsListScreen` | ✅ No gate — free on all tiers | — | — |
+| Categories row (navigate) | → `CategoriesSettingsScreen` | ✅ No gate — free on all tiers | — | — |
+| Manage Access row | → `ManageSharesScreen` | `canAccess('manage_access')` — Pro+ (FREE blocked) | `CrownBadge tier="pro" size="sm"` replacing right arrow | `'Guest Access & Sharing'` |
+
+Implementation notes:
+- Only the Manage Access row is gated in this screen (for Free users)
+- Pro users can navigate in; the ManageSharesScreen itself enforces the 1-guest limit
+- Gated row: keep rendered, swap right-side Feather `chevron-right` to `<CrownBadge tier="pro">`, intercept `onPress` → `PaywallSheet`
+
+---
+
+**`frontend/src/screens/SettingsScreen.jsx`**
+
+| Element | Gate | Crown placement | PaywallSheet label |
+|---|---|---|---|
+| "Manage Access" row | `canAccess('manage_access')` — Pro+ (FREE blocked) | `CrownBadge tier="pro" size="sm"` replacing right chevron | `'Guest Access & Sharing'` |
+| "Backup & Sync" row | `canAccess('backup_history')` — Pro+ | `CrownBadge tier="pro" size="sm"` replacing right chevron | `'Backup & Sync'` |
+
+---
+
+**`frontend/src/screens/BookDetailScreen.jsx`**
+
+| Element | Gate | Crown placement | PaywallSheet label |
+|---|---|---|---|
+| "Manage Shares" icon (header, ~line 567) | `canAccess('manage_access')` — Pro+ (FREE blocked) | `CrownBadge tier="pro" size="sm"` overlaid top-right on icon button | `'Guest Access & Sharing'` |
+
+---
+
+**`frontend/src/screens/CategoriesSettingsScreen.jsx`**
+
+No subscription gates apply. Free users have full CRUD on categories.
+
+---
+
+**`frontend/src/screens/ContactsListScreen.jsx`** (both customers and suppliers)
+
+No subscription gates apply. Free users have full CRUD on customers and suppliers.
+
+---
+
+#### 4.5 — Behavioral Rules (Non-Negotiable)
+
+1. **Never hide gated elements.** The crown badge is the signal. Hiding breaks UX and discoverability of upgrade prompts.
+2. **Existing paid-tier behavior is 100% unchanged.** The gate check is a no-op for users within their tier.
+3. **Free-tier viewing is always allowed.** Navigating to Reports, viewing report data, viewing categories/contacts — all free. Only write actions and exports are gated.
+4. **Crown badge is conditional.** Only render `<CrownBadge>` when `!canAccess(...)`. Do not show it for users who have access.
+5. **One `PaywallSheet` instance per screen.** Use a single `paywallConfig` state `{ visible, tier, label }` and one `<PaywallSheet>` at the bottom of the JSX tree.
+6. **No backend calls change in this phase.** Gate logic is client-only. Backend enforcement is added in Phase 4b below.
+7. **Dev tier switcher (Phase 3b) must be implemented before wiring gates**, so all tiers can be tested without real purchases.
+
+---
+
+#### 4.6 — Phase 4b: Backend Enforcement (Defence in Depth)
+
+Added to backend **after** Phase 4 frontend is complete. Never trust the client alone.
+
+- [ ] `POST /api/v1/books` — read `profiles.subscription_tier` for the requesting user; compare `books` count to `3` (FREE) / `15` (PRO); return `HTTP 403 {"detail": "Book limit reached for your plan. Upgrade to add more."}` if exceeded
+- [ ] Export endpoints (`GET /api/v1/books/:id/report/pdf` and `.../report/excel`) — check tier is `PRO` or `BUSINESS`; return `HTTP 403` if `FREE`
+- [ ] Share endpoints (`POST /api/v1/books/:id/shares`) — check tier is `PRO` or `BUSINESS`; return `HTTP 403` if `FREE`
+- [ ] Frontend already handles `403` responses from Axios interceptor with an `Alert` — no new error handling needed for backend rejections
 
 ---
 
@@ -249,7 +413,9 @@ RevenueCat's own dashboard lets you simulate subscription renewals, cancellation
   - Guest can access the owner's cloud books per their permission level
   - Guest's own books remain local (Free tier) unless they have their own subscription
 
-- [ ] Enforce max 10 guests per Business account on both backend and frontend
+- [ ] Enforce guest limits per tier on both backend and frontend:
+  - Pro: max 1 guest per book
+  - Business: max 10 guests per account
 
 ---
 
@@ -323,9 +489,11 @@ These screens exist but are skeleton / TODO:
 | 1 | Local SQLite for free tier + offline → cloud migration | High |
 | 2 | Subscription data model (Supabase + backend + authStore) | Low |
 | 3 | RevenueCat setup + webhook + store products | Medium |
-| 4 | Feature gates + PaywallSheet | Medium |
-| 5 | Plans screen + upgrade flow + subscription in settings | Medium |
-| 6 | Guest access (DB, backend, frontend) | High |
-| 7 | Backup history (backend + UI) | Medium |
-| 8 | Remaining incomplete screens (Business, Currency, Help, Rate) | Low |
-| 9 | App Store + Play Store launch prep | Medium |
+| 3b | Dev-only tier switcher in Settings for local testing | Low |
+| 4 | `canAccess()` utility + `CrownBadge` + `PaywallSheet` + wire all 12 touch points | Medium |
+| 4b | Backend enforcement (403 on book limit + export + share endpoints) | Low |
+| 5 | Plans screen + upgrade flow + subscription row in Settings | Medium |
+| 6 | Guest access (DB migration, backend endpoints, frontend ManageShares UI; Pro=1, Business=10) | High |
+| 7 | Backup history (backend + Backup & Sync settings screen) | Medium |
+| 8 | Remaining skeleton screens (Business settings, Currency, Help, Rate, EntryDetail export) | Low |
+| 9 | App Store + Play Store launch prep (icons, listings, TestFlight) | Medium |

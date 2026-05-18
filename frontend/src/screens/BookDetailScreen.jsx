@@ -12,7 +12,7 @@ import { useBookBasePath } from '../hooks/useBookBasePath';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
-import { apiGetEntries, apiGetSummary, apiDeleteEntry, apiDeleteAllEntries } from '../lib/api';
+import { apiGetEntries, apiGetSummary, apiDeleteEntry, apiDeleteAllEntries } from '../lib/dataSource';
 import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
 import { useRealtimeEntries } from '../hooks/useRealtimeSync';

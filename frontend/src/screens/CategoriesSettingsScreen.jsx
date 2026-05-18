@@ -14,7 +14,7 @@ import { useCategories, useCreateCategory } from '../hooks/useCategories';
 import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiUpdateBookFieldSettings } from '../lib/api';
+import { apiUpdateBookFieldSettings } from '../lib/dataSource';
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 

@@ -22,8 +22,15 @@
         {
           "action": "VIEW",
           "autoVerify": true,
-          "data": [{ "scheme": "cashbook" }],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "data": [
+            {
+              "scheme": "cashbook"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ],
       "permissions": [
@@ -58,7 +65,8 @@
           "color": "#3B5BDB",
           "defaultChannel": "default"
         }
-      ]
+      ],
+      "expo-sqlite"
     ]
   }
 }

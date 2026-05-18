@@ -15,7 +15,7 @@ import { useCustomers, useSuppliers } from '../hooks/useContacts';
 import { useCategories } from '../hooks/useCategories';
 import { usePaymentModes } from '../hooks/usePaymentModes';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { apiDeleteAllEntries, apiGetEntries, apiUpdateBookFieldSettings } from '../lib/api';
+import { apiDeleteAllEntries, apiGetEntries, apiUpdateBookFieldSettings } from '../lib/dataSource';
 
 import SuccessDialog from '../components/ui/SuccessDialog';
 import DeleteAllEntriesSheet from '../components/ui/DeleteAllEntriesSheet';

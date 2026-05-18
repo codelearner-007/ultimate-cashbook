@@ -354,3 +354,11 @@ export const apiBulkMarkNotificationsRead = async (ids) => {
 export const apiSavePushToken = async (token, platform) => {
   return (await api.post('/api/v1/notifications/push-token', { token, platform })).data;
 };
+
+
+// ── Offline migration ─────────────────────────────────────────────────────────
+
+/** POST /api/v1/migrate/offline — upload local SQLite data to Supabase on upgrade */
+export const apiMigrateOffline = async (payload) => {
+  return (await api.post('/api/v1/migrate/offline', payload)).data;
+};

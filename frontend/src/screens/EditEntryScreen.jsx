@@ -8,7 +8,7 @@ import Toast from '../lib/toast';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../hooks/useTheme';
-import { apiGetEntries, apiUpdateEntry, apiDeleteEntry } from '../lib/api';
+import { apiGetEntries, apiUpdateEntry, apiDeleteEntry } from '../lib/dataSource';
 import EntryForm from '../components/entry/EntryForm';
 import { ChevronLeftIcon, TrashIcon } from '../components/ui/Icons';
 import { useBookBasePath } from '../hooks/useBookBasePath';

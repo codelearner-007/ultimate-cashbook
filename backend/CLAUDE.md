@@ -276,7 +276,7 @@ Query params: `?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`
 
 ### `models/profile.py`
 ```python
-class ProfileResponse:    id, email, full_name, phone, avatar_url, role, is_active, currency (default 'PKR'), created_at, updated_at
+class ProfileResponse:    id, email, full_name, phone, avatar_url, role, is_active, currency (default 'PKR'), is_dark_mode, subscription_tier (default 'free'), created_at, updated_at
 class ProfileUpdate:      full_name?, phone?, avatar_url?, currency?
 class UserWithStats:      ProfileResponse + book_count, entry_count, storage_mb
 class StatusUpdate:       is_active: bool

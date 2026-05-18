@@ -5,7 +5,7 @@ import Toast from '../lib/toast';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../hooks/useTheme';
-import { apiCreateEntry } from '../lib/api';
+import { apiCreateEntry } from '../lib/dataSource';
 import EntryForm from '../components/entry/EntryForm';
 import { ChevronLeftIcon } from '../components/ui/Icons';
 

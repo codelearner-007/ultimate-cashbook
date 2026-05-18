@@ -4,7 +4,7 @@ import {
   apiUpdateCustomer, apiDeleteCustomer, apiGetCustomerEntries,
   apiGetSuppliers, apiCreateSupplier, apiGetSupplier,
   apiUpdateSupplier, apiDeleteSupplier, apiGetSupplierEntries,
-} from '../lib/api';
+} from '../lib/dataSource';
 import Toast from '../lib/toast';
 
 // ── Query key factories ────────────────────────────────────────────────────────

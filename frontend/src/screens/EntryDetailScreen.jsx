@@ -8,7 +8,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../hooks/useTheme';
 import { useBookBasePath } from '../hooks/useBookBasePath';
-import { apiGetEntries, apiDeleteEntry } from '../lib/api';
+import { apiGetEntries, apiDeleteEntry } from '../lib/dataSource';
 import { ChevronLeftIcon, PencilIcon, DotsVerticalIcon, TrashIcon, CloudIcon } from '../components/ui/Icons';
 import { Feather } from '@expo/vector-icons';
 import { useBooks } from '../hooks/useBooks';

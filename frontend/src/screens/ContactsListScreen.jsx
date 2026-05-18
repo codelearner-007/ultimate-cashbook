@@ -16,7 +16,7 @@ import DeleteContactSheet from '../components/ui/DeleteContactSheet';
 import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiUpdateBookFieldSettings } from '../lib/api';
+import { apiUpdateBookFieldSettings } from '../lib/dataSource';
 
 const TYPE_CONFIG = {
   customer: { label: 'Customers', icon: 'user-check', emptyIcon: 'user-plus' },

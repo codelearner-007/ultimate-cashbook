@@ -9,12 +9,12 @@
 | Storage | Local only | Cloud sync | Cloud sync |
 | Multi-device | No | Yes | Yes |
 | PDF / Excel Export | No | Yes | Yes |
-| Customers & Suppliers | View only | Full access | Full access |
-| Categories | View only | Full access | Full access |
+| Customers & Suppliers | Full access | Full access | Full access |
+| Categories | Full access | Full access | Full access |
 | Reports | View only (no download/share) | Full access | Full access |
 | Shared Books (Team) | No | Yes | Yes |
 | Backup History | No | 7 days | 30 days |
-| Guest Access | No | No | Up to 10 guests (View / Edit / Full — owner sets per guest) |
+| Guest Access | No | 1 guest (View / Edit / Full — owner sets permission) | Up to 10 guests (View / Edit / Full — owner sets per guest) |
 
 ## Pricing
 
@@ -28,14 +28,15 @@
 
 ### Free
 - Data stored on device only — no cloud backup or sync
-- Can view Customers & Suppliers and Categories but cannot add, edit, or delete
+- Full access to Customers & Suppliers and Categories (add, edit, delete)
 - Can view Reports but cannot download (PDF/Excel) or share
 - Data is lost if app is uninstalled or phone is wiped
 
 ### Pro
 - Full cloud sync — data accessible across multiple devices
-- Full access to all features except Guest Access
+- Full access to all features except unlimited Guest Access
 - 7-day backup history — can restore data from any point in the last 7 days
+- Guest Access — invite 1 guest per account (View / Edit / Full permission)
 
 ### Business
 - Full cloud sync — data accessible across multiple devices

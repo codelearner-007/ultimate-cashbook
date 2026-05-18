@@ -101,7 +101,7 @@ export default function ContactPickerModal({
     } finally {
       setLoadingPhone(false);
     }
-  }, []);
+  }, [activeTab]);
 
   const pickPhoneContact = (c) => {
     setNewName(c.name);

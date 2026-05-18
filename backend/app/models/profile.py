@@ -13,6 +13,7 @@ class ProfileResponse(BaseModel):
     is_active: bool = True
     currency: str = "PKR"
     is_dark_mode: bool = False
+    subscription_tier: Literal["free", "pro", "enterprise"] = "free"
     created_at: datetime
     updated_at: Optional[datetime] = None
 

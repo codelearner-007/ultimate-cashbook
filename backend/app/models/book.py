@@ -14,10 +14,10 @@ class BookUpdate(BaseModel):
 
 
 class FieldSettingsBody(BaseModel):
-    showCustomer: bool = False
-    showSupplier: bool = False
-    showCategory: bool = False
-    showAttachment: bool = False
+    showCustomer: bool = True
+    showSupplier: bool = True
+    showCategory: bool = True
+    showAttachment: bool = True
 
 
 class BookResponse(BaseModel):
@@ -26,10 +26,10 @@ class BookResponse(BaseModel):
     name: str
     currency: str
     net_balance: float = 0.0
-    show_customer: bool = False
-    show_supplier: bool = False
-    show_category: bool = False
-    show_attachment: bool = False
+    show_customer: bool = True
+    show_supplier: bool = True
+    show_category: bool = True
+    show_attachment: bool = True
     created_at: datetime
     updated_at: Optional[datetime] = None
     last_entry_at: Optional[str] = None

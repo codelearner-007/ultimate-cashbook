@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   apiGetCategories, apiCreateCategory,
   apiUpdateCategory, apiDeleteCategory, apiGetCategoryEntries,
-} from '../lib/api';
+} from '../lib/dataSource';
 import Toast from '../lib/toast';
 
 export const categoryKeys = {

@@ -716,6 +716,16 @@ export default function BooksView({
       {/* ── Section header ──────────────────────────────────────────────── */}
       {ListHeader}
 
+      {/* ── Free tier banner ────────────────────────────────────────────── */}
+      {(user?.subscription_tier ?? 'free') === 'free' && (
+        <View style={[s.freeBanner, { backgroundColor: C.cashInLight, borderColor: C.cashIn }]}>
+          <Feather name="smartphone" size={13} color={C.cashIn} />
+          <Text style={[s.freeBannerText, { color: C.cashIn, fontFamily: Font.medium }]}>
+            Your data is stored only on this device. Upgrade to back it up to the cloud.
+          </Text>
+        </View>
+      )}
+
       {/* ── Pending invitations banner ──────────────────────────────────── */}
       {pendingInviteCount > 0 && (
         <TouchableOpacity
@@ -1034,6 +1044,14 @@ const makeStyles = (C, Font) => StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 10,
   },
   inviteBannerText: { flex: 1, fontSize: 12, lineHeight: 18 },
+
+  freeBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 16, marginBottom: 4,
+    borderRadius: 12, borderWidth: 1,
+    paddingHorizontal: 14, paddingVertical: 10,
+  },
+  freeBannerText: { flex: 1, fontSize: 12, lineHeight: 18 },
 
   // Loading / error
   loadingBox:  { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14 },

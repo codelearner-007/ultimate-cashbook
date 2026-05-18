@@ -3,7 +3,7 @@ import {
   apiGetPaymentModes, apiCreatePaymentMode,
   apiUpdatePaymentMode, apiDeletePaymentMode,
   apiGetPaymentModeEntries,
-} from '../lib/api';
+} from '../lib/dataSource';
 import Toast from '../lib/toast';
 
 export const paymentModeKeys = {

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiGetBooks, apiCreateBook, apiUpdateBook, apiDeleteBook } from '../lib/api';
+import { apiGetBooks, apiCreateBook, apiUpdateBook, apiDeleteBook } from '../lib/dataSource';
 
 const BOOKS_KEY = ['books'];
 

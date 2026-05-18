@@ -11,7 +11,7 @@ import { Feather } from '@expo/vector-icons';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import SuccessDialog from '../components/ui/SuccessDialog';
 import { useTheme } from '../hooks/useTheme';
-import { apiGetEntries } from '../lib/api';
+import { apiGetEntries } from '../lib/dataSource';
 import { useRealtimeEntries } from '../hooks/useRealtimeSync';
 import { supabase } from '../lib/supabase';
 import { useCustomers, useSuppliers } from '../hooks/useContacts';

@@ -131,9 +131,14 @@ function NotificationRow({ item, isSelected, isSelecting, onPress, onLongPress, 
           <Text style={[rowS.title, { color: C.text, fontFamily: unread ? Font.bold : Font.semiBold }]} numberOfLines={1}>
             {item.title}
           </Text>
-          <Text style={[rowS.time, { color: C.textSubtle, fontFamily: Font.regular }]}>
-            {formatRelative(item.created_at)}
-          </Text>
+          <View style={rowS.timeRow}>
+            {unread && !isSelected && (
+              <View style={[rowS.unreadDot, { backgroundColor: C.primary }]} />
+            )}
+            <Text style={[rowS.time, { color: C.textSubtle, fontFamily: Font.regular }]}>
+              {formatRelative(item.created_at)}
+            </Text>
+          </View>
         </View>
         <Text style={[rowS.bodyText, { color: unread ? C.textMuted : C.textSubtle, fontFamily: Font.regular }]} numberOfLines={1}>
           {item.body}
@@ -141,9 +146,6 @@ function NotificationRow({ item, isSelected, isSelecting, onPress, onLongPress, 
         <Text style={[rowS.dateTime, { color: C.textSubtle, fontFamily: Font.regular }]}>
           {formatDateTime(item.created_at)}
         </Text>
-        {unread && !isSelected && (
-          <View style={[rowS.unreadDot, { backgroundColor: C.primary }]} />
-        )}
       </View>
     </TouchableOpacity>
   );
@@ -156,10 +158,11 @@ const rowS = StyleSheet.create({
   body: { flex: 1 },
   titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 },
   title: { fontSize: 13, flex: 1, marginRight: 8 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   time: { fontSize: 10 },
   bodyText: { fontSize: 12, lineHeight: 17 },
   dateTime: { fontSize: 10, lineHeight: 15, marginTop: 3 },
-  unreadDot: { width: 6, height: 6, borderRadius: 3, position: 'absolute', right: 0, top: 0 },
+  unreadDot: { width: 6, height: 6, borderRadius: 3 },
 });
 
 // ── Empty State ───────────────────────────────────────────────────────────────

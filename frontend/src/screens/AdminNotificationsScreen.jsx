@@ -5,7 +5,6 @@ import {
   Keyboard, Platform, ActivityIndicator,
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
-import { useRouter } from 'expo-router';
 import { useTheme } from '../hooks/useTheme';
 import { useSendNotification, useSentNotifications } from '../hooks/useNotifications';
 import { useQuery } from '@tanstack/react-query';
@@ -43,13 +42,14 @@ const ChevronIcon = ({ color, size = 14 }) => (
   </View>
 );
 
-// ── Specific filter options (shown inside the modal) ──────────────────────────
+// ── Segment definitions ───────────────────────────────────────────────────────
 
-const SPECIFIC_FILTERS = [
-  { key: 'new_users',     label: 'New / Fresh',   desc: 'Recently registered',    emoji: '🌱' },
-  { key: 'with_books',    label: 'Subscribers',   desc: 'Users with ≥1 book',     emoji: '📖' },
-  { key: 'without_books', label: 'Inactive',      desc: 'No book created yet',    emoji: '💤' },
-  { key: 'pick',          label: 'Pick Users',    desc: 'Choose manually',        emoji: '🎯' },
+const PLAN_ROWS = [
+  { key: 'plan_free',  label: 'Free',             emoji: '🔓', desc: 'On the Free plan'           },
+  { key: 'plan_pro_m', label: 'Pro Monthly',       emoji: '👑', desc: 'Pro · Monthly billing'      },
+  { key: 'plan_pro_y', label: 'Pro Yearly',        emoji: '👑', desc: 'Pro · Yearly billing'       },
+  { key: 'plan_biz_m', label: 'Business Monthly',  emoji: '👑', desc: 'Business · Monthly billing' },
+  { key: 'plan_biz_y', label: 'Business Yearly',   emoji: '👑', desc: 'Business · Yearly billing'  },
 ];
 
 const DAYS_OPTIONS = [
@@ -62,23 +62,29 @@ const DAYS_OPTIONS = [
 
 function targetSummary(targetType, daysThreshold, selectedIds) {
   switch (targetType) {
-    case 'all':           return { emoji: '👥', label: 'All Users' };
-    case 'new_users':     return { emoji: '🌱', label: `New / Fresh · ${daysThreshold}d` };
-    case 'with_books':    return { emoji: '📖', label: 'Subscribers' };
-    case 'without_books': return { emoji: '💤', label: 'Inactive' };
-    case 'specific':      return { emoji: '🎯', label: `${selectedIds.length} user${selectedIds.length !== 1 ? 's' : ''} picked` };
-    default:              return { emoji: '👥', label: 'All Users' };
+    case 'all':         return { emoji: '👥', label: 'All Users' };
+    case 'new_users':   return { emoji: '🌱', label: `New / Fresh · ${daysThreshold}d` };
+    case 'plan_free':   return { emoji: '🔓', label: 'Free Plan' };
+    case 'plan_pro_m':  return { emoji: '👑', label: 'Pro Monthly' };
+    case 'plan_pro_y':  return { emoji: '⭐', label: 'Pro Yearly' };
+    case 'plan_biz_m':  return { emoji: '💼', label: 'Business Monthly' };
+    case 'plan_biz_y':  return { emoji: '🏆', label: 'Business Yearly' };
+    case 'specific':    return { emoji: '🎯', label: `${selectedIds.length} user${selectedIds.length !== 1 ? 's' : ''} picked` };
+    default:            return { emoji: '👥', label: 'All Users' };
   }
 }
 
 function targetBadge(targetType, daysThreshold) {
   switch (targetType) {
-    case 'all':           return { label: 'ALL USERS',              color: 'cashIn'  };
-    case 'new_users':     return { label: `NEW · ${daysThreshold || 30}d`, color: 'primary' };
-    case 'with_books':    return { label: 'SUBSCRIBERS',            color: 'cashIn'  };
-    case 'without_books': return { label: 'INACTIVE',               color: 'danger'  };
-    case 'specific':      return { label: 'SPECIFIC',               color: 'primary' };
-    default:              return { label: targetType.toUpperCase(), color: 'primary' };
+    case 'all':         return { label: 'ALL USERS',                     color: 'cashIn'  };
+    case 'new_users':   return { label: `NEW · ${daysThreshold || 30}d`, color: 'primary' };
+    case 'plan_free':   return { label: 'FREE PLAN',                     color: 'primary' };
+    case 'plan_pro_m':  return { label: 'PRO MONTHLY',                   color: 'cashIn'  };
+    case 'plan_pro_y':  return { label: 'PRO YEARLY',                    color: 'cashIn'  };
+    case 'plan_biz_m':  return { label: 'BIZ MONTHLY',                   color: 'cashIn'  };
+    case 'plan_biz_y':  return { label: 'BIZ YEARLY',                    color: 'cashIn'  };
+    case 'specific':    return { label: 'SPECIFIC',                      color: 'primary' };
+    default:            return { label: targetType.toUpperCase(),         color: 'primary' };
   }
 }
 
@@ -98,12 +104,11 @@ function initials(name) {
 // ── Specific Target Modal ─────────────────────────────────────────────────────
 
 function SpecificModal({ visible, users, initialFilter, initialDays, initialIds, onApply, onClose, C }) {
-  const [filter, setFilter]       = useState(initialFilter);
-  const [days, setDays]           = useState(initialDays);
-  const [pickedIds, setPickedIds] = useState(initialIds);
+  const [filter, setFilter]         = useState(initialFilter);
+  const [days, setDays]             = useState(initialDays);
+  const [pickedIds, setPickedIds]   = useState(initialIds);
   const [userSearch, setUserSearch] = useState('');
 
-  // Reset internal state whenever the modal opens
   useEffect(() => {
     if (visible) {
       setFilter(initialFilter);
@@ -132,144 +137,235 @@ function SpecificModal({ visible, users, initialFilter, initialDays, initialIds,
 
   if (!visible) return null;
 
-  return (
-    <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
-        <TouchableOpacity style={{ flex: 1 }} onPress={onClose} />
-        <View style={{ backgroundColor: C.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '72%' }}>
-          {/* Handle */}
-          <View style={{ width: 36, height: 4, backgroundColor: C.border, borderRadius: 2, alignSelf: 'center', marginTop: 12 }} />
+  const isNew  = filter === 'new_users';
+  const isPick = filter === 'pick';
 
-          {/* Header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 4 }}>
-            <Text style={{ flex: 1, fontSize: 17, fontFamily: Font.bold, color: C.text }}>Select Target</Text>
-            <TouchableOpacity
-              style={{
-                backgroundColor: canApply ? C.primary : C.border,
-                paddingHorizontal: 20, paddingVertical: 9, borderRadius: 20,
-              }}
-              onPress={canApply ? handleApply : undefined}
-              activeOpacity={canApply ? 0.8 : 1}
-            >
-              <Text style={{ fontSize: 14, fontFamily: Font.bold, color: '#fff' }}>Apply</Text>
+  // +1 only for 'new_users' (backend self-appends admin). Plan filters are exact.
+  const countFor = (key, d = days) => {
+    switch (key) {
+      case 'new_users':  { const cutoff = Date.now() - d * 86400000; return users.filter(u => new Date(u.created_at).getTime() >= cutoff).length + 1; }
+      case 'plan_free':  return users.filter(u => !u.subscription_tier || u.subscription_tier === 'free').length;
+      case 'plan_pro_m': return users.filter(u => u.subscription_tier === 'pro'      && u.subscription_billing_cycle === 'monthly').length;
+      case 'plan_pro_y': return users.filter(u => u.subscription_tier === 'pro'      && u.subscription_billing_cycle === 'yearly').length;
+      case 'plan_biz_m': return users.filter(u => u.subscription_tier === 'business' && u.subscription_billing_cycle === 'monthly').length;
+      case 'plan_biz_y': return users.filter(u => u.subscription_tier === 'business' && u.subscription_billing_cycle === 'yearly').length;
+      default: return 0;
+    }
+  };
+
+  return (
+    <Modal transparent animationType="slide" visible={visible} onRequestClose={onClose} statusBarTranslucent>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <TouchableOpacity style={{ ...StyleSheet.absoluteFillObject, backgroundColor: C.overlay }} activeOpacity={1} onPress={onClose} />
+
+        <View style={{ backgroundColor: C.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 24 }}>
+          {/* Handle */}
+          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginBottom: 14 }} />
+
+          {/* Title row */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <Text style={{ fontSize: 16, fontFamily: Font.bold, color: C.text }}>Send To</Text>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+                <View style={{ position: 'absolute', width: 12, height: 1.5, backgroundColor: C.textSubtle, borderRadius: 1, transform: [{ rotate: '45deg' }] }} />
+                <View style={{ position: 'absolute', width: 12, height: 1.5, backgroundColor: C.textSubtle, borderRadius: 1, transform: [{ rotate: '-45deg' }] }} />
+              </View>
             </TouchableOpacity>
           </View>
 
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20, paddingTop: 12 }}
-          >
-            {/* 4 filter cards */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-              {SPECIFIC_FILTERS.map(opt => {
-                const active = filter === opt.key;
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 12 }}>
+
+            {/* ── Section: New Users ── */}
+            <Text style={{ fontSize: 10, fontFamily: Font.semiBold, color: C.textMuted, letterSpacing: 0.8, marginBottom: 6 }}>
+              BY ACTIVITY
+            </Text>
+
+            {/* New card — expands days picker inline */}
+            <TouchableOpacity
+              style={{
+                borderRadius: 12, borderWidth: 1.5, marginBottom: 6,
+                borderColor: isNew ? C.primary : C.border,
+                backgroundColor: isNew ? C.primaryLight : C.background,
+                overflow: 'hidden',
+              }}
+              onPress={() => setFilter(isNew ? null : 'new_users')}
+              activeOpacity={0.8}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 12 }}>
+                <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: isNew ? C.primaryMid : C.cardAlt, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 15 }}>🌱</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontFamily: Font.semiBold, color: isNew ? C.primary : C.text }}>New Users</Text>
+                  <Text style={{ fontSize: 11, fontFamily: Font.regular, color: C.textMuted }}>Recently registered</Text>
+                </View>
+                <Text style={{ fontSize: 12, fontFamily: Font.semiBold, color: isNew ? C.primary : C.textMuted }}>
+                  {countFor('new_users', days)}
+                </Text>
+                <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: isNew ? C.primary : C.border, alignItems: 'center', justifyContent: 'center' }}>
+                  {isNew && <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: C.primary }} />}
+                </View>
+              </View>
+              {/* Inline days picker — only when selected */}
+              {isNew && (
+                <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
+                  <View style={{ height: 1, backgroundColor: C.primaryMid, marginBottom: 10 }} />
+                  <Text style={{ fontSize: 10, fontFamily: Font.semiBold, color: C.primary, letterSpacing: 0.6, marginBottom: 8 }}>
+                    REGISTERED WITHIN
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
+                    {DAYS_OPTIONS.map(opt => {
+                      const active = days === opt.value;
+                      return (
+                        <TouchableOpacity
+                          key={opt.value}
+                          style={{
+                            flex: 1, paddingVertical: 7, borderRadius: 8, alignItems: 'center',
+                            borderWidth: 1.5,
+                            borderColor: active ? C.primary : C.primaryMid,
+                            backgroundColor: active ? C.primary : 'transparent',
+                          }}
+                          onPress={() => setDays(opt.value)}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={{ fontSize: 11, fontFamily: Font.semiBold, color: active ? '#fff' : C.primary }}>
+                            {opt.label}
+                          </Text>
+                          <Text style={{ fontSize: 10, fontFamily: Font.regular, color: active ? 'rgba(255,255,255,0.8)' : C.primary, marginTop: 1 }}>
+                            {countFor('new_users', opt.value)} users
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* ── Section: By Plan ── */}
+            <Text style={{ fontSize: 10, fontFamily: Font.semiBold, color: C.textMuted, letterSpacing: 0.8, marginBottom: 6, marginTop: 10 }}>
+              BY PLAN
+            </Text>
+            <View style={{ gap: 6, marginBottom: 10 }}>
+              {PLAN_ROWS.map(row => {
+                const active = filter === row.key;
                 return (
                   <TouchableOpacity
-                    key={opt.key}
+                    key={row.key}
                     style={{
-                      width: '47%', borderRadius: 16, borderWidth: 1.5,
-                      borderColor: active ? C.primary : C.border,
+                      flexDirection: 'row', alignItems: 'center', gap: 12,
+                      paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5,
                       backgroundColor: active ? C.primaryLight : C.background,
-                      padding: 14, gap: 4,
+                      borderColor: active ? C.primary : C.border,
                     }}
-                    onPress={() => setFilter(opt.key)}
-                    activeOpacity={0.75}
+                    onPress={() => setFilter(row.key)}
+                    activeOpacity={0.8}
                   >
-                    <Text style={{ fontSize: 22, marginBottom: 2 }}>{opt.emoji}</Text>
-                    <Text style={{ fontSize: 13, fontFamily: Font.bold, color: active ? C.primary : C.text }}>
-                      {opt.label}
+                    <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: active ? C.primaryMid : C.cardAlt, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ fontSize: 15 }}>{row.emoji}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontFamily: Font.semiBold, color: active ? C.primary : C.text }}>{row.label}</Text>
+                      <Text style={{ fontSize: 11, fontFamily: Font.regular, color: C.textMuted }}>{row.desc}</Text>
+                    </View>
+                    <Text style={{ fontSize: 12, fontFamily: Font.semiBold, color: active ? C.primary : C.textMuted }}>
+                      {countFor(row.key)}
                     </Text>
-                    <Text style={{ fontSize: 11, fontFamily: Font.regular, color: active ? C.primary : C.textSubtle }}>
-                      {opt.desc}
-                    </Text>
-                    {active && (
-                      <View style={{ position: 'absolute', top: 10, right: 10, width: 18, height: 18, borderRadius: 9, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' }}>
-                        <CheckIcon color="#fff" size={10} />
-                      </View>
-                    )}
+                    <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: active ? C.primary : C.border, alignItems: 'center', justifyContent: 'center' }}>
+                      {active && <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: C.primary }} />}
+                    </View>
                   </TouchableOpacity>
                 );
               })}
             </View>
 
-            {/* Days picker — only for new_users */}
-            {filter === 'new_users' && (
-              <View style={{ marginBottom: 20 }}>
-                <Text style={{ fontSize: 12, fontFamily: Font.semiBold, color: C.textMuted, marginBottom: 10, letterSpacing: 0.5 }}>
-                  REGISTERED WITHIN
-                </Text>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  {DAYS_OPTIONS.map(opt => {
-                    const active = days === opt.value;
-                    return (
-                      <TouchableOpacity
-                        key={opt.value}
-                        style={{
-                          flex: 1, paddingVertical: 10, borderRadius: 12, borderWidth: 1.5,
-                          borderColor: active ? C.primary : C.border,
-                          backgroundColor: active ? C.primary : C.background,
-                          alignItems: 'center',
-                        }}
-                        onPress={() => setDays(opt.value)}
-                        activeOpacity={0.75}
-                      >
-                        <Text style={{ fontSize: 12, fontFamily: Font.semiBold, color: active ? '#fff' : C.textMuted }}>
-                          {opt.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+            {/* ── Section: Pick Users ── */}
+            <Text style={{ fontSize: 10, fontFamily: Font.semiBold, color: C.textMuted, letterSpacing: 0.8, marginBottom: 6 }}>
+              MANUAL
+            </Text>
+
+            {/* Pick card — expands user list inline */}
+            <TouchableOpacity
+              style={{
+                borderRadius: 12, borderWidth: 1.5,
+                borderColor: isPick ? C.primary : C.border,
+                backgroundColor: isPick ? C.primaryLight : C.background,
+                overflow: 'hidden',
+              }}
+              onPress={() => setFilter(isPick ? null : 'pick')}
+              activeOpacity={0.8}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, paddingHorizontal: 12 }}>
+                <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: isPick ? C.primaryMid : C.cardAlt, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 15 }}>🎯</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontFamily: Font.semiBold, color: isPick ? C.primary : C.text }}>Pick Users</Text>
+                  <Text style={{ fontSize: 11, fontFamily: Font.regular, color: C.textMuted }}>Choose manually</Text>
+                </View>
+                {pickedIds.length > 0 && (
+                  <Text style={{ fontSize: 12, fontFamily: Font.semiBold, color: C.primary }}>
+                    {pickedIds.length}
+                  </Text>
+                )}
+                <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: isPick ? C.primary : C.border, alignItems: 'center', justifyContent: 'center' }}>
+                  {isPick && <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: C.primary }} />}
                 </View>
               </View>
-            )}
+              {/* Inline user picker — only when selected */}
+              {isPick && (
+                <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
+                  <View style={{ height: 1, backgroundColor: C.primaryMid, marginBottom: 10 }} />
+                  <SearchBar
+                    value={userSearch}
+                    onChangeText={setUserSearch}
+                    placeholder="Search by name or email…"
+                    onClear={() => setUserSearch('')}
+                    style={{ marginHorizontal: 0, marginBottom: 8 }}
+                  />
+                  {filteredUsers.length === 0 ? (
+                    <Text style={{ fontSize: 12, fontFamily: Font.regular, color: C.textMuted, textAlign: 'center', paddingVertical: 12 }}>
+                      No users found
+                    </Text>
+                  ) : (
+                    filteredUsers.map(item => {
+                      const selected = pickedIds.includes(item.id);
+                      return (
+                        <TouchableOpacity
+                          key={item.id}
+                          style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: C.primaryMid }}
+                          onPress={() => toggleUser(item.id)}
+                          activeOpacity={0.7}
+                        >
+                          <View style={{ width: 32, height: 32, borderRadius: 16, marginRight: 10, backgroundColor: selected ? C.primary : C.primaryMid, alignItems: 'center', justifyContent: 'center' }}>
+                            <Text style={{ fontSize: 12, fontFamily: Font.bold, color: selected ? '#fff' : C.primary }}>
+                              {initials(item.full_name)}
+                            </Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 13, fontFamily: Font.semiBold, color: C.text }}>{item.full_name || '—'}</Text>
+                            <Text style={{ fontSize: 11, fontFamily: Font.regular, color: C.textMuted }}>{item.email}</Text>
+                          </View>
+                          <View style={{ width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: selected ? C.primary : C.primaryMid, backgroundColor: selected ? C.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                            {selected && <CheckIcon color="#fff" size={9} />}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </View>
+              )}
+            </TouchableOpacity>
 
-            {/* User picker — only for 'pick' */}
-            {filter === 'pick' && (
-              <View>
-                <Text style={{ fontSize: 12, fontFamily: Font.semiBold, color: C.textMuted, marginBottom: 10, letterSpacing: 0.5 }}>
-                  PICK USERS {pickedIds.length > 0 ? `· ${pickedIds.length} selected` : ''}
-                </Text>
-                <SearchBar
-                  value={userSearch}
-                  onChangeText={setUserSearch}
-                  placeholder="Search by name or email…"
-                  onClear={() => setUserSearch('')}
-                  style={{ marginHorizontal: 0, marginBottom: 12 }}
-                />
-                {filteredUsers.length === 0 ? (
-                  <Text style={{ fontSize: 13, fontFamily: Font.regular, color: C.textMuted, textAlign: 'center', paddingVertical: 20 }}>
-                    No users found
-                  </Text>
-                ) : (
-                  filteredUsers.map(item => {
-                    const selected = pickedIds.includes(item.id);
-                    return (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.border }}
-                        onPress={() => toggleUser(item.id)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: selected ? C.primary : C.primaryLight, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                          <Text style={{ fontSize: 14, fontFamily: Font.bold, color: selected ? '#fff' : C.primary }}>
-                            {initials(item.full_name)}
-                          </Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 14, fontFamily: Font.semiBold, color: C.text }}>{item.full_name || '—'}</Text>
-                          <Text style={{ fontSize: 12, fontFamily: Font.regular, color: C.textMuted }}>{item.email}</Text>
-                        </View>
-                        <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: selected ? C.primary : C.border, backgroundColor: selected ? C.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                          {selected && <CheckIcon color="#fff" size={11} />}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })
-                )}
-              </View>
-            )}
           </ScrollView>
+
+          <TouchableOpacity
+            style={{ backgroundColor: canApply ? C.primary : C.border, borderRadius: 12, paddingVertical: 13, alignItems: 'center', marginTop: 10, opacity: canApply ? 1 : 0.5 }}
+            onPress={canApply ? handleApply : undefined}
+            activeOpacity={0.85}
+          >
+            <Text style={{ fontSize: 14, fontFamily: Font.bold, color: '#fff' }}>Apply</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </Modal>
@@ -336,7 +432,7 @@ const sentRowStyles = StyleSheet.create({
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
 export default function AdminNotificationsScreen() {
-  const { C }  = useTheme();
+  const { C } = useTheme();
   const send   = useSendNotification();
   const { data: sent = [], isLoading: sentLoading } = useSentNotifications();
   const { data: allUsers = [] } = useQuery({ queryKey: ['admin-users'], queryFn: apiGetAllUsers });
@@ -364,6 +460,27 @@ export default function AdminNotificationsScreen() {
   }, []);
 
   const activeUsers = useMemo(() => allUsers, [allUsers]);
+
+  // Compute estimated recipient count from local allUsers data.
+  // +1 only for 'all'/'new_users' where the backend self-appends the admin.
+  // Plan filters are precise segments — the superadmin has no subscription plan.
+  const recipientCount = useMemo(() => {
+    if (!allUsers.length && targetType !== 'specific') return null;
+    switch (targetType) {
+      case 'all':        return allUsers.length + 1;
+      case 'new_users': {
+        const cutoff = Date.now() - daysThreshold * 86400000;
+        return allUsers.filter(u => new Date(u.created_at).getTime() >= cutoff).length + 1;
+      }
+      case 'plan_free':  return allUsers.filter(u => !u.subscription_tier || u.subscription_tier === 'free').length;
+      case 'plan_pro_m': return allUsers.filter(u => u.subscription_tier === 'pro'      && u.subscription_billing_cycle === 'monthly').length;
+      case 'plan_pro_y': return allUsers.filter(u => u.subscription_tier === 'pro'      && u.subscription_billing_cycle === 'yearly').length;
+      case 'plan_biz_m': return allUsers.filter(u => u.subscription_tier === 'business' && u.subscription_billing_cycle === 'monthly').length;
+      case 'plan_biz_y': return allUsers.filter(u => u.subscription_tier === 'business' && u.subscription_billing_cycle === 'yearly').length;
+      case 'specific':   return selectedIds.length;
+      default:           return null;
+    }
+  }, [allUsers, targetType, daysThreshold, selectedIds]);
 
   // current target label shown on the "Specific" button
   const summary = useMemo(
@@ -416,7 +533,6 @@ export default function AdminNotificationsScreen() {
     return sent.filter(n => n.title?.toLowerCase().includes(q) || n.body?.toLowerCase().includes(q));
   }, [sent, sentSearch]);
 
-  const router = useRouter();
   const s = useMemo(() => makeStyles(C), [C]);
 
   // Build FlatList data: [history-header-item, ...rows / states]
@@ -502,6 +618,21 @@ export default function AdminNotificationsScreen() {
         </View>
       </View>
 
+      {/* Recipient count row */}
+      {recipientCount !== null && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6, marginTop: -4 }}>
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.cashIn }} />
+          <Text style={{ fontSize: 12, fontFamily: Font.semiBold, color: C.cashIn }}>
+            {recipientCount} recipient{recipientCount !== 1 ? 's' : ''}
+          </Text>
+          {targetType === 'new_users' && (
+            <Text style={{ fontSize: 11, fontFamily: Font.regular, color: C.textMuted }}>
+              (last {daysThreshold} days)
+            </Text>
+          )}
+        </View>
+      )}
+
       <AppInput
         label="TITLE"
         value={title}
@@ -539,7 +670,7 @@ export default function AdminNotificationsScreen() {
         )}
       </TouchableOpacity>
     </View>
-  ), [C, s, targetType, isSpecific, summary, title, body, canSend, send.isPending]);
+  ), [C, s, targetType, isSpecific, summary, title, body, canSend, send.isPending, recipientCount, daysThreshold]);
 
   return (
     <SafeAreaView style={s.safe}>
@@ -547,15 +678,7 @@ export default function AdminNotificationsScreen() {
 
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity
-          onPress={() => router.canGoBack() ? router.back() : router.replace('/(app)/dashboard/notifications')}
-          style={s.backBtn}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <View style={{ width: 9, height: 9, borderLeftWidth: 2.5, borderBottomWidth: 2.5, borderColor: '#fff', transform: [{ rotate: '45deg' }] }} />
-        </TouchableOpacity>
         <Text style={s.headerTitle}>Send Notification</Text>
-        <View style={{ width: 40, height: 40 }} />
       </View>
 
       <FlatList
@@ -587,8 +710,7 @@ export default function AdminNotificationsScreen() {
 
 const makeStyles = (C) => StyleSheet.create({
   safe:        { flex: 1, backgroundColor: C.background },
-  header:      { backgroundColor: C.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
-  backBtn:     { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  header:      { backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 14 },
   headerTitle: { fontSize: 17, fontFamily: Font.bold, color: '#fff' },
   scroll:      { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40 },
 

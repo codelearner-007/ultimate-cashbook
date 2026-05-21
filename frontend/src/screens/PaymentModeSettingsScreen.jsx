@@ -1,7 +1,7 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Pressable, StatusBar,
-  FlatList, Modal, Alert, ActivityIndicator, Animated,
+  ScrollView, Modal, Alert, ActivityIndicator, Animated,
   Keyboard, Platform, TextInput,
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
@@ -11,12 +11,14 @@ import { useBookBasePath } from '../hooks/useBookBasePath';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import {
-  usePaymentModes, useCreatePaymentMode, useUpdatePaymentMode, useDeletePaymentMode,
+  usePaymentModes, useCreatePaymentMode, useUpdatePaymentMode,
+  useDeletePaymentMode, useReorderPaymentModes,
 } from '../hooks/usePaymentModes';
 import PaymentModeMenuSheet from '../components/books/PaymentModeMenuSheet';
 import DeleteContactSheet from '../components/ui/DeleteContactSheet';
 import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
+import { DragHandleIcon } from '../components/books/DraggableList';
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
@@ -84,9 +86,84 @@ export default function PaymentModeSettingsScreen() {
   const canDelete = rights === 'view_create_edit_delete';
 
   const { data: modes = [], isLoading } = usePaymentModes(bookId);
-  const createMode = useCreatePaymentMode(bookId);
-  const deleteMode = useDeletePaymentMode(bookId);
-  const updateMode = useUpdatePaymentMode(bookId, menuModeId);
+  const createMode  = useCreatePaymentMode(bookId);
+  const deleteMode  = useDeletePaymentMode(bookId);
+  const updateMode  = useUpdatePaymentMode(bookId, menuModeId);
+  const reorderMode = useReorderPaymentModes(bookId);
+
+  // ── Drag state ────────────────────────────────────────────────────────────
+  const ITEM_H = 68; // card height 58 + marginBottom 10
+  const clamp  = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+
+  const [listItems,  setListItems]  = useState(() => [...modes]);
+  const [dragIdx,    setDragIdx]    = useState(-1);
+  const [insertAt,   setInsertAt]   = useState(-1);
+
+  const dragIdxRef    = useRef(-1);
+  const insertAtRef   = useRef(-1);
+  const dragStartYRef = useRef(0);
+  const dragDy        = useRef(new Animated.Value(0)).current;
+
+  // Sync local list when modes update from server (but not while dragging)
+  useEffect(() => {
+    if (dragIdx < 0) setListItems([...modes]);
+  }, [modes, dragIdx]);
+
+  const startDrag = useCallback((idx, pageY) => {
+    dragIdxRef.current    = idx;
+    insertAtRef.current   = idx;
+    dragStartYRef.current = pageY;
+    dragDy.setValue(0);
+    setDragIdx(idx);
+    setInsertAt(idx);
+  }, [dragDy]);
+
+  const moveDrag = useCallback((pageY) => {
+    const dy = pageY - dragStartYRef.current;
+    dragDy.setValue(dy);
+    const newInsert = clamp(
+      Math.round((dragIdxRef.current * ITEM_H + dy) / ITEM_H),
+      0,
+      listItems.length - 1,
+    );
+    if (newInsert !== insertAtRef.current) {
+      insertAtRef.current = newInsert;
+      setInsertAt(newInsert);
+    }
+  }, [dragDy, listItems.length]);
+
+  const endDrag = useCallback(() => {
+    const from = dragIdxRef.current;
+    const to   = insertAtRef.current;
+
+    if (from >= 0 && from !== to) {
+      setListItems(prev => {
+        const next = [...prev];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        reorderMode.mutate(next.map(m => m.id));
+        return next;
+      });
+    }
+
+    dragIdxRef.current  = -1;
+    insertAtRef.current = -1;
+    Animated.timing(dragDy, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
+      setDragIdx(-1);
+      setInsertAt(-1);
+    });
+  }, [dragDy, reorderMode]);
+
+  const makeHandleProps = useCallback((idx) => ({
+    onStartShouldSetResponder:        () => true,
+    onMoveShouldSetResponder:         () => true,
+    onStartShouldSetResponderCapture: () => true,
+    onMoveShouldSetResponderCapture:  () => true,
+    onResponderGrant:     (e) => startDrag(idx, e.nativeEvent.pageY),
+    onResponderMove:      (e) => moveDrag(e.nativeEvent.pageY),
+    onResponderRelease:   endDrag,
+    onResponderTerminate: endDrag,
+  }), [startDrag, moveDrag, endDrag]);
 
   const menuMode = useMemo(
     () => menuModeId ? (modes.find(m => m.id === menuModeId) ?? null) : null,
@@ -94,12 +171,12 @@ export default function PaymentModeSettingsScreen() {
   );
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return modes;
+    if (!search.trim()) return listItems;
     const q = search.toLowerCase();
-    return modes.filter(m => m.name.toLowerCase().includes(q));
-  }, [modes, search]);
+    return listItems.filter(m => m.name.toLowerCase().includes(q));
+  }, [listItems, search]);
 
-  const isEmpty = !isLoading && filtered.length === 0 && !search.trim();
+  const isEmpty = !isLoading && listItems.length === 0;
 
   // ── FAB animations ────────────────────────────────────────────────────────
   const glowScale   = useRef(new Animated.Value(1)).current;
@@ -205,41 +282,84 @@ export default function PaymentModeSettingsScreen() {
 
   // ── Render card ───────────────────────────────────────────────────────────
 
-  const renderMode = ({ item }) => {
-    const balance = item.net_balance ?? 0;
+  const renderMode = (item, idx) => {
+    const balance    = item.net_balance ?? 0;
     const isBankMode = ['cash', 'check', 'cheque'].includes(item.name?.toLowerCase().trim());
-    return (
-      <TouchableOpacity
-        style={[s.card, { backgroundColor: C.card, borderColor: C.border }]}
-        onPress={() => openDetail(item)}
-        onLongPress={canEdit ? () => setMenuModeId(item.id) : undefined}
-        delayLongPress={350}
-        activeOpacity={0.8}
+    const isActive   = idx === dragIdx;
+
+    const showLineBefore =
+      dragIdx >= 0 && insertAt === idx && insertAt !== dragIdx && !(dragIdx + 1 === insertAt);
+    const isLast       = idx === listItems.length - 1;
+    const showLineAfter =
+      isLast && dragIdx >= 0 && insertAt === listItems.length - 1 &&
+      dragIdx !== listItems.length - 1 && dragIdx < insertAt;
+
+    const card = (
+      <Animated.View
+        style={[
+          s.cardWrap,
+          isActive && {
+            transform:     [{ translateY: dragDy }],
+            zIndex:        100,
+            elevation:     10,
+            shadowColor:   C.primary,
+            shadowOffset:  { width: 0, height: 6 },
+            shadowOpacity: 0.22,
+            shadowRadius:  12,
+            opacity:       0.97,
+          },
+        ]}
       >
-        <View style={[s.avatar, { backgroundColor: C.primaryLight }]}>
-          {isBankMode
-            ? <MaterialCommunityIcons name="bank" size={20} color={C.primary} />
-            : <Feather name="credit-card" size={20} color={C.primary} />
-          }
-        </View>
+        <View style={[s.card, { backgroundColor: C.card, borderColor: isActive ? C.primary : C.border }]}>
+          {/* Drag handle — only shown when user is owner */}
+          {canEdit && (
+            <View {...makeHandleProps(idx)} style={s.handle}>
+              <DragHandleIcon color={isActive ? C.primary : C.textMuted} />
+            </View>
+          )}
 
-        <View style={s.cardBody}>
-          <Text style={[s.cardName, { color: C.text, fontFamily: Font.semiBold }]} numberOfLines={1}>
-            {item.name}
-          </Text>
-        </View>
+          {/* Icon */}
+          <View style={[s.avatar, { backgroundColor: C.primaryLight }]}>
+            {isBankMode
+              ? <MaterialCommunityIcons name="bank" size={20} color={C.primary} />
+              : <Feather name="credit-card" size={20} color={C.primary} />
+            }
+          </View>
 
-        <TouchableOpacity
-          style={[s.balancePill, { backgroundColor: balance >= 0 ? C.cashInLight : C.dangerLight }]}
-          onPress={() => openBalance(item)}
-          activeOpacity={0.8}
-        >
-          <Text style={[s.balanceText, { color: balance >= 0 ? C.cashIn : C.danger, fontFamily: Font.bold }]}>
-            {Math.abs(balance).toLocaleString()}
-          </Text>
-          <Feather name="chevron-right" size={11} color={balance >= 0 ? C.cashIn : C.danger} />
-        </TouchableOpacity>
-      </TouchableOpacity>
+          {/* Name — tappable to open detail */}
+          <TouchableOpacity
+            style={s.cardBody}
+            onPress={() => openDetail(item)}
+            onLongPress={canEdit ? () => setMenuModeId(item.id) : undefined}
+            delayLongPress={350}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.cardName, { color: C.text, fontFamily: Font.semiBold }]} numberOfLines={1}>
+              {item.name}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Balance pill */}
+          <TouchableOpacity
+            style={[s.balancePill, { backgroundColor: balance >= 0 ? C.cashInLight : C.dangerLight }]}
+            onPress={() => openBalance(item)}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.balanceText, { color: balance >= 0 ? C.cashIn : C.danger, fontFamily: Font.bold }]}>
+              {Math.abs(balance).toLocaleString()}
+            </Text>
+            <Feather name="chevron-right" size={11} color={balance >= 0 ? C.cashIn : C.danger} />
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    );
+
+    return (
+      <Fragment key={item.id}>
+        {showLineBefore && <View style={[s.insertLine, { backgroundColor: C.primary }]} />}
+        {card}
+        {showLineAfter  && <View style={[s.insertLine, { backgroundColor: C.primary }]} />}
+      </Fragment>
     );
   };
 
@@ -272,24 +392,22 @@ export default function PaymentModeSettingsScreen() {
       {/* List / empty states */}
       {isLoading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={C.primary} />
+      ) : isEmpty ? (
+        <EmptyState C={C} Font={Font} />
       ) : filtered.length === 0 ? (
-        search ? (
-          <View style={s.empty}>
-            <Feather name="search" size={40} color={C.border} />
-            <Text style={[s.emptyTitle, { color: C.text, fontFamily: Font.semiBold }]}>No results</Text>
-            <Text style={[s.emptySub, { color: C.textMuted, fontFamily: Font.regular }]}>Try a different search.</Text>
-          </View>
-        ) : (
-          <EmptyState C={C} Font={Font} />
-        )
+        <View style={s.empty}>
+          <Feather name="search" size={40} color={C.border} />
+          <Text style={[s.emptyTitle, { color: C.text, fontFamily: Font.semiBold }]}>No results</Text>
+          <Text style={[s.emptySub, { color: C.textMuted, fontFamily: Font.regular }]}>Try a different search.</Text>
+        </View>
       ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={item => item.id}
-          renderItem={renderMode}
-          contentContainerStyle={s.listContent}
+        <ScrollView
+          scrollEnabled={dragIdx < 0}
           showsVerticalScrollIndicator={false}
-        />
+          contentContainerStyle={s.listContent}
+        >
+          {filtered.map((item, idx) => renderMode(item, idx))}
+        </ScrollView>
       )}
 
       {/* Cascading arrows → FAB (only when empty + canEdit) */}
@@ -411,10 +529,13 @@ const makeStyles = () => StyleSheet.create({
   searchWrap: { paddingVertical: 10, borderBottomWidth: 1 },
   listContent: { paddingTop: 12, paddingBottom: 120 },
 
-  card:        { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 10, borderRadius: 50, paddingVertical: 6, paddingLeft: 6, paddingRight: 14, borderWidth: 1.5 },
+  cardWrap:    { marginHorizontal: 16, marginBottom: 10 },
+  card:        { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingVertical: 6, paddingLeft: 6, paddingRight: 14, borderWidth: 1.5 },
+  handle:      { paddingHorizontal: 8, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
   avatar:      { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   cardBody:    { flex: 1 },
   cardName:    { fontSize: 14, lineHeight: 20 },
+  insertLine:  { height: 3, borderRadius: 2, marginHorizontal: 16, marginVertical: 3 },
   balancePill: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6 },
   balanceText: { fontSize: 13, lineHeight: 18 },
 

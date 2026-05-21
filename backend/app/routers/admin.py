@@ -170,31 +170,59 @@ def _resolve_recipients(sb, target_type: str, payload, admin_id: str) -> List[st
         )
         ids = [p["id"] for p in (res.data or [])]
 
-    elif target_type == "with_books":
-        # Active users who have at least 1 book
-        all_res = (
+    elif target_type == "plan_free":
+        res = (
             sb.table("profiles")
             .select("id")
             .neq("role", "superadmin")
+            .eq("subscription_tier", "free")
             .execute()
         )
-        all_ids = {p["id"] for p in (all_res.data or [])}
-        books_res = sb.table("books").select("user_id").in_("user_id", list(all_ids)).execute()
-        has_book = {b["user_id"] for b in (books_res.data or [])}
-        ids = [uid for uid in all_ids if uid in has_book]
+        ids = [p["id"] for p in (res.data or [])]
 
-    elif target_type == "without_books":
-        # Active users who have NOT created any book yet
-        all_res = (
+    elif target_type == "plan_pro_m":
+        res = (
             sb.table("profiles")
             .select("id")
             .neq("role", "superadmin")
+            .eq("subscription_tier", "pro")
+            .eq("subscription_billing_cycle", "monthly")
             .execute()
         )
-        all_ids = {p["id"] for p in (all_res.data or [])}
-        books_res = sb.table("books").select("user_id").in_("user_id", list(all_ids)).execute()
-        has_book = {b["user_id"] for b in (books_res.data or [])}
-        ids = [uid for uid in all_ids if uid not in has_book]
+        ids = [p["id"] for p in (res.data or [])]
+
+    elif target_type == "plan_pro_y":
+        res = (
+            sb.table("profiles")
+            .select("id")
+            .neq("role", "superadmin")
+            .eq("subscription_tier", "pro")
+            .eq("subscription_billing_cycle", "yearly")
+            .execute()
+        )
+        ids = [p["id"] for p in (res.data or [])]
+
+    elif target_type == "plan_biz_m":
+        res = (
+            sb.table("profiles")
+            .select("id")
+            .neq("role", "superadmin")
+            .eq("subscription_tier", "business")
+            .eq("subscription_billing_cycle", "monthly")
+            .execute()
+        )
+        ids = [p["id"] for p in (res.data or [])]
+
+    elif target_type == "plan_biz_y":
+        res = (
+            sb.table("profiles")
+            .select("id")
+            .neq("role", "superadmin")
+            .eq("subscription_tier", "business")
+            .eq("subscription_billing_cycle", "yearly")
+            .execute()
+        )
+        ids = [p["id"] for p in (res.data or [])]
 
     elif target_type == "specific":
         ids = list(payload.user_ids or [])
@@ -202,9 +230,10 @@ def _resolve_recipients(sb, target_type: str, payload, admin_id: str) -> List[st
     else:
         ids = []
 
-    # Admin always receives their own broadcasts (except 'specific' targeting,
-    # where the admin deliberately chose a subset and may not want to self-include)
-    if target_type != "specific" and admin_id not in ids:
+    # Admin receives their own broadcasts only for 'all' and 'new_users'.
+    # Plan-based and 'specific' targets are precise segments — the superadmin
+    # is not on any subscription plan, so self-appending would skew counts.
+    if target_type in ("all", "new_users") and admin_id not in ids:
         ids.append(admin_id)
 
     return ids

@@ -286,6 +286,10 @@ export const apiUpdatePaymentMode = async (bookId, modeId, payload) =>
 export const apiDeletePaymentMode = async (bookId, modeId) =>
   (await api.delete(`/api/v1/books/${bookId}/payment-modes/${modeId}`)).data;
 
+/** PATCH /api/v1/books/:bookId/payment-modes/reorder */
+export const apiReorderPaymentModes = async (bookId, orderedIds) =>
+  (await api.patch(`/api/v1/books/${bookId}/payment-modes/reorder`, { ordered_ids: orderedIds })).data;
+
 /** GET /api/v1/books/:bookId/payment-modes/:modeId/entries */
 export const apiGetPaymentModeEntries = async (bookId, modeId) =>
   (await api.get(`/api/v1/books/${bookId}/payment-modes/${modeId}/entries`)).data;

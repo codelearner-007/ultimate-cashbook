@@ -1,2 +1,2 @@
-import AdminNotificationsInboxScreen from '../../../src/screens/AdminNotificationsInboxScreen';
-export default AdminNotificationsInboxScreen;
+import AdminNotificationsScreen from '../../../src/screens/AdminNotificationsScreen';
+export default AdminNotificationsScreen;

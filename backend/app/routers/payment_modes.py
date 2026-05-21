@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Any
 from app.auth.jwt import get_current_user
 from app.db.supabase import get_supabase
-from app.models.payment_mode import PaymentModeCreate, PaymentModeUpdate, PaymentModeResponse
+from app.models.payment_mode import PaymentModeCreate, PaymentModeUpdate, PaymentModeResponse, PaymentModeReorder
 from app.utils.book_access import get_book_owner_id
 
 router = APIRouter()
@@ -17,6 +17,7 @@ async def get_payment_modes(book_id: str, user_id: str = Depends(get_current_use
         .select("*")
         .eq("book_id", book_id)
         .eq("user_id", owner_id)
+        .order("display_order")
         .order("created_at")
         .execute()
     )
@@ -48,10 +49,19 @@ async def create_payment_mode(
     if existing.data:
         raise HTTPException(status_code=409, detail="Payment mode already exists in this book")
 
+    count_res = (
+        sb.table("payment_modes")
+        .select("id", count="exact")
+        .eq("book_id", book_id)
+        .execute()
+    )
+    next_order = count_res.count or 0
+
     result = sb.table("payment_modes").insert({
-        "book_id": book_id,
-        "user_id": owner_id,
-        "name":    name,
+        "book_id":       book_id,
+        "user_id":       owner_id,
+        "name":          name,
+        "display_order": next_order,
     }).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create payment mode")
@@ -141,6 +151,19 @@ async def delete_payment_mode(
         raise HTTPException(status_code=400, detail="Cannot delete the last payment mode")
 
     sb.table("payment_modes").delete().eq("id", mode_id).eq("user_id", owner_id).execute()
+
+
+@router.patch("/{book_id}/payment-modes/reorder", status_code=204)
+async def reorder_payment_modes(
+    book_id: str,
+    payload: PaymentModeReorder,
+    user_id: str = Depends(get_current_user),
+):
+    sb = get_supabase()
+    owner_id = get_book_owner_id(sb, book_id, user_id)
+
+    for order, mode_id in enumerate(payload.ordered_ids):
+        sb.table("payment_modes").update({"display_order": order}).eq("id", mode_id).eq("book_id", book_id).eq("user_id", owner_id).execute()
 
 
 @router.get("/{book_id}/payment-modes/{mode_id}/entries", response_model=List[Any])

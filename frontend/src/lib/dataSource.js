@@ -60,6 +60,7 @@ import {
   apiCreatePaymentMode     as _apiCreatePaymentMode,
   apiUpdatePaymentMode     as _apiUpdatePaymentMode,
   apiDeletePaymentMode     as _apiDeletePaymentMode,
+  apiReorderPaymentModes   as _apiReorderPaymentModes,
   apiGetPaymentModeEntries as _apiGetPaymentModeEntries,
 } from './api';
 
@@ -261,6 +262,9 @@ export const apiUpdatePaymentMode = (bookId, id, p) =>
 
 export const apiDeletePaymentMode = (bookId, id) =>
   useLocalDb() ? L.localDeletePaymentMode(bookId, id) : _apiDeletePaymentMode(bookId, id);
+
+export const apiReorderPaymentModes = (bookId, orderedIds) =>
+  _apiReorderPaymentModes(bookId, orderedIds);
 
 export const apiGetPaymentModeEntries = (bookId, id) =>
   useLocalDb() ? L.localGetPaymentModeEntries(bookId, id) : _apiGetPaymentModeEntries(bookId, id);

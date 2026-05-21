@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   apiGetPaymentModes, apiCreatePaymentMode,
   apiUpdatePaymentMode, apiDeletePaymentMode,
-  apiGetPaymentModeEntries,
+  apiReorderPaymentModes, apiGetPaymentModeEntries,
 } from '../lib/dataSource';
 import Toast from '../lib/toast';
 
@@ -54,5 +54,26 @@ export function useDeletePaymentMode(bookId) {
       qc.invalidateQueries({ queryKey: ['entries', bookId] });
     },
     onError: () => Toast.show({ type: 'error', text1: 'Failed to delete payment mode', text2: 'Please try again.' }),
+  });
+}
+
+export function useReorderPaymentModes(bookId) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderedIds) => apiReorderPaymentModes(bookId, orderedIds),
+    onMutate: async (orderedIds) => {
+      await qc.cancelQueries({ queryKey: paymentModeKeys.all(bookId) });
+      const prev = qc.getQueryData(paymentModeKeys.all(bookId));
+      qc.setQueryData(paymentModeKeys.all(bookId), (old = []) => {
+        const byId = Object.fromEntries(old.map(m => [m.id, m]));
+        return orderedIds.map((id, i) => ({ ...byId[id], display_order: i })).filter(Boolean);
+      });
+      return { prev };
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.prev) qc.setQueryData(paymentModeKeys.all(bookId), ctx.prev);
+      Toast.show({ type: 'error', text1: 'Failed to save order', text2: 'Please try again.' });
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: paymentModeKeys.all(bookId) }),
   });
 }

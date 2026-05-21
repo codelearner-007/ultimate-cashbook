@@ -8,7 +8,7 @@ export default function AdminNotificationsInboxScreen() {
       emptySubtitle="Notifications sent to you will appear here."
       fabLabel="Send Notification"
       onFab={() => router.push('/(app)/admin-send-notification')}
-      applyTopInset={false}
+      applyTopInset={true}
     />
   );
 }

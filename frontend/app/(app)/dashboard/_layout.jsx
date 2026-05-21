@@ -30,6 +30,7 @@ const GearIcon = ({ color, size = 22 }) => (
   </View>
 );
 
+
 const BellIcon = ({ color, size = 22 }) => (
   <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
     <View style={{ width: size * 0.62, height: size * 0.55, borderTopLeftRadius: size * 0.31, borderTopRightRadius: size * 0.31, borderWidth: 1.8, borderColor: color, borderBottomWidth: 0, marginTop: 2 }} />

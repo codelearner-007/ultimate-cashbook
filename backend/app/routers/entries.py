@@ -58,6 +58,7 @@ async def create_entry(
         "category":             payload.category,
         "category_id":          payload.category_id,
         "payment_mode":         payload.payment_mode,
+        "payment_mode_id":      payload.payment_mode_id,
         "contact_name":         payload.contact_name,
         "customer_id":          customer_id,
         "supplier_id":          supplier_id,

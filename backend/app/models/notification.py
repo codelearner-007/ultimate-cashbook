@@ -2,7 +2,7 @@ from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import datetime
 
-VALID_TARGET_TYPES = ("all", "new_users", "with_books", "without_books", "specific")
+VALID_TARGET_TYPES = ("all", "new_users", "plan_free", "plan_pro_m", "plan_pro_y", "plan_biz_m", "plan_biz_y", "specific")
 
 
 class NotificationCreate(BaseModel):

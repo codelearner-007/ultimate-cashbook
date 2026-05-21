@@ -420,9 +420,10 @@ export default function BooksView({
   const renameBook = useRenameBook();
   const deleteBook = useDeleteBook();
 
-  const tier       = user?.subscription_tier ?? 'free';
-  const bookLimit  = getLimit(user, 'books');   // 3 (free) | 15 (pro) | Infinity (business)
-  const canAddBook = books.length < bookLimit;
+  const isSuperAdmin = user?.role === 'superadmin';
+  const tier         = user?.subscription_tier ?? 'free';
+  const bookLimit    = getLimit(user, 'books');   // superadmin: Infinity | free: 3 | pro: 15 | business: Infinity
+  const canAddBook   = books.length < bookLimit;
 
   const { data: sharedBooks = [], isLoading: sharedLoading } = useSharedBooks();
   const leaveSharedBook = useLeaveSharedBook();
@@ -683,9 +684,9 @@ export default function BooksView({
                   hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
                 >
                   <Text style={[s.tierChipText, {
-                    color: tier === 'pro' ? '#F59E0B' : tier === 'business' ? '#8B5CF6' : C.onPrimary,
+                    color: isSuperAdmin ? '#10B981' : tier === 'pro' ? '#F59E0B' : tier === 'business' ? '#8B5CF6' : C.onPrimary,
                   }]}>
-                    {tier === 'free' ? 'FREE' : tier === 'pro' ? 'PRO' : 'BUSINESS'}
+                    {isSuperAdmin ? 'ADMIN' : tier === 'free' ? 'FREE' : tier === 'pro' ? 'PRO' : 'BUSINESS'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -736,7 +737,7 @@ export default function BooksView({
       {ListHeader}
 
       {/* ── Free tier banner ────────────────────────────────────────────── */}
-      {tier === 'free' && (
+      {!isSuperAdmin && tier === 'free' && (
         <TouchableOpacity
           style={[s.freeBanner, { backgroundColor: C.cashInLight, borderColor: C.cashIn }]}
           onPress={() => router.push('/(app)/settings/subscription')}

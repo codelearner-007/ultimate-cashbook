@@ -96,8 +96,10 @@ frontend/
 │   │   └── useTheme.js           # Returns { C, Font, isDark, toggleTheme }
 │   ├── lib/
 │   │   ├── api.js                # All Axios API calls (real backend, no mocks)
+│   │   ├── canAccess.js          # Feature-gate: canAccess(user, feature), getLimit(user, feature) — superadmin always returns true/Infinity
+│   │   ├── dataSource.js         # Data-source router: cloud API (paid/superadmin+online) vs local SQLite (free/offline)
 │   │   ├── supabase.js           # Supabase client (SecureStore / localStorage adapter)
-│   │   ├── storage.js            # Provider-agnostic attachment abstraction (uploadAttachment, removeAttachment)
+│   │   ├── storage.js            # Provider-agnostic attachment abstraction (uploadAttachment, removeAttachment) — superadmin always uses Supabase Storage
 │   │   └── toast.js              # Toast helper
 │   ├── store/
 │   │   ├── authStore.js          # Zustand: user, session, setUser, clearUser

@@ -72,9 +72,13 @@ import {
  * False means: cloud is primary, but local gets a backup copy of every write.
  */
 function useLocalDb() {
-  const tier     = useAuthStore.getState().subscription_tier ?? 'free';
+  const state    = useAuthStore.getState();
+  const tier     = state.subscription_tier ?? 'free';
+  const role     = state.user?.role;
   const isOnline = useSyncStore.getState().isOnline;
-  return tier === 'free' || !isOnline;
+  if (!isOnline) return true;
+  if (role === 'superadmin') return false;   // superadmin always uses cloud
+  return tier === 'free';
 }
 
 /**

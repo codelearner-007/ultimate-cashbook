@@ -41,8 +41,10 @@ const LIMITS = {
 
 /**
  * Returns true if the user's tier meets the minimum required for the feature.
+ * Superadmin always has full access regardless of subscription tier.
  */
 export function canAccess(user, feature) {
+  if (user?.role === 'superadmin') return true;
   const userTier = user?.subscription_tier ?? 'free';
   const required = FEATURES[feature] ?? 'free';
   return (TIER_RANK[userTier] ?? 0) >= (TIER_RANK[required] ?? 0);
@@ -51,8 +53,10 @@ export function canAccess(user, feature) {
 /**
  * Returns the numeric limit for a feature on the user's tier.
  * Returns Infinity if no cap is defined for that tier.
+ * Superadmin always gets Infinity regardless of subscription tier.
  */
 export function getLimit(user, feature) {
+  if (user?.role === 'superadmin') return Infinity;
   const userTier = user?.subscription_tier ?? 'free';
   return LIMITS[feature]?.[userTier] ?? Infinity;
 }

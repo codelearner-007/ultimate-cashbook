@@ -47,9 +47,13 @@ const PROVIDERS = {
 };
 
 function shouldUseLocal() {
-  const tier     = useAuthStore.getState().subscription_tier ?? 'free';
+  const state    = useAuthStore.getState();
+  const tier     = state.subscription_tier ?? 'free';
+  const role     = state.user?.role;
   const isOnline = useSyncStore.getState()?.isOnline ?? true;
-  return tier === 'free' || !isOnline;
+  if (!isOnline) return true;
+  if (role === 'superadmin') return false;   // superadmin always uses Supabase Storage
+  return tier === 'free';
 }
 
 export const uploadAttachment = (params) =>

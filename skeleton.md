@@ -181,7 +181,7 @@ All interactions, mutations, states, and API calls are identical to BooksScreen.
 
 ## 4. AdminUsersScreen — `/(app)/dashboard/users` (role: superadmin)
 
-**Layout:** This is the default landing for superadmin. Three tabs at the top (Expo `<Tabs>`):
+**Layout:** Default landing for superadmin. Three tabs at the top (Expo `<Tabs>`):
 - **Users** (this screen)
 - **My Books** → AdminBooksScreen
 - **Settings** → SettingsScreen
@@ -196,71 +196,65 @@ All interactions, mutations, states, and API calls are identical to BooksScreen.
 
 ### Stats Row (auto-refreshed every 10 s)
 - Total Users count + active sub-count
-- Total Books count
-- Storage used
+- Total Books count (filtered users + admin's own books when no filter active)
+- Storage used (sum of `storage_mb` across filtered users)
 
 ### Search Bar
-| Element       | Action | Result                                           |
-|---------------|--------|--------------------------------------------------|
-| Search input  | Type   | Filters user list by name or email (client-side) |
-| Clear (✕)     | Tap    | Clears query                                     |
+| Element      | Action | Result                                           |
+|--------------|--------|--------------------------------------------------|
+| Search input | Type   | Filters user list by name or email (client-side) |
+| Clear (✕)    | Tap    | Clears query                                     |
 
-### Date Filter Chips (horizontal scroll)
-| Chip             | Action | Result                                       |
-|------------------|--------|----------------------------------------------|
-| **All Time**     | Tap    | Shows users registered at any date (default) |
-| **Today**        | Tap    | Shows users registered today                 |
-| **Last 7 Days**  | Tap    | Shows users registered in last 7 days        |
-| **This Month**   | Tap    | Shows users registered this calendar month   |
-| **This Year**    | Tap    | Shows users registered this calendar year    |
-Filtering is client-side against `created_at`. Active chip highlights in primary color.
+### Filter Row (horizontal scroll — chips compose together)
 
-### Status Filter (select dropdown)
-| Element                 | Action | Result                        |
-|-------------------------|--------|-------------------------------|
-| Status dropdown button  | Tap    | Opens **Status Picker Sheet** |
+| Chip           | State | Action | Result |
+|----------------|-------|--------|--------|
+| **All**        | Active when all filters at default | Tap | Resets all filters to default |
+| **Plan ▾**     | Highlighted when active | Tap | Opens **Plan Picker Sheet** |
+| **All Time ▾** | Highlighted when date filter set | Tap | Opens **Date Picker Sheet** |
 
-#### Status Picker Sheet
-| Option          | Action | Result                    |
-|-----------------|--------|---------------------------|
-| **All Users**   | Tap    | Shows all users (default) |
-| **Active**      | Tap    | Shows only active users   |
-| **Inactive**    | Tap    | Shows only inactive users |
-Selected option shown with checkmark; backdrop tap closes sheet.
+Both filters compose client-side.
 
-Both filters compose (date + status applied together).
+#### Date Picker Sheet (filters by `created_at` join date)
+| Option        | Result                                     |
+|---------------|--------------------------------------------|
+| All Time      | No date filter (default)                   |
+| Today         | Users registered today                     |
+| Last 7 Days   | Users registered in last 7 days            |
+| This Month    | Users registered this calendar month       |
+| This Year     | Users registered this calendar year        |
 
 ### User Card
+Each card shows: avatar (or initials), full name, **subscription plan pill** (Free / Pro / Business — colored per plan), email, and **access badge** (if user has shared any books — shows share icon + count). Storage is shown only in the detail modal.
+
 | Element | Action | Result                      |
 |---------|--------|-----------------------------|
 | Card    | Tap    | Opens **User Detail Modal** |
 
 ### User Detail Modal
-| Element                            | Action | Result                                |
-|------------------------------------|--------|---------------------------------------|
-| Avatar, name, email                | —      | Display only                          |
-| Stats: Books / Entries / Storage   | —      | Display only                          |
-| Status pill (Active / Inactive)    | —      | Display only                          |
-| **Account Status toggle**          | Tap    | Opens **Confirm Status Change Modal** |
-| Close / backdrop tap               | Tap    | Closes modal                          |
+| Element                                        | Action | Result         |
+|------------------------------------------------|--------|----------------|
+| Avatar ring, name, email                       | —      | Display only; avatar/ring/dot color driven by subscription plan color |
+| Stats row: Books / Entries / Storage / Access  | —      | Display only; "Access Given" column shows count of accepted book shares; highlighted in primary color when > 0 |
+| **Access Given info card** (only when count>0) | —      | Shows share icon + "Sharing N books with other users" |
+| **Subscription card**                          | —      | Shows tier/cycle label; styled with plan accent color |
+| Close (✕) / backdrop tap                       | Tap    | Closes modal   |
 
-### Confirm Status Change Modal
-| Element                            | Action | Result                                                                      |
-|------------------------------------|--------|-----------------------------------------------------------------------------|
-| "Activate" or "Deactivate" button  | Tap    | `PATCH /api/v1/admin/users/:id/status` → optimistic cache update + refetch  |
-| Cancel                             | Tap    | Closes confirmation, no change                                              |
+No Account Status card — users are differentiated by subscription tier (Free / Pro / Business), not by `is_active`.
+
+### Data source
+- User list: `GET /api/v1/admin/users` — returns `book_count`, `entry_count`, `storage_mb` (real bytes via RPC), `shared_books_count` (accepted `book_shares` where user is owner)
+- `shared_books_count` counts accepted `book_shares` rows where `owner_id = user.id`
 
 ### Polling
-- `GET /api/v1/admin/users` is called every **10 seconds** while screen is focused
+- `GET /api/v1/admin/users` called every **10 seconds** while screen is focused
 - New users appear automatically without manual refresh
 
 ### Error / Empty States
-| State         | Display                      |
-|---------------|------------------------------|
-| Loading       | Skeleton rows                |
-| Error         | Error text + retry           |
-| Empty search  | "No users found"             |
-| No users      | "No users registered yet"    |
+| State           | Display                                      |
+|-----------------|----------------------------------------------|
+| Loading         | Skeleton rows                                |
+| Empty (filters) | Icon box + "No users found" + filter hint    |
 
 ---
 

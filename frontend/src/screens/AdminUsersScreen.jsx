@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback, memo, useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  StatusBar, Switch, Modal, Pressable, Image, Animated, ScrollView,
+  StatusBar, Modal, Pressable, Image, Animated, ScrollView,
 } from 'react-native';
 import SearchBar from '../components/ui/SearchBar';
 import { Font } from '../constants/fonts';
@@ -12,10 +12,11 @@ import { useTheme } from '../hooks/useTheme';
 import { useAuthStore } from '../store/authStore';
 import { useProfile, useUpdateProfile } from '../hooks/useProfile';
 import Toast from '../lib/toast';
-import { apiGetAllUsers, apiToggleUserStatus, apiGetBooks } from '../lib/api';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiGetAllUsers, apiGetBooks } from '../lib/api';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { PLAN_META, planColor, planLabel } from '../constants/plans';
 
-// ── Super Admin header badge (vibrant + twinkling) ───────────────────────────
+// ── Super Admin header badge ──────────────────────────────────────────────────
 
 const SA_SPARKS = [
   { top: -4, left:  2 },
@@ -84,7 +85,7 @@ const sab = StyleSheet.create({
   spark: { position: 'absolute', width: 4, height: 4, borderRadius: 1 },
 });
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Filter constants ──────────────────────────────────────────────────────────
 
 const DATE_FILTERS = [
   { key: 'all',   label: 'All Time' },
@@ -94,10 +95,13 @@ const DATE_FILTERS = [
   { key: 'year',  label: 'This Year' },
 ];
 
-const STATUS_OPTIONS = [
-  { key: 'all',      label: 'All Users' },
-  { key: 'active',   label: 'Active' },
-  { key: 'inactive', label: 'Inactive' },
+const PLAN_OPTIONS = [
+  { key: 'all',              label: 'All Plans' },
+  { key: 'free',             label: 'Free' },
+  { key: 'pro_monthly',      label: 'Pro · Monthly' },
+  { key: 'pro_yearly',       label: 'Pro · Yearly' },
+  { key: 'business_monthly', label: 'Business · Monthly' },
+  { key: 'business_yearly',  label: 'Business · Yearly' },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -105,10 +109,14 @@ const STATUS_OPTIONS = [
 const getInitials = (str = '') =>
   str.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
-const fmtStorage = (mb) =>
-  mb < 1 ? `${Math.round(mb * 1024)} KB` : `${mb.toFixed(1)} MB`;
 
-// ── Icons ─────────────────────────────────────────────────────────────────────
+const fmtStorage = (mb) => {
+  if (!mb || mb === 0) return '0 KB';
+  if (mb < 1) return `${Math.round(mb * 1024)} KB`;
+  return `${mb.toFixed(1)} MB`;
+};
+
+// ── Custom icons (SVG-in-RN) ──────────────────────────────────────────────────
 
 const SunIcon = ({ color, size = 18 }) => (
   <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -139,23 +147,6 @@ const XIcon = ({ color, size = 16 }) => (
   </View>
 );
 
-const LockIcon = ({ color, size = 16 }) => (
-  <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-    <View style={{
-      width: size * 0.52, height: size * 0.42,
-      borderTopLeftRadius: size * 0.26, borderTopRightRadius: size * 0.26,
-      borderWidth: 1.8, borderColor: color, borderBottomWidth: 0,
-    }} />
-    <View style={{
-      width: size * 0.78, height: size * 0.54,
-      borderRadius: size * 0.1,
-      borderWidth: 1.8, borderColor: color,
-      alignItems: 'center', justifyContent: 'center',
-    }}>
-      <View style={{ width: size * 0.18, height: size * 0.22, borderRadius: size * 0.1, borderWidth: 1.8, borderColor: color }} />
-    </View>
-  </View>
-);
 
 const CheckIcon = ({ color, size = 20 }) => (
   <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -179,20 +170,35 @@ const ChevronDownIcon = ({ color, size = 14 }) => (
   </View>
 );
 
+// Share icon (two overlapping circles + lines)
+const ShareIcon = ({ color, size = 14 }) => (
+  <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ position: 'absolute', right: 0, top: 0, width: size * 0.42, height: size * 0.42, borderRadius: size * 0.21, borderWidth: 1.5, borderColor: color }} />
+    <View style={{ position: 'absolute', left: 0, top: size * 0.28, width: size * 0.42, height: size * 0.42, borderRadius: size * 0.21, borderWidth: 1.5, borderColor: color }} />
+    <View style={{ position: 'absolute', right: 0, bottom: 0, width: size * 0.42, height: size * 0.42, borderRadius: size * 0.21, borderWidth: 1.5, borderColor: color }} />
+    <View style={{ position: 'absolute', width: size * 0.55, height: 1.5, backgroundColor: color, top: size * 0.2, left: size * 0.1, transform: [{ rotate: '30deg' }] }} />
+    <View style={{ position: 'absolute', width: size * 0.55, height: 1.5, backgroundColor: color, bottom: size * 0.2, left: size * 0.1, transform: [{ rotate: '-30deg' }] }} />
+  </View>
+);
+
 // ── User Row ──────────────────────────────────────────────────────────────────
 
-const UserRow = memo(({ item, onViewBooks, C, s }) => {
+const UserRow = memo(({ item, onPress, C, s }) => {
   const initials = getInitials(item.full_name);
+  const pColor   = item.isAdmin ? '#F59E0B' : planColor(item.subscription_tier, C.primary);
+  const pColorBg = `${pColor}20`;
+  const tier     = item.isAdmin ? null : (item.subscription_tier ?? 'free');
+  const cycle    = item.subscription_billing_cycle ?? 'monthly';
   return (
     <TouchableOpacity
       style={[s.userCard, item.isAdmin && { borderColor: 'rgba(251,191,36,0.45)', backgroundColor: 'rgba(251,191,36,0.07)' }]}
-      onPress={onViewBooks}
+      onPress={onPress}
       activeOpacity={0.7}
     >
-      <View style={[s.userAvatar, { backgroundColor: item.isAdmin ? 'rgba(251,191,36,0.18)' : item.is_active ? C.primaryLight : C.cardAlt, overflow: 'hidden' }]}>
+      <View style={[s.userAvatar, { backgroundColor: pColorBg, borderWidth: 2, borderColor: `${pColor}55`, overflow: 'hidden' }]}>
         {item.avatar_url
           ? <ExpoImage source={{ uri: item.avatar_url }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
-          : <Text style={[s.userAvatarText, { color: item.isAdmin ? '#D97706' : item.is_active ? C.primary : C.textMuted }]}>{initials}</Text>
+          : <Text style={[s.userAvatarText, { color: pColor }]}>{initials}</Text>
         }
       </View>
       <View style={s.userInfo}>
@@ -204,18 +210,23 @@ const UserRow = memo(({ item, onViewBooks, C, s }) => {
               <Text style={[s.userStatusText, { color: '#D97706' }]}>Super Admin</Text>
             </View>
           ) : (
-            <View style={[s.userStatusPill, {
-              backgroundColor: item.is_active ? C.cashInLight : C.dangerLight,
-              borderColor:     item.is_active ? `${C.cashIn}55` : `${C.danger}55`,
-            }]}>
-              <View style={[s.userStatusDot, { backgroundColor: item.is_active ? C.cashIn : C.danger }]} />
-              <Text style={[s.userStatusText, { color: item.is_active ? C.cashIn : C.danger }]}>
-                {item.is_active ? 'Active' : 'Inactive'}
+            <View style={[s.userStatusPill, { backgroundColor: `${pColor}18`, borderColor: `${pColor}55` }]}>
+              <View style={[s.userStatusDot, { backgroundColor: pColor }]} />
+              <Text style={[s.userStatusText, { color: pColor }]}>
+                {planLabel(tier, cycle)}
               </Text>
             </View>
           )}
         </View>
-        <Text style={s.userEmail} numberOfLines={1}>{item.email}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text style={s.userEmail} numberOfLines={1}>{item.email}</Text>
+          {!item.isAdmin && item.shared_books_count > 0 && (
+            <View style={[s.accessBadge, { backgroundColor: C.primaryLight, borderColor: `${C.primary}44` }]}>
+              <ShareIcon color={C.primary} size={10} />
+              <Text style={[s.accessBadgeText, { color: C.primary }]}>{item.shared_books_count}</Text>
+            </View>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -256,14 +267,13 @@ export default function AdminUsersScreen() {
     );
   }, [isDark, toggleTheme, updateProfile]);
 
-  const [selectedUserId,  setSelectedUserId]  = useState(null);
-  const [searchQuery,     setSearchQuery]     = useState('');
-  const [confirmState,    setConfirmState]    = useState(null);
-  const [activeFilter,    setActiveFilter]    = useState('all'); // 'all' | 'active' | 'inactive'
-  const [dateFilter,      setDateFilter]      = useState('all'); // 'all' | 'today' | 'last7' | 'month' | 'year'
-  const [datePickerOpen,   setDatePickerOpen]   = useState(false);
-  const [statusPickerOpen, setStatusPickerOpen] = useState(false);
-  const [isFocused,       setIsFocused]       = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState(null);
+  const [searchQuery,    setSearchQuery]    = useState('');
+  const [dateFilter,     setDateFilter]     = useState('all');
+  const [planFilter,     setPlanFilter]     = useState('all');
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [planPickerOpen, setPlanPickerOpen] = useState(false);
+  const [isFocused,      setIsFocused]      = useState(false);
 
   const { data: allUsers = [], isLoading: usersLoading } = useQuery({
     queryKey: ['admin-users'],
@@ -291,16 +301,14 @@ export default function AdminUsersScreen() {
     }, [qc])
   );
 
-  const toggleUserMutation = useMutation({
-    mutationFn: ({ userId, isActive }) => apiToggleUserStatus(userId, isActive),
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
-  });
+  // ── Filtering ─────────────────────────────────────────────────────────────
 
   const filteredUsers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     let users = !q ? allUsers : allUsers.filter(
       u => u.full_name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q),
     );
+
     if (dateFilter !== 'all') {
       const now = new Date();
       users = users.filter(u => {
@@ -314,22 +322,30 @@ export default function AdminUsersScreen() {
         return true;
       });
     }
-    if (activeFilter === 'active')   return users.filter(u =>  u.is_active);
-    if (activeFilter === 'inactive') return users.filter(u => !u.is_active);
+
+    if (planFilter !== 'all') {
+      users = users.filter(u => {
+        const tier  = u.subscription_tier  ?? 'free';
+        const cycle = u.subscription_billing_cycle ?? 'monthly';
+        const key   = tier === 'free' ? 'free' : `${tier}_${cycle}`;
+        return key === planFilter;
+      });
+    }
+
     return users;
-  }, [allUsers, searchQuery, activeFilter, dateFilter]);
+  }, [allUsers, searchQuery, dateFilter, planFilter]);
 
   const adminItem = useMemo(() => ({
-    id:          user?.id ?? '__admin__',
-    full_name:   adminProfile?.full_name ?? user?.full_name ?? 'Admin',
-    email:       adminProfile?.email     ?? user?.email     ?? '',
-    avatar_url:  adminProfile?.avatar_url ?? null,
-    is_active:   true,
-    isAdmin:     true,
-    book_count:  books.length,
-    storage_mb:  adminProfile?.storage_mb ?? 0,
-    entry_count: 0,
-    created_at:  null,
+    id:                 user?.id ?? '__admin__',
+    full_name:          adminProfile?.full_name ?? user?.full_name ?? 'Admin',
+    email:              adminProfile?.email     ?? user?.email     ?? '',
+    avatar_url:         adminProfile?.avatar_url ?? null,
+    isAdmin:            true,
+    book_count:         books.length,
+    storage_mb:         adminProfile?.storage_mb ?? 0,
+    entry_count:        0,
+    shared_books_count: 0,
+    created_at:         null,
   }), [user, adminProfile, books.length]);
 
   const listData = useMemo(() => [adminItem, ...filteredUsers], [adminItem, filteredUsers]);
@@ -340,60 +356,41 @@ export default function AdminUsersScreen() {
     return allUsers.find(u => u.id === selectedUserId) ?? null;
   }, [allUsers, selectedUserId, adminItem]);
 
-  const handleViewBooks = useCallback((userId) => {
+  const handleViewUser = useCallback((userId) => {
     setSelectedUserId(userId);
   }, []);
-
-  const handleToggleUser = useCallback((userId, isActive) => {
-    if (!isActive) {
-      // Deactivating — require confirmation
-      const target = allUsers.find(u => u.id === userId);
-      setConfirmState({ userId, isActive, userName: target?.full_name ?? '' });
-    } else {
-      // Activating — proceed immediately
-      toggleUserMutation.mutate({ userId, isActive });
-    }
-  }, [allUsers, toggleUserMutation]);
-
-  const handleConfirmToggle = useCallback(() => {
-    if (!confirmState) return;
-    toggleUserMutation.mutate({ userId: confirmState.userId, isActive: confirmState.isActive });
-    setConfirmState(null);
-  }, [confirmState, toggleUserMutation]);
 
   const goToProfile = useCallback(() => {
     router.push('/(app)/admin-profile');
   }, [router]);
 
   const stats = useMemo(() => {
-    const isAll = activeFilter === 'all' && dateFilter === 'all' && !searchQuery.trim();
+    const isAll        = dateFilter === 'all' && planFilter === 'all' && !searchQuery.trim();
     const totalUsers   = filteredUsers.length;
-    const activeUsers  = filteredUsers.filter(u => u.is_active).length;
-    const totalBooks   = filteredUsers.reduce((acc, u) => acc + u.book_count, 0) + (isAll ? books.length : 0);
-    const totalStorage = filteredUsers.reduce((acc, u) => acc + u.storage_mb, 0);
-    return { totalUsers, activeUsers, totalBooks, totalStorage, isAll };
-  }, [filteredUsers, books, activeFilter, dateFilter, searchQuery]);
+    const totalBooks   = filteredUsers.reduce((acc, u) => acc + (u.book_count ?? 0), 0) + (isAll ? books.length : 0);
+    const totalStorage = filteredUsers.reduce((acc, u) => acc + (u.storage_mb ?? 0), 0);
+    return { totalUsers, totalBooks, totalStorage, isAll };
+  }, [filteredUsers, books, dateFilter, planFilter, searchQuery]);
 
   const adminInitials = useMemo(() => getInitials(user?.full_name ?? 'AD'), [user]);
 
   const renderUser = useCallback(({ item }) => (
     <UserRow
       item={item}
-      onViewBooks={() => handleViewBooks(item.id)}
+      onPress={() => handleViewUser(item.id)}
       C={C}
       s={s}
     />
-  ), [C, s, handleViewBooks]);
+  ), [C, s, handleViewUser]);
 
-  const isAllSelected    = activeFilter === 'all' && dateFilter === 'all';
+  // ── Filter chip state ─────────────────────────────────────────────────────
+
+  const isAllSelected    = dateFilter === 'all' && planFilter === 'all';
   const currentDateLabel = DATE_FILTERS.find(d => d.key === dateFilter)?.label ?? 'All Time';
-  const statusIsActive  = activeFilter !== 'all';
-  const statusDotColor  = statusIsActive ? C.primary : C.textMuted;
-  const statusBg        = statusIsActive ? C.primary : C.card;
-  const statusBorder    = statusIsActive ? C.primary : C.border;
-  const statusTextColor = statusIsActive ? '#fff' : C.textMuted;
-  const statusLabel     = STATUS_OPTIONS.find(o => o.key === activeFilter && o.key !== 'all')?.label ?? 'Status';
-  const STATUS_PICKER   = STATUS_OPTIONS.filter(o => o.key !== 'all');
+  const planIsActive     = planFilter !== 'all';
+  const planChipLabel    = PLAN_OPTIONS.find(o => o.key === planFilter && o.key !== 'all')?.label ?? 'Plan';
+
+  const PLAN_PICKER = PLAN_OPTIONS.filter(o => o.key !== 'all');
 
   const ListHeader = (
     <View>
@@ -403,45 +400,54 @@ export default function AdminUsersScreen() {
         placeholder="Search by name or email…"
       />
 
-      {/* ── Single filter row ─────────────────────────────────────────────── */}
+      {/* ── Filter row ───────────────────────────────────────────────────── */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={s.filterRowContent}
         style={s.filterRow}
       >
-        {/* ALL */}
+        {/* ALL chip */}
         <TouchableOpacity
-          onPress={() => { setActiveFilter('all'); setDateFilter('all'); }}
+          onPress={() => { setDateFilter('all'); setPlanFilter('all'); }}
           activeOpacity={0.75}
-          style={[s.filterChip, { borderColor: isAllSelected ? C.primary : C.border, backgroundColor: isAllSelected ? C.primary : C.card }]}
+          style={[s.filterChip, {
+            borderColor:     isAllSelected ? C.primary : C.border,
+            backgroundColor: isAllSelected ? C.primary : C.card,
+          }]}
         >
           <Text style={[s.filterChipText, { color: isAllSelected ? '#fff' : C.textMuted }]}>All</Text>
         </TouchableOpacity>
 
-        {/* Status picker button */}
+        {/* Plan picker */}
         <TouchableOpacity
-          onPress={() => setStatusPickerOpen(true)}
+          onPress={() => setPlanPickerOpen(true)}
           activeOpacity={0.75}
-          style={[s.filterChip, { borderColor: statusBorder, backgroundColor: statusBg, gap: 5 }]}
+          style={[s.filterChip, {
+            borderColor:     planIsActive ? C.primary : C.border,
+            backgroundColor: planIsActive ? C.primary : C.card,
+            gap: 5,
+          }]}
         >
-          <View style={[s.filterDot, { backgroundColor: statusDotColor }]} />
-          <Text style={[s.filterChipText, { color: statusTextColor }]}>{statusLabel}</Text>
-          <ChevronDownIcon color={statusTextColor} size={12} />
+          <Text style={[s.filterChipText, { color: planIsActive ? '#fff' : C.textMuted }]}>{planChipLabel}</Text>
+          <ChevronDownIcon color={planIsActive ? '#fff' : C.textMuted} size={12} />
         </TouchableOpacity>
 
-        {/* Date picker button */}
+        {/* Date picker */}
         <TouchableOpacity
           onPress={() => setDatePickerOpen(true)}
           activeOpacity={0.75}
-          style={[s.filterChip, { borderColor: dateFilter !== 'all' ? C.primary : C.border, backgroundColor: dateFilter !== 'all' ? C.primary : C.card, gap: 5 }]}
+          style={[s.filterChip, {
+            borderColor:     dateFilter !== 'all' ? C.primary : C.border,
+            backgroundColor: dateFilter !== 'all' ? C.primary : C.card,
+            gap: 5,
+          }]}
         >
           <Text style={[s.filterChipText, { color: dateFilter !== 'all' ? '#fff' : C.textMuted }]}>{currentDateLabel}</Text>
           <ChevronDownIcon color={dateFilter !== 'all' ? '#fff' : C.textMuted} size={12} />
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Divider below filters / above user list */}
       <View style={s.listDivider} />
     </View>
   );
@@ -454,8 +460,8 @@ export default function AdminUsersScreen() {
           <View style={{ width: 36 * 0.65, height: 36 * 0.28, borderTopLeftRadius: 36 * 0.14, borderTopRightRadius: 36 * 0.14, borderWidth: 2, borderColor: C.primary, borderBottomWidth: 0 }} />
         </View>
       </View>
-      <Text style={s.emptyTitle}>No users yet</Text>
-      <Text style={s.emptySub}>Users will appear here{'\n'}once they sign up</Text>
+      <Text style={s.emptyTitle}>No users found</Text>
+      <Text style={s.emptySub}>Try adjusting your filters{'\n'}or search query</Text>
     </View>
   );
 
@@ -466,14 +472,8 @@ export default function AdminUsersScreen() {
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <View style={s.header}>
         <View style={s.headerTop}>
-
-          {/* Left — avatar + brand + badge */}
           <View style={s.headerLeft}>
-            <TouchableOpacity
-              onPress={goToProfile}
-              activeOpacity={0.8}
-              style={s.avatarCircle}
-            >
+            <TouchableOpacity onPress={goToProfile} activeOpacity={0.8} style={s.avatarCircle}>
               {adminProfile?.avatar_url
                 ? <Image source={{ uri: adminProfile.avatar_url }} style={s.avatarImg} />
                 : <Text style={s.avatarText}>{adminInitials}</Text>
@@ -484,8 +484,6 @@ export default function AdminUsersScreen() {
               <SuperAdminBadge />
             </View>
           </View>
-
-          {/* Right — theme toggle only */}
           <View style={s.headerActions}>
             <TouchableOpacity onPress={handleThemeToggle} style={s.iconBtn} activeOpacity={0.8}>
               {isDark
@@ -495,12 +493,10 @@ export default function AdminUsersScreen() {
           </View>
         </View>
 
-        {/* Divider */}
         <View style={s.headerDivider} />
 
-        {/* Stats */}
         <View style={s.statsRow}>
-          <StatCard label="Total Users"  value={stats.totalUsers}               sub={`${stats.activeUsers} active`} s={s} />
+          <StatCard label="Total Users"  value={stats.totalUsers}               sub={null} s={s} />
           <View style={s.statDivider} />
           <StatCard label="Total Books"  value={stats.totalBooks}               sub={null} s={s} />
           <View style={s.statDivider} />
@@ -508,7 +504,7 @@ export default function AdminUsersScreen() {
         </View>
       </View>
 
-      {/* ── Users List ───────────────────────────────────────────────────── */}
+      {/* ── Users list ───────────────────────────────────────────────────── */}
       <FlatList
         data={listData}
         keyExtractor={item => item.id}
@@ -525,224 +521,158 @@ export default function AdminUsersScreen() {
           visible
           animationType="slide"
           transparent
-          onRequestClose={() => confirmState ? setConfirmState(null) : setSelectedUserId(null)}
+          onRequestClose={() => setSelectedUserId(null)}
         >
-          {/* Wrapper fills the Modal so the confirm overlay can sit absolutely on top */}
-          <View style={{ flex: 1 }}>
-            <Pressable style={s.modalOverlay} onPress={() => setSelectedUserId(null)}>
-              <Pressable style={s.modalBox} onPress={() => {}}>
-                <View style={s.modalHandle} />
+          <Pressable style={s.modalOverlay} onPress={() => setSelectedUserId(null)}>
+            <Pressable style={s.modalBox} onPress={() => {}}>
+              <View style={s.modalHandle} />
 
-                {/* Close */}
-                <TouchableOpacity
-                  style={s.modalCloseBtn}
-                  onPress={() => setSelectedUserId(null)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <XIcon color={C.textMuted} size={13} />
-                </TouchableOpacity>
+              {/* Close */}
+              <TouchableOpacity
+                style={s.modalCloseBtn}
+                onPress={() => setSelectedUserId(null)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <XIcon color={C.textMuted} size={13} />
+              </TouchableOpacity>
 
-                {/* ─ Avatar + identity ─ */}
-                <View style={s.modalAvatarSection}>
-                  <View style={[s.modalAvatarRing, {
-                    borderColor: selectedUser.is_active ? C.cashIn : C.border,
-                  }]}>
-                    <View style={[s.modalAvatarCircle, {
-                      backgroundColor: selectedUser.is_active ? C.cashInLight : C.cardAlt,
-                    }]}>
-                      {selectedUser.avatar_url
-                        ? <ExpoImage
-                            source={{ uri: selectedUser.avatar_url }}
-                            style={{ width: '100%', height: '100%', borderRadius: 30 }}
-                            contentFit="cover"
-                          />
-                        : <Text style={[s.modalAvatarInitials, {
-                            color: selectedUser.is_active ? C.cashIn : C.textMuted,
-                          }]}>
-                            {getInitials(selectedUser.full_name)}
-                          </Text>
-                      }
-                    </View>
-                    <View style={[s.modalAvatarDot, {
-                      backgroundColor: selectedUser.is_active ? C.cashIn : C.textSubtle,
-                    }]} />
+              {/* Avatar + identity */}
+              {(() => {
+                const mPColor   = selectedUser.isAdmin ? '#F59E0B' : planColor(selectedUser.subscription_tier, C.primary);
+                const mPColorBg = `${mPColor}20`;
+                return (
+              <View style={s.modalAvatarSection}>
+                <View style={[s.modalAvatarRing, { borderColor: `${mPColor}99` }]}>
+                  <View style={[s.modalAvatarCircle, { backgroundColor: mPColorBg }]}>
+                    {selectedUser.avatar_url
+                      ? <ExpoImage
+                          source={{ uri: selectedUser.avatar_url }}
+                          style={{ width: '100%', height: '100%', borderRadius: 30 }}
+                          contentFit="cover"
+                        />
+                      : <Text style={[s.modalAvatarInitials, { color: mPColor }]}>
+                          {getInitials(selectedUser.full_name)}
+                        </Text>
+                    }
                   </View>
+                  <View style={[s.modalAvatarDot, { backgroundColor: mPColor }]} />
+                </View>
 
-                  <Text style={s.modalUserName}>{selectedUser.full_name}</Text>
-                  <Text style={s.modalUserEmail}>{selectedUser.email}</Text>
+                <Text style={s.modalUserName}>{selectedUser.full_name}</Text>
+                <Text style={s.modalUserEmail}>{selectedUser.email}</Text>
+              </View>
+                );
+              })()}
 
-                  <View style={[s.modalStatusPill, {
-                    backgroundColor: selectedUser.isAdmin ? 'rgba(251,191,36,0.18)' : selectedUser.is_active ? C.cashInLight : C.dangerLight,
-                    borderColor:     selectedUser.isAdmin ? 'rgba(251,191,36,0.5)'  : selectedUser.is_active ? C.cashIn      : C.danger,
-                  }]}>
-                    <View style={[s.modalStatusDot, {
-                      backgroundColor: selectedUser.isAdmin ? '#FCD34D' : selectedUser.is_active ? C.cashIn : C.danger,
-                    }]} />
-                    <Text style={[s.modalStatusPillText, {
-                      color: selectedUser.isAdmin ? '#D97706' : selectedUser.is_active ? C.cashIn : C.danger,
-                    }]}>
-                      {selectedUser.isAdmin ? 'Super Admin' : selectedUser.is_active ? 'Active' : 'Inactive'}
+              {/* Stats row — Books | Entries | Storage | Access */}
+              <View style={s.modalStatsRow}>
+                <View style={s.modalStatItem}>
+                  <Text style={s.modalStatValue}>{selectedUser.book_count ?? 0}</Text>
+                  <Text style={s.modalStatLabel}>Books</Text>
+                </View>
+                <View style={s.modalStatDivider} />
+                <View style={s.modalStatItem}>
+                  <Text style={s.modalStatValue}>{selectedUser.entry_count ?? 0}</Text>
+                  <Text style={s.modalStatLabel}>Entries</Text>
+                </View>
+                <View style={s.modalStatDivider} />
+                <View style={s.modalStatItem}>
+                  <Text style={s.modalStatValue}>{fmtStorage(selectedUser.storage_mb)}</Text>
+                  <Text style={s.modalStatLabel}>Storage</Text>
+                </View>
+                {!selectedUser.isAdmin && (
+                  <>
+                    <View style={s.modalStatDivider} />
+                    <View style={s.modalStatItem}>
+                      <Text style={[s.modalStatValue, { color: (selectedUser.shared_books_count ?? 0) > 0 ? C.primary : C.text }]}>
+                        {selectedUser.shared_books_count ?? 0}
+                      </Text>
+                      <Text style={s.modalStatLabel}>Access{'\n'}Given</Text>
+                    </View>
+                  </>
+                )}
+              </View>
+
+              {/* Access given info (only for regular users who have shares) */}
+              {!selectedUser.isAdmin && (selectedUser.shared_books_count ?? 0) > 0 && (
+                <View style={[s.infoCard, { backgroundColor: C.primaryLight, borderColor: `${C.primary}44`, marginBottom: 8 }]}>
+                  <View style={[s.infoCardIconBox, { backgroundColor: `${C.primary}22` }]}>
+                    <ShareIcon color={C.primary} size={14} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.infoCardTitle, { color: C.primary }]}>Access Given</Text>
+                    <Text style={s.infoCardSub}>
+                      {selectedUser.shared_books_count === 1
+                        ? 'Sharing 1 book with other users'
+                        : `Sharing ${selectedUser.shared_books_count} books with other users`}
                     </Text>
                   </View>
                 </View>
+              )}
 
-                {/* ─ Stats row ─ */}
-                <View style={s.modalStatsRow}>
-                  <View style={s.modalStatItem}>
-                    <Text style={s.modalStatValue}>{selectedUser.book_count}</Text>
-                    <Text style={s.modalStatLabel}>Books</Text>
-                  </View>
-                  <View style={s.modalStatDivider} />
-                  <View style={s.modalStatItem}>
-                    <Text style={s.modalStatValue}>{selectedUser.entry_count}</Text>
-                    <Text style={s.modalStatLabel}>Entries</Text>
-                  </View>
-                  <View style={s.modalStatDivider} />
-                  <View style={s.modalStatItem}>
-                    <Text style={s.modalStatValue}>{fmtStorage(selectedUser.storage_mb)}</Text>
-                    <Text style={s.modalStatLabel}>Storage</Text>
-                  </View>
-                </View>
-
-                {/* ─ Account status toggle / locked ─ */}
-                {selectedUser.isAdmin ? (
-                  <View style={[s.modalToggleCard, {
-                    backgroundColor: 'rgba(251,191,36,0.12)',
-                    borderColor: 'rgba(251,191,36,0.4)',
+              {/* Subscription card */}
+              {!selectedUser.isAdmin && (() => {
+                const tier   = selectedUser.subscription_tier ?? 'free';
+                const cycle  = selectedUser.subscription_billing_cycle ?? 'monthly';
+                const accent = planColor(tier, C.primary);
+                const label  = planLabel(tier, cycle);
+                const isFree = tier === 'free';
+                return (
+                  <View style={[s.infoCard, {
+                    backgroundColor: isFree ? C.cardAlt      : `${accent}18`,
+                    borderColor:     isFree ? C.border       : `${accent}44`,
                   }]}>
-                    <View style={s.modalToggleLeft}>
-                      <View style={[s.modalToggleIconBox, { backgroundColor: 'rgba(251,191,36,0.18)' }]}>
-                        <LockIcon color="#D97706" size={14} />
-                      </View>
-                      <View>
-                        <Text style={[s.modalToggleTitle, { color: '#D97706' }]}>Account Status</Text>
-                        <Text style={s.modalToggleSub}>Super Admin — always active</Text>
-                      </View>
+                    <View style={[s.infoCardIconBox, { backgroundColor: `${accent}22` }]}>
+                      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: accent }} />
                     </View>
-                    <View style={[s.userStatusPill, { backgroundColor: 'rgba(251,191,36,0.18)', borderColor: 'rgba(251,191,36,0.5)' }]}>
-                      <View style={[s.userStatusDot, { backgroundColor: '#FCD34D' }]} />
-                      <Text style={[s.userStatusText, { color: '#D97706' }]}>Active</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.infoCardTitle, { color: accent }]}>Subscription</Text>
+                      <Text style={s.infoCardSub}>{label}</Text>
+                    </View>
+                    <View style={[s.statusInfoBadge, {
+                      backgroundColor: `${accent}18`,
+                      borderColor:     `${accent}55`,
+                    }]}>
+                      <View style={[s.statusInfoDot, { backgroundColor: accent }]} />
+                      <Text style={[s.statusInfoBadgeText, { color: accent }]}>{label}</Text>
                     </View>
                   </View>
-                ) : (
-                  <View style={[s.modalToggleCard, {
-                    backgroundColor: selectedUser.is_active ? C.cashInLight : C.dangerLight,
-                    borderColor: selectedUser.is_active
-                      ? `${C.cashIn}55`
-                      : `${C.danger}55`,
-                  }]}>
-                    <View style={s.modalToggleLeft}>
-                      <View style={[s.modalToggleIconBox, {
-                        backgroundColor: selectedUser.is_active
-                          ? `${C.cashIn}22`
-                          : `${C.danger}22`,
-                      }]}>
-                        <LockIcon
-                          color={selectedUser.is_active ? C.cashIn : C.danger}
-                          size={14}
-                        />
-                      </View>
-                      <View>
-                        <Text style={[s.modalToggleTitle, {
-                          color: selectedUser.is_active ? C.cashIn : C.danger,
-                        }]}>
-                          Account Status
-                        </Text>
-                        <Text style={s.modalToggleSub}>
-                          {selectedUser.is_active ? 'Can access the app' : 'Blocked from the app'}
-                        </Text>
-                      </View>
-                    </View>
-                    <Switch
-                      value={selectedUser.is_active}
-                      onValueChange={(val) => handleToggleUser(selectedUser.id, val)}
-                      trackColor={{
-                        false: `${C.danger}55`,
-                        true:  `${C.cashIn}77`,
-                      }}
-                      thumbColor={selectedUser.is_active ? C.cashIn : C.danger}
-                    />
-                  </View>
-                )}
+                );
+              })()}
 
-              </Pressable>
             </Pressable>
-
-            {/* ── Confirm Deactivate — inline overlay (iOS-safe, no nested Modal) ── */}
-            {confirmState && (
-              <Pressable
-                style={[StyleSheet.absoluteFill, s.confirmOverlay]}
-                onPress={() => setConfirmState(null)}
-              >
-                <Pressable style={s.confirmBox} onPress={() => {}}>
-
-                  {/* Icon circle */}
-                  <View style={[s.confirmIconCircle, { backgroundColor: C.dangerLight }]}>
-                    <View style={[s.confirmIconInner, { backgroundColor: `${C.danger}22` }]}>
-                      <LockIcon color={C.danger} size={16} />
-                    </View>
-                  </View>
-
-                  {/* Title */}
-                  <Text style={s.confirmTitle}>Deactivate Account</Text>
-
-                  {/* User name pill */}
-                  {confirmState.userName ? (
-                    <View style={[s.confirmNamePill, { backgroundColor: C.dangerLight }]}>
-                      <Text style={[s.confirmNameText, { color: C.danger }]} numberOfLines={1}>
-                        {confirmState.userName}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  {/* Body */}
-                  <Text style={s.confirmBody}>
-                    This user will be blocked from the app until reactivated.
-                  </Text>
-
-                  {/* Buttons */}
-                  <View style={s.confirmBtns}>
-                    <TouchableOpacity
-                      style={s.confirmCancelBtn}
-                      onPress={() => setConfirmState(null)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={s.confirmCancelText}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[s.confirmActionBtn, { backgroundColor: C.danger }]}
-                      onPress={handleConfirmToggle}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={s.confirmActionText}>Deactivate</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                </Pressable>
-              </Pressable>
-            )}
-          </View>
+          </Pressable>
         </Modal>
       )}
-      {/* ── Status Picker Modal ──────────────────────────────────────────── */}
-      {statusPickerOpen && (
-        <Modal visible animationType="slide" transparent onRequestClose={() => setStatusPickerOpen(false)}>
-          <Pressable style={s.datePickerOverlay} onPress={() => setStatusPickerOpen(false)}>
-            <Pressable style={s.datePickerBox} onPress={() => {}}>
+
+      {/* ── Plan Picker Sheet ────────────────────────────────────────────── */}
+      {planPickerOpen && (
+        <Modal visible animationType="slide" transparent onRequestClose={() => setPlanPickerOpen(false)}>
+          <Pressable style={s.pickerOverlay} onPress={() => setPlanPickerOpen(false)}>
+            <Pressable style={s.pickerBox} onPress={() => {}}>
               <View style={s.modalHandle} />
-              <Text style={s.datePickerTitle}>Filter by Status</Text>
-              {STATUS_PICKER.map(opt => {
-                const on = activeFilter === opt.key;
+              <Text style={s.pickerTitle}>Subscription Plan</Text>
+              {planFilter !== 'all' && (
+                <TouchableOpacity
+                  style={[s.pickerClearRow, { backgroundColor: C.primaryLight }]}
+                  onPress={() => { setPlanFilter('all'); setPlanPickerOpen(false); }}
+                  activeOpacity={0.75}
+                >
+                  <XIcon color={C.primary} size={11} />
+                  <Text style={[s.pickerClearText, { color: C.primary }]}>Clear</Text>
+                </TouchableOpacity>
+              )}
+              {PLAN_PICKER.map(opt => {
+                const on = planFilter === opt.key;
                 return (
                   <TouchableOpacity
                     key={opt.key}
-                    style={[s.datePickerRow, on && { backgroundColor: C.primaryLight }]}
-                    onPress={() => { setActiveFilter(opt.key); setStatusPickerOpen(false); }}
+                    style={[s.pickerRow, on && { backgroundColor: C.primary }]}
+                    onPress={() => { setPlanFilter(opt.key); setPlanPickerOpen(false); }}
                     activeOpacity={0.75}
                   >
-                    <View style={[s.filterDot, { backgroundColor: C.primary }]} />
-                    <Text style={[s.datePickerText, { color: on ? C.primary : C.text }]}>{opt.label}</Text>
-                    {on && <CheckIcon color={C.primary} size={16} />}
+                    <Text style={[s.pickerRowText, { color: on ? C.onPrimary : C.text }]}>{opt.label}</Text>
+                    {on && <CheckIcon color={C.onPrimary} size={16} />}
                   </TouchableOpacity>
                 );
               })}
@@ -751,29 +681,34 @@ export default function AdminUsersScreen() {
         </Modal>
       )}
 
-      {/* ── Date Picker Modal ────────────────────────────────────────────── */}
+      {/* ── Date Picker Sheet ────────────────────────────────────────────── */}
       {datePickerOpen && (
-        <Modal
-          visible
-          animationType="slide"
-          transparent
-          onRequestClose={() => setDatePickerOpen(false)}
-        >
-          <Pressable style={s.datePickerOverlay} onPress={() => setDatePickerOpen(false)}>
-            <Pressable style={s.datePickerBox} onPress={() => {}}>
+        <Modal visible animationType="slide" transparent onRequestClose={() => setDatePickerOpen(false)}>
+          <Pressable style={s.pickerOverlay} onPress={() => setDatePickerOpen(false)}>
+            <Pressable style={s.pickerBox} onPress={() => {}}>
               <View style={s.modalHandle} />
-              <Text style={s.datePickerTitle}>Filter by Date</Text>
+              <Text style={s.pickerTitle}>Join Date</Text>
+              {dateFilter !== 'all' && (
+                <TouchableOpacity
+                  style={[s.pickerClearRow, { backgroundColor: C.primaryLight }]}
+                  onPress={() => { setDateFilter('all'); setDatePickerOpen(false); }}
+                  activeOpacity={0.75}
+                >
+                  <XIcon color={C.primary} size={11} />
+                  <Text style={[s.pickerClearText, { color: C.primary }]}>Clear</Text>
+                </TouchableOpacity>
+              )}
               {DATE_FILTERS.map(opt => {
                 const on = dateFilter === opt.key;
                 return (
                   <TouchableOpacity
                     key={opt.key}
-                    style={[s.datePickerRow, on && { backgroundColor: C.primaryLight }]}
+                    style={[s.pickerRow, on && { backgroundColor: C.primary }]}
                     onPress={() => { setDateFilter(opt.key); setDatePickerOpen(false); }}
                     activeOpacity={0.75}
                   >
-                    <Text style={[s.datePickerText, { color: on ? C.primary : C.text }]}>{opt.label}</Text>
-                    {on && <CheckIcon color={C.primary} size={16} />}
+                    <Text style={[s.pickerRowText, { color: on ? C.onPrimary : C.text }]}>{opt.label}</Text>
+                    {on && <CheckIcon color={C.onPrimary} size={16} />}
                   </TouchableOpacity>
                 );
               })}
@@ -797,28 +732,17 @@ const makeStyles = (C, Font) => StyleSheet.create({
   headerLeft:    { flexDirection: 'row', alignItems: 'center', gap: 14 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 
-  // Avatar circle (header left)
   avatarCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.onPrimaryIconBg, borderWidth: 2, borderColor: C.onPrimarySubtle, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   avatarImg:    { width: 44, height: 44, borderRadius: 22 },
   avatarText:   { fontSize: 14, fontFamily: Font.bold, color: C.onPrimary },
 
-  // Brand block
-  brandBlock:    { justifyContent: 'center', gap: 4 },
-  brandLabel:  { fontSize: 9, fontFamily: Font.bold, color: C.onPrimaryMuted, letterSpacing: 1.8, marginBottom: 1 },
+  brandBlock:  { justifyContent: 'center', gap: 4 },
   headerTitle: { fontSize: 20, fontFamily: Font.extraBold, color: C.onPrimary, lineHeight: 26 },
 
+  iconBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.onPrimaryIconBg, alignItems: 'center', justifyContent: 'center' },
 
-  // Action buttons
-  iconBtn: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: C.onPrimaryIconBg,
-    alignItems: 'center', justifyContent: 'center',
-  },
-
-  // Divider between brand row and stats
   headerDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.14)', marginBottom: 16 },
 
-  // Stats
   statsRow:    { flexDirection: 'row', alignItems: 'center' },
   statCard:    { flex: 1, alignItems: 'center' },
   statValue:   { fontSize: 18, fontFamily: Font.bold,    color: C.onPrimary,      lineHeight: 24, marginBottom: 2 },
@@ -826,32 +750,31 @@ const makeStyles = (C, Font) => StyleSheet.create({
   statSub:     { fontSize: 10, fontFamily: Font.regular, color: C.onPrimaryMuted, lineHeight: 14, marginTop: 1 },
   statDivider: { width: 1, height: 36, backgroundColor: C.onPrimaryIconBg },
 
-  // List
   listContent: { paddingTop: 12, paddingBottom: 32 },
 
   // User card
   userCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: C.card, marginHorizontal: 16, marginBottom: 8,
-    borderRadius: 50, paddingVertical: 6, paddingRight: 16, paddingLeft: 6,
+    borderRadius: 50, paddingVertical: 6, paddingRight: 10, paddingLeft: 6,
     borderWidth: 1.5, borderColor: C.border,
   },
   userAvatar:     { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   userAvatarText: { fontSize: 15, fontFamily: Font.extraBold },
   userInfo:       { flex: 1 },
   userName:       { fontSize: 14, fontFamily: Font.semiBold, color: C.text,     lineHeight: 20 },
-  userEmail:      { fontSize: 12, fontFamily: Font.regular,  color: C.textMuted, lineHeight: 17, marginTop: 3 },
-  userStatusPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    borderWidth: 1, borderRadius: 20,
-    paddingHorizontal: 7, paddingVertical: 2,
-  },
+  userEmail:      { fontSize: 11, fontFamily: Font.regular,  color: C.textMuted, lineHeight: 17 },
+  userStatusPill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 20, paddingHorizontal: 7, paddingVertical: 2 },
   userStatusDot:  { width: 5, height: 5, borderRadius: 3 },
   userStatusText: { fontSize: 10, fontFamily: Font.semiBold, lineHeight: 14 },
 
+  // Access badge shown next to email in user row
+  accessBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 1, borderRadius: 20, paddingHorizontal: 6, paddingVertical: 2 },
+  accessBadgeText: { fontSize: 10, fontFamily: Font.semiBold, lineHeight: 14 },
+
   listDivider: { height: 1, backgroundColor: C.border, marginBottom: 4 },
 
-  // ── Unified filter row ──────────────────────────────────────────────────────
+  // Filter row
   filterRow:        { marginTop: 10, marginBottom: 4 },
   filterRowContent: { paddingHorizontal: 16, gap: 8, flexDirection: 'row', alignItems: 'center' },
   filterChip: {
@@ -860,160 +783,69 @@ const makeStyles = (C, Font) => StyleSheet.create({
     paddingHorizontal: 13, paddingVertical: 6,
   },
   filterChipText: { fontSize: 12, fontFamily: Font.semiBold },
-  filterDot:      { width: 7, height: 7, borderRadius: 4, marginRight: 5 },
 
-  // Date picker sheet
-  datePickerOverlay: { flex: 1, backgroundColor: C.overlay, justifyContent: 'flex-end' },
-  datePickerBox: {
+  // Picker sheets
+  pickerOverlay: { flex: 1, backgroundColor: C.overlay, justifyContent: 'flex-end' },
+  pickerBox: {
     backgroundColor: C.card,
     borderTopLeftRadius: 22, borderTopRightRadius: 22,
-    paddingHorizontal: 20, paddingTop: 10, paddingBottom: 28,
+    paddingHorizontal: 16, paddingTop: 10, paddingBottom: 28,
   },
-  datePickerTitle: {
+  pickerTitle: {
     fontSize: 14, fontFamily: Font.bold, color: C.text,
-    textAlign: 'center', marginBottom: 14,
+    textAlign: 'center', marginBottom: 12,
   },
-  datePickerRow: {
+  pickerRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 13, paddingHorizontal: 12, gap: 12,
+    paddingVertical: 13, paddingHorizontal: 16,
     borderRadius: 12, marginBottom: 4,
   },
-  datePickerText: { flex: 1, fontSize: 14, fontFamily: Font.medium },
+  pickerRowText: { flex: 1, fontSize: 14, fontFamily: Font.medium },
+  pickerClearRow: {
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end',
+    paddingVertical: 4, paddingHorizontal: 10,
+    borderRadius: 20, marginBottom: 8, gap: 5,
+  },
+  pickerClearText: { fontSize: 11, fontFamily: Font.semiBold },
 
-  // Empty
+  // Empty state
   empty:        { alignItems: 'center', paddingTop: 70, paddingHorizontal: 40 },
   emptyIconBox: { width: 80, height: 80, borderRadius: 24, backgroundColor: C.primaryLight, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
-  emptyTitle:   { fontSize: 17, fontFamily: Font.bold,    color: C.text,     lineHeight: 26, marginBottom: 8 },
+  emptyTitle:   { fontSize: 17, fontFamily: Font.bold,    color: C.text,      lineHeight: 26, marginBottom: 8 },
   emptySub:     { fontSize: 13, fontFamily: Font.regular, color: C.textMuted, lineHeight: 20, textAlign: 'center' },
 
-  // ── User Detail Modal ─────────────────────────────────────────────────────
+  // User Detail Modal
   modalOverlay: { flex: 1, backgroundColor: C.overlay, justifyContent: 'flex-end' },
   modalBox: {
     backgroundColor: C.card,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, paddingTop: 10, paddingBottom: 22,
+    paddingHorizontal: 20, paddingTop: 10, paddingBottom: 24,
   },
-  modalHandle: {
-    width: 36, height: 4, borderRadius: 2,
-    backgroundColor: C.border, alignSelf: 'center', marginBottom: 6,
-  },
-  modalCloseBtn: {
-    position: 'absolute', top: 14, right: 16,
-    width: 26, height: 26, borderRadius: 13,
-    backgroundColor: C.cardAlt, alignItems: 'center', justifyContent: 'center',
-  },
+  modalHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginBottom: 6 },
+  modalCloseBtn: { position: 'absolute', top: 14, right: 16, width: 26, height: 26, borderRadius: 13, backgroundColor: C.cardAlt, alignItems: 'center', justifyContent: 'center' },
 
   // Avatar section
-  modalAvatarSection: { alignItems: 'center', paddingTop: 4, paddingBottom: 12 },
-  modalAvatarRing: {
-    width: 62, height: 62, borderRadius: 31,
-    borderWidth: 2,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 10,
-  },
-  modalAvatarCircle: {
-    width: 54, height: 54, borderRadius: 27,
-    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-  },
+  modalAvatarSection: { alignItems: 'center', paddingTop: 4, paddingBottom: 14 },
+  modalAvatarRing: { width: 62, height: 62, borderRadius: 31, borderWidth: 2, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  modalAvatarCircle: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   modalAvatarInitials: { fontSize: 18, fontFamily: Font.extraBold },
-  modalAvatarDot: {
-    position: 'absolute', bottom: 2, right: 2,
-    width: 13, height: 13, borderRadius: 7,
-    borderWidth: 2, borderColor: C.card,
-  },
-  modalUserName: {
-    fontSize: 16, fontFamily: Font.bold, color: C.text,
-    lineHeight: 22, marginBottom: 2,
-  },
-  modalUserEmail: {
-    fontSize: 12, fontFamily: Font.regular, color: C.textMuted,
-    lineHeight: 17, marginBottom: 8,
-  },
-  modalStatusPill: {
-    flexDirection: 'row', alignItems: 'center',
-    borderRadius: 50, borderWidth: 1,
-    paddingHorizontal: 10, paddingVertical: 4, gap: 5,
-  },
-  modalStatusDot: { width: 5, height: 5, borderRadius: 3 },
-  modalStatusPillText: { fontSize: 11, fontFamily: Font.semiBold, lineHeight: 15 },
-
-  // Stats row
-  modalStatsRow: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: C.cardAlt, borderRadius: 12,
-    marginBottom: 10, borderWidth: 1, borderColor: C.border,
-  },
+  modalAvatarDot: { position: 'absolute', bottom: 2, right: 2, width: 13, height: 13, borderRadius: 7, borderWidth: 2, borderColor: C.card },
+  modalUserName:  { fontSize: 16, fontFamily: Font.bold, color: C.text, lineHeight: 22, marginBottom: 2 },
+  modalUserEmail: { fontSize: 12, fontFamily: Font.regular, color: C.textMuted, lineHeight: 17, marginBottom: 8 },
+  // Stats row (4-column when access count shown)
+  modalStatsRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.cardAlt, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: C.border },
   modalStatItem: { flex: 1, alignItems: 'center', paddingVertical: 10 },
   modalStatDivider: { width: 1, height: 26, backgroundColor: C.border },
-  modalStatValue: {
-    fontSize: 14, fontFamily: Font.bold, color: C.text,
-    lineHeight: 20, marginBottom: 1,
-  },
-  modalStatLabel: { fontSize: 10, fontFamily: Font.medium, color: C.textMuted, lineHeight: 14 },
+  modalStatValue: { fontSize: 13, fontFamily: Font.bold, color: C.text, lineHeight: 19, marginBottom: 1 },
+  modalStatLabel: { fontSize: 10, fontFamily: Font.medium, color: C.textMuted, lineHeight: 13, textAlign: 'center' },
 
-  // Status toggle card
-  modalToggleCard: {
-    flexDirection: 'row', alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: 12, padding: 11, borderWidth: 1,
-  },
-  modalToggleLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 10, gap: 10 },
-  modalToggleIconBox: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  modalToggleTitle: { fontSize: 13, fontFamily: Font.semiBold, lineHeight: 18 },
-  modalToggleSub: { fontSize: 11, fontFamily: Font.regular, color: C.textMuted, lineHeight: 16, marginTop: 1 },
+  statusInfoBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
+  statusInfoDot:   { width: 5, height: 5, borderRadius: 3 },
+  statusInfoBadgeText: { fontSize: 10, fontFamily: Font.semiBold, lineHeight: 14 },
 
-  // ── Confirm Modal ────────────────────────────────────────────────────────────
-  confirmOverlay: {
-    flex: 1, backgroundColor: C.overlay,
-    alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 36,
-  },
-  confirmBox: {
-    width: '100%', backgroundColor: C.card,
-    borderRadius: 20, paddingHorizontal: 20, paddingTop: 22, paddingBottom: 20,
-    alignItems: 'center',
-  },
-  confirmIconCircle: {
-    width: 58, height: 58, borderRadius: 29,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 12,
-  },
-  confirmIconInner: {
-    width: 42, height: 42, borderRadius: 21,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  confirmTitle: {
-    fontSize: 16, fontFamily: Font.bold, color: C.text,
-    lineHeight: 23, marginBottom: 7, textAlign: 'center',
-  },
-  confirmNamePill: {
-    borderRadius: 50, paddingHorizontal: 12, paddingVertical: 4,
-    marginBottom: 8, maxWidth: '80%',
-  },
-  confirmNameText: {
-    fontSize: 12, fontFamily: Font.semiBold, lineHeight: 17, textAlign: 'center',
-  },
-  confirmBody: {
-    fontSize: 12, fontFamily: Font.regular, color: C.textMuted,
-    lineHeight: 18, textAlign: 'center', marginBottom: 18,
-  },
-  confirmBtns: {
-    flexDirection: 'row', gap: 8, width: '100%',
-  },
-  confirmCancelBtn: {
-    flex: 1, height: 42, borderRadius: 12,
-    borderWidth: 1.5, borderColor: C.border,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  confirmCancelText: {
-    fontSize: 13, fontFamily: Font.semiBold, color: C.textMuted,
-  },
-  confirmActionBtn: {
-    flex: 1, height: 42, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  confirmActionText: {
-    fontSize: 13, fontFamily: Font.semiBold, color: '#FFFFFF',
-  },
-
+  // Shared info card (access given + subscription)
+  infoCard:        { flexDirection: 'row', alignItems: 'center', borderRadius: 12, padding: 11, borderWidth: 1, gap: 10 },
+  infoCardIconBox: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  infoCardTitle:   { fontSize: 13, fontFamily: Font.semiBold, lineHeight: 18 },
+  infoCardSub:     { fontSize: 11, fontFamily: Font.regular, color: C.textMuted, lineHeight: 16, marginTop: 1 },
 });

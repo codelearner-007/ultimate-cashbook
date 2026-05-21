@@ -115,7 +115,7 @@ All routes are prefixed `/api/v1`. All protected routes require `Authorization: 
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| GET | `` | Get authenticated user's profile | ✅ |
+| GET | `` | Get authenticated user's profile (includes real `storage_mb` via RPC — falls back to 0 if migration 013 not run) | ✅ |
 | PUT | `` | Update own profile (full_name, phone, avatar_url) | ✅ |
 | PATCH | `/subscription` | Update own subscription tier (`free`/`pro`/`enterprise`) | ✅ |
 
@@ -210,7 +210,6 @@ All endpoints require `require_superadmin` dependency (403 if not superadmin).
 | Method | Path | Description |
 |---|---|---|
 | GET | `/users` | All non-superadmin profiles with computed stats (book_count, entry_count, storage_mb) |
-| PATCH | `/users/{user_id}/status` | Toggle `is_active`; cannot deactivate superadmin |
 | GET | `/users/{user_id}/books` | Any user's books (with net_balance and last_entry_at) |
 | POST | `/notifications` | Create notification + fan-out to target users |
 | GET | `/notifications` | All notifications sent by this admin (with recipient_count) |
@@ -218,8 +217,6 @@ All endpoints require `require_superadmin` dependency (403 if not superadmin).
 **GET /users** — N+1 pattern: one extra query per user for book count and entry count, plus two RPC calls (`get_user_data_bytes`, `get_user_storage_bytes`) for real storage. Each RPC has a try/except fallback to 0 if migration 013 hasn't run. Acceptable for admin dashboards at current scale.
 
 **GET /users/:id/books** — tries `get_books_with_summary` RPC first, falls back to direct table query. Same fallback pattern as `/books`.
-
-**PATCH /users/:id/status body:** `{ "is_active": true }`
 
 **POST /admin/notifications body:**
 ```json
@@ -277,11 +274,10 @@ Query params: `?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`
 
 ### `models/profile.py`
 ```python
-class ProfileResponse:    id, email, full_name, phone, avatar_url, role, is_active, currency (default 'PKR'), is_dark_mode, subscription_tier (default 'free'), created_at, updated_at
+class ProfileResponse:    id, email, full_name, phone, avatar_url, role, currency (default 'PKR'), is_dark_mode, subscription_tier (default 'free'), created_at, updated_at, storage_mb (float, default 0.0)
 class ProfileUpdate:      full_name?, phone?, avatar_url?, currency?
-class UserWithStats:      ProfileResponse + book_count, entry_count, storage_mb
+class UserWithStats:      ProfileResponse + book_count, entry_count, storage_mb (overrides base)
 class SubscriptionUpdate: subscription_tier: Literal["free","pro","enterprise"]
-class StatusUpdate:       is_active: bool
 ```
 
 ### `models/book.py`

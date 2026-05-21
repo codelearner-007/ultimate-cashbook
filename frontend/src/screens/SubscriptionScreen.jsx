@@ -12,6 +12,7 @@ import { useTheme } from '../hooks/useTheme';
 import { useAuthStore } from '../store/authStore';
 import { apiUpdateSubscription } from '../lib/api';
 import { Font } from '../constants/fonts';
+import { PLAN_META } from '../constants/plans';
 
 // ── Plan definitions — sourced from SUBSCRIPTION_PLANS.md ────────────────────
 
@@ -23,8 +24,8 @@ const PLANS = [
     yearly:        0,
     yearlyLabel:   '$0',
     monthlyLabel:  '$0',
-    crown:         false,
-    color:         null,  // resolved from C.primary at render time
+    crown:         PLAN_META.free.crown,
+    color:         PLAN_META.free.color,  // null → resolved from C.primary at render time
     description:   'Perfect for getting started',
     rows: [
       { label: 'Cashbooks',        value: '3',         included: true  },
@@ -45,8 +46,8 @@ const PLANS = [
     yearly:        41.99,
     yearlyLabel:   '$41.99 / yr',
     monthlyLabel:  '$4.99 / mo',
-    crown:         true,
-    color:         '#F59E0B',
+    crown:         PLAN_META.pro.crown,
+    color:         PLAN_META.pro.color,
     description:   'For individuals who need more',
     rows: [
       { label: 'Cashbooks',        value: '15',              included: true  },
@@ -67,8 +68,8 @@ const PLANS = [
     yearly:        83.99,
     yearlyLabel:   '$83.99 / yr',
     monthlyLabel:  '$9.99 / mo',
-    crown:         true,
-    color:         '#7C3AED',
+    crown:         PLAN_META.business.crown,
+    color:         PLAN_META.business.color,
     description:   'For teams & power users',
     rows: [
       { label: 'Cashbooks',        value: 'Unlimited',       included: true  },

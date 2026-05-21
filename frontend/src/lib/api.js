@@ -298,11 +298,6 @@ export const apiGetAllUsers = async () => {
   return (await api.get('/api/v1/admin/users')).data;
 };
 
-/** PATCH /api/v1/admin/users/:userId/status */
-export const apiToggleUserStatus = async (userId, is_active) => {
-  return (await api.patch(`/api/v1/admin/users/${userId}/status`, { is_active })).data;
-};
-
 /** GET /api/v1/admin/users/:userId/books */
 export const apiGetUserBooks = async (userId) => {
   return (await api.get(`/api/v1/admin/users/${userId}/books`)).data;

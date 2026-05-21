@@ -15,7 +15,19 @@ async def get_profile(user_id: str = Depends(get_current_user)):
     result = sb.table("profiles").select("*").eq("id", user_id).single().execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Profile not found")
-    return result.data
+    profile = result.data
+    try:
+        db_b = sb.rpc("get_user_data_bytes", {"p_user_id": user_id}).execute()
+        db_bytes = db_b.data or 0
+    except Exception:
+        db_bytes = 0
+    try:
+        st_b = sb.rpc("get_user_storage_bytes", {"p_user_id": user_id}).execute()
+        storage_bytes = st_b.data or 0
+    except Exception:
+        storage_bytes = 0
+    profile["storage_mb"] = round((db_bytes + storage_bytes) / (1024 * 1024), 3)
+    return profile
 
 
 @router.put("", response_model=ProfileResponse)
@@ -73,7 +85,6 @@ async def search_users(
         .select("id, full_name, email, avatar_url")
         .ilike("email", f"%{q.strip()}%")
         .neq("id", user_id)
-        .eq("is_active", True)
         .limit(10)
         .execute()
     ).data or []

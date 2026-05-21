@@ -188,12 +188,21 @@ frontend/
 ### `AdminUsersScreen` → `/(app)/dashboard/users` _(superadmin)_
 - `useQuery({ queryKey: ['admin-users'], queryFn: apiGetAllUsers, refetchInterval: 10000 })`
   - Polls every **10 seconds** so new user registrations appear near-instantly
-- `useQuery({ queryKey: ['books'], queryFn: apiGetBooks })` — admin's own books for stats
-- Header stats: Total Users | Active Users | Total Books | Storage
-- Each user row: avatar initials, full name, email, book count, storage, entry count, active toggle
-- Toggle → `Alert.alert` confirm → `useMutation(apiToggleUserStatus)` → `invalidate(['admin-users'])`
-- Tap user card → modal with that user's books via `useQuery({ queryKey: ['user-books', id], queryFn: () => apiGetUserBooks(id) })`
-- The `books` stat in the header = `allUsers.reduce(book_count) + adminOwnBooks.length`
+- `useQuery({ queryKey: ['books'], queryFn: apiGetBooks })` — admin's own books for header stats
+- Header stats: Total Users (+ active sub-count) | Total Books | Storage
+- Each user row: avatar, full name, status pill (read-only `is_active`), email, **access badge** (share icon + `shared_books_count` when > 0) — storage shown only in the detail modal, not in the row
+- **No status toggle** — `is_active` is read-only, reflects actual DB state
+- Tap user card → **User Detail Modal** (read-only):
+  - Avatar, name, email, status pill
+  - Stats row: Books / Entries / Storage / Access Given (`shared_books_count`)
+  - Account Status info card: lock icon + Active/Inactive badge — no Switch or confirm dialog
+  - Access Given info card: only shown when `shared_books_count > 0`; shows share icon + description
+- Filters (all compose client-side, horizontal scroll row):
+  - **All** chip — resets all filters
+  - **Status** dropdown → Active / Inactive
+  - **Access** dropdown → Has Shared Books / No Shared Books (filters by `shared_books_count`)
+  - **Date** dropdown → Today / Last 7 Days / This Month / This Year / All Time (filters by `created_at`)
+- The `books` stat in the header = `filteredUsers.reduce(book_count) + adminOwnBooks.length` (admin books only added when no filters active)
 
 ---
 

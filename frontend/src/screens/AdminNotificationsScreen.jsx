@@ -363,7 +363,7 @@ export default function AdminNotificationsScreen() {
     return () => { up.remove(); down.remove(); };
   }, []);
 
-  const activeUsers = useMemo(() => allUsers.filter(u => u.is_active), [allUsers]);
+  const activeUsers = useMemo(() => allUsers, [allUsers]);
 
   // current target label shown on the "Specific" button
   const summary = useMemo(

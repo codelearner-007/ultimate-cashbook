@@ -10,7 +10,6 @@ class ProfileResponse(BaseModel):
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
     role: Literal["superadmin", "user"] = "user"
-    is_active: bool = True
     currency: str = "PKR"
     is_dark_mode: bool = False
     subscription_tier: Literal["free", "pro", "business"] = "free"
@@ -18,6 +17,7 @@ class ProfileResponse(BaseModel):
     subscription_billing_cycle: Literal["monthly", "yearly"] = "monthly"
     created_at: datetime
     updated_at: Optional[datetime] = None
+    storage_mb: float = 0.0
 
 
 class ProfileUpdate(BaseModel):
@@ -32,6 +32,7 @@ class UserWithStats(ProfileResponse):
     book_count: int = 0
     entry_count: int = 0
     storage_mb: float = 0.0
+    shared_books_count: int = 0  # accepted book_shares where this user is the owner
 
 
 class SubscriptionUpdate(BaseModel):
@@ -39,5 +40,3 @@ class SubscriptionUpdate(BaseModel):
     billing_cycle: Literal["monthly", "yearly"] = "monthly"
 
 
-class StatusUpdate(BaseModel):
-    is_active: bool

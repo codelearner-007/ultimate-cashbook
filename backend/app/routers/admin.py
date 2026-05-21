@@ -4,7 +4,7 @@ import httpx
 import logging
 from app.auth.jwt import get_current_user
 from app.db.supabase import get_supabase
-from app.models.profile import UserWithStats, StatusUpdate
+from app.models.profile import UserWithStats
 from app.models.book import BookResponse
 from app.models.notification import NotificationCreate, NotificationResponse
 
@@ -99,49 +99,27 @@ async def get_all_users(admin_id: str = Depends(require_superadmin)):
 
         storage_mb = round((db_bytes + storage_bytes) / (1024 * 1024), 3)
 
-        result.append({**u, "book_count": book_count, "entry_count": entry_count, "storage_mb": storage_mb})
+        try:
+            shares_res = (
+                sb.table("book_shares")
+                .select("id")
+                .eq("owner_id", u["id"])
+                .eq("status", "accepted")
+                .execute()
+            )
+            shared_books_count = len(shares_res.data or [])
+        except Exception:
+            shared_books_count = 0
+
+        result.append({
+            **u,
+            "book_count": book_count,
+            "entry_count": entry_count,
+            "storage_mb": storage_mb,
+            "shared_books_count": shared_books_count,
+        })
 
     return result
-
-
-@router.patch("/users/{user_id}/status", response_model=UserWithStats)
-async def toggle_user_status(
-    user_id: str,
-    payload: StatusUpdate,
-    admin_id: str = Depends(require_superadmin),
-):
-    sb = get_supabase()
-    result = (
-        sb.table("profiles")
-        .update({"is_active": payload.is_active})
-        .eq("id", user_id)
-        .neq("role", "superadmin")   # can't deactivate superadmin
-        .execute()
-    )
-    if not result.data:
-        raise HTTPException(status_code=404, detail="User not found or is superadmin")
-    u = result.data[0]
-
-    books_res   = sb.table("books").select("id").eq("user_id", user_id).execute()
-    book_count  = len(books_res.data or [])
-    entries_res = sb.table("entries").select("id").eq("user_id", user_id).execute()
-    entry_count = len(entries_res.data or [])
-
-    try:
-        db_b = sb.rpc("get_user_data_bytes", {"p_user_id": user_id}).execute()
-        db_bytes = db_b.data or 0
-    except Exception:
-        db_bytes = 0
-
-    try:
-        st_b = sb.rpc("get_user_storage_bytes", {"p_user_id": user_id}).execute()
-        storage_bytes = st_b.data or 0
-    except Exception:
-        storage_bytes = 0
-
-    storage_mb = round((db_bytes + storage_bytes) / (1024 * 1024), 3)
-
-    return {**u, "book_count": book_count, "entry_count": entry_count, "storage_mb": storage_mb}
 
 
 @router.get("/users/{user_id}/books", response_model=List[BookResponse])
@@ -175,7 +153,6 @@ def _resolve_recipients(sb, target_type: str, payload, admin_id: str) -> List[st
         res = (
             sb.table("profiles")
             .select("id")
-            .eq("is_active", True)
             .neq("role", "superadmin")
             .execute()
         )
@@ -187,7 +164,6 @@ def _resolve_recipients(sb, target_type: str, payload, admin_id: str) -> List[st
         res = (
             sb.table("profiles")
             .select("id")
-            .eq("is_active", True)
             .neq("role", "superadmin")
             .gte("created_at", cutoff)
             .execute()
@@ -199,7 +175,6 @@ def _resolve_recipients(sb, target_type: str, payload, admin_id: str) -> List[st
         all_res = (
             sb.table("profiles")
             .select("id")
-            .eq("is_active", True)
             .neq("role", "superadmin")
             .execute()
         )
@@ -213,7 +188,6 @@ def _resolve_recipients(sb, target_type: str, payload, admin_id: str) -> List[st
         all_res = (
             sb.table("profiles")
             .select("id")
-            .eq("is_active", True)
             .neq("role", "superadmin")
             .execute()
         )

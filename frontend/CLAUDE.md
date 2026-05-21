@@ -89,8 +89,8 @@ frontend/
 │   ├── hooks/
 │   │   ├── useBooks.js           # useBooks, useCreateBook, useDeleteBook (React Query)
 │   │   ├── useBookSort.js        # Sort state + sorted list derivation
-│   │   ├── useCategories.js      # useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory, useCategoryEntries
-│   │   ├── useContacts.js        # useCustomers/Suppliers, useCreateContact, useDeleteContact, etc.
+│   │   ├── useCategories.js      # useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory, useCategoryEntries, useReorderCategories
+│   │   ├── useContacts.js        # useCustomers/Suppliers, useCreateContact, useDeleteContact, useReorderCustomers, useReorderSuppliers, useReorderContacts, etc.
 │   │   ├── useProfile.js         # useProfile, useUpdateProfile
 │   │   ├── useSharing.js         # useSharedBooks, useBookShares, useAddCollaborator, useUpdateShare, useRemoveCollaborator, useRemoveShareByOwner, useLeaveSharedBook, useReceivedInvitations, useGivenInvitations, useRespondToInvitation
 │   │   └── useTheme.js           # Returns { C, Font, isDark, toggleTheme }
@@ -335,18 +335,21 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `apiUpdateCategory(bookId, categoryId, payload)` | PUT | `/api/v1/books/:id/categories/:id` |
 | `apiDeleteCategory(bookId, categoryId)` | DELETE | `/api/v1/books/:id/categories/:id` |
 | `apiGetCategoryEntries(bookId, categoryId)` | GET | `/api/v1/books/:id/categories/:id/entries` |
+| `apiReorderCategories(bookId, orderedIds)` | PATCH | `/api/v1/books/:id/categories/reorder` |
 | `apiGetCustomers(bookId)` | GET | `/api/v1/books/:id/customers` |
 | `apiCreateCustomer(bookId, payload)` | POST | `/api/v1/books/:id/customers` |
 | `apiGetCustomer(bookId, id)` | GET | `/api/v1/books/:id/customers/:id` |
 | `apiUpdateCustomer(bookId, id, payload)` | PUT | `/api/v1/books/:id/customers/:id` |
 | `apiDeleteCustomer(bookId, id)` | DELETE | `/api/v1/books/:id/customers/:id` |
 | `apiGetCustomerEntries(bookId, id)` | GET | `/api/v1/books/:id/customers/:id/entries` |
+| `apiReorderCustomers(bookId, orderedIds)` | PATCH | `/api/v1/books/:id/customers/reorder` |
 | `apiGetSuppliers(bookId)` | GET | `/api/v1/books/:id/suppliers` |
 | `apiCreateSupplier(bookId, payload)` | POST | `/api/v1/books/:id/suppliers` |
 | `apiGetSupplier(bookId, id)` | GET | `/api/v1/books/:id/suppliers/:id` |
 | `apiUpdateSupplier(bookId, id, payload)` | PUT | `/api/v1/books/:id/suppliers/:id` |
 | `apiDeleteSupplier(bookId, id)` | DELETE | `/api/v1/books/:id/suppliers/:id` |
 | `apiGetSupplierEntries(bookId, id)` | GET | `/api/v1/books/:id/suppliers/:id/entries` |
+| `apiReorderSuppliers(bookId, orderedIds)` | PATCH | `/api/v1/books/:id/suppliers/reorder` |
 | `apiGetAllUsers()` | GET | `/api/v1/admin/users` |
 | `apiToggleUserStatus(userId, is_active)` | PATCH | `/api/v1/admin/users/:id/status` |
 | `apiGetUserBooks(userId)` | GET | `/api/v1/admin/users/:id/books` |

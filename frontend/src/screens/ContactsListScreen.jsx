@@ -1,7 +1,7 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Pressable, StatusBar,
-  FlatList, Modal, Alert, ActivityIndicator, Animated,
+  ScrollView, Modal, Alert, ActivityIndicator, Animated,
   Keyboard, Platform, TextInput, Switch,
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
@@ -10,19 +10,22 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useBookBasePath } from '../hooks/useBookBasePath';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
-import { useContacts, useCreateContact, useUpdateContact, useDeleteContact } from '../hooks/useContacts';
+import {
+  useContacts, useCreateContact, useUpdateContact, useDeleteContact,
+  useReorderContacts,
+} from '../hooks/useContacts';
 import ContactMenuSheet from '../components/books/ContactMenuSheet';
 import DeleteContactSheet from '../components/ui/DeleteContactSheet';
 import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiUpdateBookFieldSettings } from '../lib/dataSource';
+import { DragHandleIcon } from '../components/books/DraggableList';
 
 const TYPE_CONFIG = {
   customer: { label: 'Customers', icon: 'user-check', emptyIcon: 'user-plus' },
-  supplier: { label: 'Suppliers', icon: 'truck', emptyIcon: 'truck' },
+  supplier: { label: 'Suppliers', icon: 'truck',       emptyIcon: 'truck'     },
 };
-
 
 function EmptyState({ cfg, C, Font }) {
   return (
@@ -41,14 +44,14 @@ function EmptyState({ cfg, C, Font }) {
 }
 
 const es = StyleSheet.create({
-  wrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 },
+  wrap:    { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 80 },
   iconBox: { width: 80, height: 80, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
-  title: { fontSize: 16, lineHeight: 24, marginBottom: 8 },
-  sub: { fontSize: 13, lineHeight: 20, textAlign: 'center' },
+  title:   { fontSize: 16, lineHeight: 24, marginBottom: 8 },
+  sub:     { fontSize: 13, lineHeight: 20, textAlign: 'center' },
 });
 
 export default function ContactsListScreen() {
-  const router = useRouter();
+  const router   = useRouter();
   const basePath = useBookBasePath();
   const { id: bookId, name: bookName, type } = useLocalSearchParams();
   const { C, Font } = useTheme();
@@ -57,17 +60,16 @@ export default function ContactsListScreen() {
   const cfg = TYPE_CONFIG[type] || TYPE_CONFIG.customer;
 
   const qc = useQueryClient();
-  const { data: books = [] } = useBooks();
+  const { data: books = [] }       = useBooks();
   const { data: sharedBooks = [] } = useSharedBooks();
-  const currentBook = books.find(b => b.id === bookId);
-  const isOwner = !!currentBook;
-  const sharedBook = !isOwner ? sharedBooks.find(b => b.id === bookId) : null;
-  const rights = isOwner ? 'view_create_edit_delete' : (sharedBook?.rights ?? 'view');
-  const canEdit   = rights !== 'view';
-  const canDelete = rights === 'view_create_edit_delete';
+  const currentBook  = books.find(b => b.id === bookId);
+  const isOwner      = !!currentBook;
+  const sharedBook   = !isOwner ? sharedBooks.find(b => b.id === bookId) : null;
+  const rights       = isOwner ? 'view_create_edit_delete' : (sharedBook?.rights ?? 'view');
+  const canEdit      = rights !== 'view';
+  const canDelete    = rights === 'view_create_edit_delete';
 
-  const bookData = currentBook ?? sharedBook;
-
+  const bookData  = currentBook ?? sharedBook;
   const showField = type === 'supplier'
     ? (bookData?.show_supplier ?? false)
     : (bookData?.show_customer ?? false);
@@ -88,7 +90,7 @@ export default function ContactsListScreen() {
           ...b,
           show_customer: type === 'customer' ? newVal : b.show_customer,
           show_supplier: type === 'supplier' ? newVal : b.show_supplier,
-        } : b)
+        } : b),
       );
       return { snapshot };
     },
@@ -99,99 +101,168 @@ export default function ContactsListScreen() {
     onSuccess: () => qc.invalidateQueries({ queryKey: isOwner ? ['books'] : ['shared-books'] }),
   });
 
-  const [search, setSearch] = useState('');
+  const [search,     setSearch]     = useState('');
   const [addVisible, setAddVisible] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [kbHeight, setKbHeight] = useState(0);
+  const [newName,    setNewName]    = useState('');
+  const [newPhone,   setNewPhone]   = useState('');
+  const [kbHeight,   setKbHeight]   = useState(0);
 
   useEffect(() => {
     if (!addVisible) { setKbHeight(0); return; }
     const show = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e) => setKbHeight(e.endCoordinates.height)
+      (e) => setKbHeight(e.endCoordinates.height),
     );
     const hide = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKbHeight(0)
+      () => setKbHeight(0),
     );
     return () => { show.remove(); hide.remove(); };
   }, [addVisible]);
-  const [menuContactId, setMenuContactId] = useState(null);
+
+  const [menuContactId,   setMenuContactId]   = useState(null);
   const [deletingContact, setDeletingContact] = useState(null);
   const [showDeleteSheet, setShowDeleteSheet] = useState(false);
 
   const { data: contacts = [], isLoading } = useContacts(bookId, type);
-  const createContact = useCreateContact(bookId, type);
-  const deleteContact = useDeleteContact(bookId, type);
-  const updateContact = useUpdateContact(bookId, menuContactId, type);
+  const createContact  = useCreateContact(bookId, type);
+  const deleteContact  = useDeleteContact(bookId, type);
+  const updateContact  = useUpdateContact(bookId, menuContactId, type);
+  const reorderContacts = useReorderContacts(bookId, type);
 
-  // Derive live contact from query data — never a stale snapshot
   const menuContact = useMemo(
     () => menuContactId ? (contacts.find(c => c.id === menuContactId) ?? null) : null,
     [menuContactId, contacts],
   );
 
+  // ── Drag state ────────────────────────────────────────────────────────────
+  const ITEM_H = 72; // card height 62 + marginBottom 10
+  const clamp  = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+
+  const [listItems,  setListItems]  = useState(() => [...contacts]);
+  const [dragIdx,    setDragIdx]    = useState(-1);
+  const [insertAt,   setInsertAt]   = useState(-1);
+
+  const dragIdxRef    = useRef(-1);
+  const insertAtRef   = useRef(-1);
+  const dragStartYRef = useRef(0);
+  const dragDy        = useRef(new Animated.Value(0)).current;
+
+  // Sync local list when contacts update from server (not while dragging)
+  useEffect(() => {
+    if (dragIdx < 0) setListItems([...contacts]);
+  }, [contacts, dragIdx]);
+
+  const startDrag = useCallback((idx, pageY) => {
+    dragIdxRef.current    = idx;
+    insertAtRef.current   = idx;
+    dragStartYRef.current = pageY;
+    dragDy.setValue(0);
+    setDragIdx(idx);
+    setInsertAt(idx);
+  }, [dragDy]);
+
+  const moveDrag = useCallback((pageY) => {
+    const dy = pageY - dragStartYRef.current;
+    dragDy.setValue(dy);
+    const newInsert = clamp(
+      Math.round((dragIdxRef.current * ITEM_H + dy) / ITEM_H),
+      0,
+      listItems.length - 1,
+    );
+    if (newInsert !== insertAtRef.current) {
+      insertAtRef.current = newInsert;
+      setInsertAt(newInsert);
+    }
+  }, [dragDy, listItems.length]);
+
+  const endDrag = useCallback(() => {
+    const from = dragIdxRef.current;
+    const to   = insertAtRef.current;
+
+    if (from >= 0 && from !== to) {
+      setListItems(prev => {
+        const next = [...prev];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        reorderContacts.mutate(next.map(c => c.id));
+        return next;
+      });
+    }
+
+    dragIdxRef.current  = -1;
+    insertAtRef.current = -1;
+    Animated.timing(dragDy, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
+      setDragIdx(-1);
+      setInsertAt(-1);
+    });
+  }, [dragDy, reorderContacts]);
+
+  const makeHandleProps = useCallback((idx) => ({
+    onStartShouldSetResponder:        () => true,
+    onMoveShouldSetResponder:         () => true,
+    onStartShouldSetResponderCapture: () => true,
+    onMoveShouldSetResponderCapture:  () => true,
+    onResponderGrant:     (e) => startDrag(idx, e.nativeEvent.pageY),
+    onResponderMove:      (e) => moveDrag(e.nativeEvent.pageY),
+    onResponderRelease:   endDrag,
+    onResponderTerminate: endDrag,
+  }), [startDrag, moveDrag, endDrag]);
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return contacts;
+    if (!search.trim()) return listItems;
     const q = search.toLowerCase();
-    return contacts.filter(c =>
+    return listItems.filter(c =>
       c.name.toLowerCase().includes(q) ||
       (c.phone || '').includes(q) ||
-      (c.email || '').toLowerCase().includes(q)
+      (c.email || '').toLowerCase().includes(q),
     );
-  }, [contacts, search]);
+  }, [listItems, search]);
 
-  // true only when there is genuinely no data (not a search-no-match)
-  const isEmpty = !isLoading && filtered.length === 0 && !search.trim();
+  const isEmpty = !isLoading && listItems.length === 0;
 
-  // Animation refs for FAB glow + bottom arrow
-  const glowScale = useRef(new Animated.Value(1)).current;
+  // ── FAB animations ────────────────────────────────────────────────────────
+  const glowScale   = useRef(new Animated.Value(1)).current;
   const glowOpacity = useRef(new Animated.Value(0)).current;
-  const arrow1 = useRef(new Animated.Value(0)).current;
-  const arrow2 = useRef(new Animated.Value(0)).current;
-  const arrow3 = useRef(new Animated.Value(0)).current;
-  const arrowAnims = useMemo(() => [arrow1, arrow2, arrow3], []);
+  const arrow1      = useRef(new Animated.Value(0)).current;
+  const arrow2      = useRef(new Animated.Value(0)).current;
+  const arrow3      = useRef(new Animated.Value(0)).current;
+  const arrowAnims  = useMemo(() => [arrow1, arrow2, arrow3], []);
 
   useEffect(() => {
     if (!isEmpty) {
-      glowScale.setValue(1);
-      glowOpacity.setValue(0);
+      glowScale.setValue(1); glowOpacity.setValue(0);
       arrowAnims.forEach(a => a.setValue(0));
       return;
     }
-
-    // Pulsing glow ring: expands outward and fades
     const glow = Animated.loop(
       Animated.sequence([
         Animated.parallel([
-          Animated.timing(glowScale, { toValue: 2, duration: 950, useNativeDriver: true }),
-          Animated.timing(glowOpacity, { toValue: 0, duration: 950, useNativeDriver: true }),
+          Animated.timing(glowScale,   { toValue: 2,    duration: 950, useNativeDriver: true }),
+          Animated.timing(glowOpacity, { toValue: 0,    duration: 950, useNativeDriver: true }),
         ]),
         Animated.parallel([
-          Animated.timing(glowScale, { toValue: 1, duration: 0, useNativeDriver: true }),
-          Animated.timing(glowOpacity, { toValue: 0.55, duration: 0, useNativeDriver: true }),
+          Animated.timing(glowScale,   { toValue: 1,    duration: 0,   useNativeDriver: true }),
+          Animated.timing(glowOpacity, { toValue: 0.55, duration: 0,   useNativeDriver: true }),
         ]),
-      ])
+      ]),
     );
-
-    // Cascading chevrons pointing right toward the FAB
     const cascade = Animated.loop(
       Animated.sequence([
         Animated.stagger(200, arrowAnims.map(a =>
           Animated.sequence([
-            Animated.timing(a, { toValue: 1, duration: 300, useNativeDriver: true }),
+            Animated.timing(a, { toValue: 1,    duration: 300, useNativeDriver: true }),
             Animated.timing(a, { toValue: 0.12, duration: 300, useNativeDriver: true }),
-          ])
+          ]),
         )),
         Animated.delay(400),
-      ])
+      ]),
     );
-
-    glow.start();
-    cascade.start();
+    glow.start(); cascade.start();
     return () => { glow.stop(); cascade.stop(); };
   }, [isEmpty]);
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   const openDetail = (contact) => {
     router.push({
@@ -206,24 +277,16 @@ export default function ContactsListScreen() {
     createContact.mutate(
       { type, name, phone: newPhone.trim() || undefined },
       {
-        onSuccess: () => {
-          setAddVisible(false);
-          setNewName('');
-          setNewPhone('');
-        },
-        onError: () => Alert.alert('Error', 'Failed to create contact.'),
-      }
+        onSuccess: () => { setAddVisible(false); setNewName(''); setNewPhone(''); },
+        onError:   () => Alert.alert('Error', 'Failed to create contact.'),
+      },
     );
-  };
-
-  const handleLongPress = (item) => {
-    setMenuContactId(item.id);
   };
 
   const handleSaveEdit = (payload) => {
     updateContact.mutate(payload, {
       onSuccess: () => setMenuContactId(null),
-      onError: () => Alert.alert('Error', 'Failed to save changes.'),
+      onError:   () => Alert.alert('Error', 'Failed to save changes.'),
     });
   };
 
@@ -238,48 +301,92 @@ export default function ContactsListScreen() {
     if (!deletingContact) return;
     deleteContact.mutate(deletingContact.id, {
       onSuccess: () => { setShowDeleteSheet(false); setDeletingContact(null); },
-      onError: () => Alert.alert('Error', 'Failed to delete contact.'),
+      onError:   () => Alert.alert('Error', 'Failed to delete contact.'),
     });
   };
 
-  const renderContact = ({ item }) => {
-    const avatarBg = C.primaryLight;
-    const balance = item.balance ?? 0;
-    return (
-      <TouchableOpacity
-        style={[s.card, { backgroundColor: C.card, borderColor: C.border }]}
-        onPress={() => openDetail(item)}
-        onLongPress={canEdit ? () => handleLongPress(item) : undefined}
-        delayLongPress={350}
-        activeOpacity={0.8}
+  // ── Render card ───────────────────────────────────────────────────────────
+
+  const renderContact = (item, idx) => {
+    const balance  = item.balance ?? 0;
+    const isActive = idx === dragIdx;
+
+    const showLineBefore =
+      dragIdx >= 0 && insertAt === idx && insertAt !== dragIdx && !(dragIdx + 1 === insertAt);
+    const isLast       = idx === listItems.length - 1;
+    const showLineAfter =
+      isLast && dragIdx >= 0 && insertAt === listItems.length - 1 &&
+      dragIdx !== listItems.length - 1 && dragIdx < insertAt;
+
+    const card = (
+      <Animated.View
+        style={[
+          s.cardWrap,
+          isActive && {
+            transform:     [{ translateY: dragDy }],
+            zIndex:        100,
+            elevation:     10,
+            shadowColor:   C.primary,
+            shadowOffset:  { width: 0, height: 6 },
+            shadowOpacity: 0.22,
+            shadowRadius:  12,
+            opacity:       0.97,
+          },
+        ]}
       >
-        <View style={[s.avatar, { backgroundColor: avatarBg }]}>
-          <Feather name={cfg.icon} size={20} color={C.primary} />
-        </View>
+        <View style={[s.card, { backgroundColor: C.card, borderColor: isActive ? C.primary : C.border }]}>
+          {/* Drag handle */}
+          {canEdit && (
+            <View {...makeHandleProps(idx)} style={s.handle}>
+              <DragHandleIcon color={isActive ? C.primary : C.textMuted} />
+            </View>
+          )}
 
-        <View style={s.cardBody}>
-          <Text style={[s.cardName, { color: C.text, fontFamily: Font.semiBold }]} numberOfLines={1}>
-            {item.name}
-          </Text>
-          {item.phone
-            ? <Text style={[s.cardSub, { color: C.textMuted, fontFamily: Font.regular }]}>{item.phone}</Text>
-            : null}
-        </View>
+          {/* Icon */}
+          <View style={[s.avatar, { backgroundColor: C.primaryLight }]}>
+            <Feather name={cfg.icon} size={20} color={C.primary} />
+          </View>
 
-        <TouchableOpacity
-          style={[s.balancePill, { backgroundColor: balance >= 0 ? C.cashInLight : C.dangerLight }]}
-          onPress={() => router.push({
-            pathname: `${basePath}/[id]/contact-balance`,
-            params: { id: bookId, name: bookName, contactId: item.id, contactName: item.name, contactType: type },
-          })}
-          activeOpacity={0.8}
-        >
-          <Text style={[s.balanceText, { color: balance >= 0 ? C.cashIn : C.danger, fontFamily: Font.bold }]}>
-            {Math.abs(balance).toLocaleString()}
-          </Text>
-          <Feather name="chevron-right" size={11} color={balance >= 0 ? C.cashIn : C.danger} />
-        </TouchableOpacity>
-      </TouchableOpacity>
+          {/* Body — tap to open detail, long-press for menu */}
+          <TouchableOpacity
+            style={s.cardBody}
+            onPress={() => openDetail(item)}
+            onLongPress={canEdit ? () => setMenuContactId(item.id) : undefined}
+            delayLongPress={350}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.cardName, { color: C.text, fontFamily: Font.semiBold }]} numberOfLines={1}>
+              {item.name}
+            </Text>
+            {item.phone
+              ? <Text style={[s.cardSub, { color: C.textMuted, fontFamily: Font.regular }]}>{item.phone}</Text>
+              : null}
+          </TouchableOpacity>
+
+          {/* Balance pill */}
+          <TouchableOpacity
+            style={[s.balancePill, { backgroundColor: balance >= 0 ? C.cashInLight : C.dangerLight }]}
+            onPress={() => router.push({
+              pathname: `${basePath}/[id]/contact-balance`,
+              params: { id: bookId, name: bookName, contactId: item.id, contactName: item.name, contactType: type },
+            })}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.balanceText, { color: balance >= 0 ? C.cashIn : C.danger, fontFamily: Font.bold }]}>
+              {Math.abs(balance).toLocaleString()}
+            </Text>
+            <Feather name="chevron-right" size={11} color={balance >= 0 ? C.cashIn : C.danger} />
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    );
+
+    return (
+      <Fragment key={item.id}>
+        {showLineBefore && <View style={[s.insertLine, { backgroundColor: C.primary }]} />}
+        {card}
+        {showLineAfter  && <View style={[s.insertLine, { backgroundColor: C.primary }]} />}
+      </Fragment>
     );
   };
 
@@ -334,27 +441,25 @@ export default function ContactsListScreen() {
       {/* List / empty states */}
       {isLoading ? (
         <ActivityIndicator style={{ marginTop: 40 }} color={C.primary} />
+      ) : isEmpty ? (
+        <EmptyState cfg={cfg} C={C} Font={Font} />
       ) : filtered.length === 0 ? (
-        search ? (
-          <View style={s.empty}>
-            <Feather name="search" size={40} color={C.border} />
-            <Text style={[s.emptyTitle, { color: C.text, fontFamily: Font.semiBold }]}>No results</Text>
-            <Text style={[s.emptySub, { color: C.textMuted, fontFamily: Font.regular }]}>Try a different search.</Text>
-          </View>
-        ) : (
-          <EmptyState cfg={cfg} C={C} Font={Font} />
-        )
+        <View style={s.empty}>
+          <Feather name="search" size={40} color={C.border} />
+          <Text style={[s.emptyTitle, { color: C.text, fontFamily: Font.semiBold }]}>No results</Text>
+          <Text style={[s.emptySub, { color: C.textMuted, fontFamily: Font.regular }]}>Try a different search.</Text>
+        </View>
       ) : (
-        <FlatList
-          data={filtered}
-          keyExtractor={item => item.id}
-          renderItem={renderContact}
-          contentContainerStyle={s.listContent}
+        <ScrollView
+          scrollEnabled={dragIdx < 0}
           showsVerticalScrollIndicator={false}
-        />
+          contentContainerStyle={s.listContent}
+        >
+          {filtered.map((item, idx) => renderContact(item, idx))}
+        </ScrollView>
       )}
 
-      {/* Cascading arrows at bottom pointing right → FAB (only when empty + canEdit) */}
+      {/* Cascading arrows → FAB (only when empty + canEdit) */}
       {isEmpty && canEdit && (
         <View style={s.fabArrow}>
           {arrowAnims.map((anim, i) => (
@@ -365,19 +470,12 @@ export default function ContactsListScreen() {
         </View>
       )}
 
-      {/* FAB — hidden for view-only collaborators */}
+      {/* FAB */}
       {canEdit && (
         <View style={s.fabWrap}>
           {isEmpty && (
             <Animated.View
-              style={[
-                s.fabGlow,
-                {
-                  backgroundColor: C.primary,
-                  opacity: glowOpacity,
-                  transform: [{ scale: glowScale }],
-                },
-              ]}
+              style={[s.fabGlow, { backgroundColor: C.primary, opacity: glowOpacity, transform: [{ scale: glowScale }] }]}
             />
           )}
           <TouchableOpacity
@@ -427,7 +525,7 @@ export default function ContactsListScreen() {
       {/* Add Modal */}
       <Modal visible={addVisible} transparent animationType="slide" onRequestClose={() => setAddVisible(false)}>
         <Pressable style={[s.modalOverlay, { backgroundColor: C.overlay }]} onPress={() => { setAddVisible(false); setNewName(''); setNewPhone(''); }}>
-          <Pressable style={[s.modalSheet, { backgroundColor: C.card, marginBottom: kbHeight }]} onPress={() => { }}>
+          <Pressable style={[s.modalSheet, { backgroundColor: C.card, marginBottom: kbHeight }]} onPress={() => {}}>
             <View style={[s.modalHandle, { backgroundColor: C.border }]} />
             <View style={s.modalHeader}>
               <Text style={[s.modalTitle, { color: C.text, fontFamily: Font.bold }]}>
@@ -485,73 +583,53 @@ export default function ContactsListScreen() {
 const makeStyles = () => StyleSheet.create({
   safe: { flex: 1 },
 
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  header:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
+  backBtn:      { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 17, color: '#fff', lineHeight: 24 },
-  headerSub: { fontSize: 12, color: 'rgba(255,255,255,0.75)', lineHeight: 18 },
+  headerTitle:  { fontSize: 17, color: '#fff', lineHeight: 24 },
+  headerSub:    { fontSize: 12, color: 'rgba(255,255,255,0.75)', lineHeight: 18 },
 
-  toggleRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, borderBottomWidth: 1 },
+  toggleRow:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, borderBottomWidth: 1 },
   toggleIconBox: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  toggleBody: { flex: 1 },
-  toggleLabel: { fontSize: 14, lineHeight: 20 },
-  toggleSub: { fontSize: 11, lineHeight: 16, marginTop: 1 },
+  toggleBody:    { flex: 1 },
+  toggleLabel:   { fontSize: 14, lineHeight: 20 },
+  toggleSub:     { fontSize: 11, lineHeight: 16, marginTop: 1 },
 
-  searchWrap: { paddingVertical: 10, borderBottomWidth: 1 },
-  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1.5, borderRadius: 50, paddingHorizontal: 16, paddingVertical: 10 },
-  searchInput: { flex: 1, fontSize: 14, lineHeight: 20, padding: 0 },
-
+  searchWrap:  { paddingVertical: 10, borderBottomWidth: 1 },
   listContent: { paddingTop: 12, paddingBottom: 120 },
 
-  card: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 16, marginBottom: 10, borderRadius: 50, paddingVertical: 6, paddingLeft: 6, paddingRight: 14, borderWidth: 1.5 },
-  avatar: { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  avatarText: { fontSize: 15, lineHeight: 22 },
-  cardBody: { flex: 1 },
-  cardName: { fontSize: 14, lineHeight: 20 },
-  cardSub: { fontSize: 12, lineHeight: 18, marginTop: 1 },
-
+  cardWrap:    { marginHorizontal: 16, marginBottom: 10 },
+  card:        { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingVertical: 6, paddingLeft: 6, paddingRight: 14, borderWidth: 1.5 },
+  handle:      { paddingHorizontal: 8, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
+  avatar:      { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  cardBody:    { flex: 1 },
+  cardName:    { fontSize: 14, lineHeight: 20 },
+  cardSub:     { fontSize: 12, lineHeight: 18, marginTop: 1 },
+  insertLine:  { height: 3, borderRadius: 2, marginHorizontal: 16, marginVertical: 3 },
   balancePill: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6 },
   balanceText: { fontSize: 13, lineHeight: 18 },
 
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 60 },
+  empty:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 60 },
   emptyTitle: { fontSize: 17, lineHeight: 26 },
-  emptySub: { fontSize: 14, lineHeight: 22, textAlign: 'center', maxWidth: 240 },
+  emptySub:   { fontSize: 14, lineHeight: 22, textAlign: 'center', maxWidth: 240 },
 
-  // FAB: outer wrapper is absolutely positioned; glow ring sits inside it
   fabWrap: {
     position: 'absolute', bottom: 24, right: 24,
-    width: 56, height: 56,
-    alignItems: 'center', justifyContent: 'center',
+    width: 56, height: 56, alignItems: 'center', justifyContent: 'center',
     elevation: 6,
     shadowColor: '#000', shadowOpacity: 0.18, shadowOffset: { width: 0, height: 4 }, shadowRadius: 10,
   },
-  fabGlow: {
-    position: 'absolute',
-    width: 56, height: 56, borderRadius: 28,
-  },
-  fab: {
-    width: 56, height: 56, borderRadius: 28,
-    alignItems: 'center', justifyContent: 'center',
-  },
-
-  // Three chevrons horizontally to the left of the FAB, vertically centered with it
-  // FAB center from bottom = 24 + 28 = 52; arrow (28px) center offset = 14 → bottom: 38
-  fabArrow: {
-    position: 'absolute',
-    bottom: 38,
-    right: 88,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: -6,
-  },
+  fabGlow: { position: 'absolute', width: 56, height: 56, borderRadius: 28 },
+  fab:     { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
+  fabArrow:{ position: 'absolute', bottom: 38, right: 88, flexDirection: 'row', alignItems: 'center', gap: -6 },
 
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
-  modalSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingTop: 12 },
-  modalHandle: { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
-  modalTitle: { fontSize: 17, lineHeight: 26 },
-  modalInput: { borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, lineHeight: 22, marginBottom: 12 },
+  modalSheet:   { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingTop: 12 },
+  modalHandle:  { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+  modalHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  modalTitle:   { fontSize: 17, lineHeight: 26 },
+  modalInput:   { borderWidth: 1.5, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, lineHeight: 22, marginBottom: 12 },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  modalBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
+  modalBtn:     { flex: 1, paddingVertical: 13, borderRadius: 12, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   modalBtnText: { fontSize: 15, lineHeight: 22 },
 });

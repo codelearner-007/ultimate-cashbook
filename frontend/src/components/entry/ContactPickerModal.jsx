@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Pressable,
-  FlatList, ActivityIndicator, Alert, Modal,
-  Keyboard, Platform,
+  FlatList, ScrollView, ActivityIndicator, Alert, Modal,
+  Keyboard, Platform, Dimensions,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../../hooks/useTheme';
@@ -174,11 +174,14 @@ export default function ContactPickerModal({
     return () => { show.remove(); hide.remove(); };
   }, [visible]);
 
+  const screenH   = Dimensions.get('window').height;
+  const maxSheetH = Math.min(screenH * 0.78, screenH - kbHeight - 40);
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose} statusBarTranslucent>
       <Pressable style={[s.overlay, { backgroundColor: C.overlay }]} onPress={handleClose}>
         <Pressable
-          style={[s.sheet, { backgroundColor: C.card, marginBottom: kbHeight }]}
+          style={[s.sheet, { backgroundColor: C.card, maxHeight: maxSheetH, bottom: kbHeight }]}
           onPress={() => {}}
         >
           {/* ── Handle ── */}
@@ -336,7 +339,13 @@ export default function ContactPickerModal({
 
           {/* ── CREATE VIEW ── */}
           {view === 'create' && (
-            <View style={s.createWrap}>
+            <ScrollView
+              style={s.createScroll}
+              contentContainerStyle={s.createWrap}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
               <Text style={[s.fieldLabel, { color: C.textMuted, fontFamily: Font.semiBold }]}>Type</Text>
               <View style={s.typeRow}>
                 {allowedTypes.map((t) => {
@@ -392,7 +401,7 @@ export default function ContactPickerModal({
                   )
                 }
               </TouchableOpacity>
-            </View>
+            </ScrollView>
           )}
 
           {/* ── PHONE CONTACTS VIEW ── */}
@@ -458,14 +467,16 @@ export default function ContactPickerModal({
 }
 
 const makeStyles = (C, Font) => StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
+  overlay: { flex: 1 },
   sheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 20,
-    maxHeight: '78%',
   },
   handle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 10 },
 
@@ -510,7 +521,8 @@ const makeStyles = (C, Font) => StyleSheet.create({
   actionBtnText: { fontSize: 13, lineHeight: 18 },
 
   // Create form
-  createWrap:   {},
+  createScroll: { flexShrink: 1 },
+  createWrap:   { paddingBottom: 16 },
   fieldLabel:   { fontSize: 10, letterSpacing: 0.6, textTransform: 'uppercase', marginBottom: 4, marginTop: 8 },
   typeRow:      { flexDirection: 'row', gap: 8, marginBottom: 2 },
   typeChip:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1.5, borderRadius: 12, paddingVertical: 10 },

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 from app.auth.jwt import get_current_user
 from app.db.supabase import get_supabase
-from app.models.contact import ContactCreate, ContactUpdate, ContactResponse, ContactWithBalance
+from app.models.contact import ContactCreate, ContactUpdate, ContactResponse, ContactWithBalance, ContactReorder
 from app.models.entry import EntryResponse
 from app.utils.book_access import get_book_owner_id
 
@@ -19,7 +19,7 @@ def _with_balance(row: dict) -> dict:
 async def get_customers(book_id: str, user_id: str = Depends(get_current_user)):
     sb = get_supabase()
     owner_id = get_book_owner_id(sb, book_id, user_id)
-    rows = sb.table("customers").select("*").eq("book_id", book_id).eq("user_id", owner_id).order("name").execute().data or []
+    rows = sb.table("customers").select("*").eq("book_id", book_id).eq("user_id", owner_id).order("display_order").order("name").execute().data or []
     return [_with_balance(r) for r in rows]
 
 
@@ -77,13 +77,25 @@ async def get_customer_entries(book_id: str, contact_id: str, user_id: str = Dep
     return sb.table("entries").select("*").eq("customer_id", contact_id).eq("book_id", book_id).eq("user_id", owner_id).order("entry_date", desc=True).order("entry_time", desc=True).execute().data or []
 
 
+@router.patch("/{book_id}/customers/reorder", status_code=204)
+async def reorder_customers(book_id: str, payload: ContactReorder, user_id: str = Depends(get_current_user)):
+    sb = get_supabase()
+    owner_id = get_book_owner_id(sb, book_id, user_id)
+    for order, contact_id in enumerate(payload.ordered_ids):
+        sb.table("customers").update({"display_order": order}) \
+          .eq("id", contact_id) \
+          .eq("book_id", book_id) \
+          .eq("user_id", owner_id) \
+          .execute()
+
+
 # ── Suppliers ─────────────────────────────────────────────────────────────────
 
 @router.get("/{book_id}/suppliers", response_model=List[ContactWithBalance])
 async def get_suppliers(book_id: str, user_id: str = Depends(get_current_user)):
     sb = get_supabase()
     owner_id = get_book_owner_id(sb, book_id, user_id)
-    rows = sb.table("suppliers").select("*").eq("book_id", book_id).eq("user_id", owner_id).order("name").execute().data or []
+    rows = sb.table("suppliers").select("*").eq("book_id", book_id).eq("user_id", owner_id).order("display_order").order("name").execute().data or []
     return [_with_balance(r) for r in rows]
 
 
@@ -139,3 +151,15 @@ async def get_supplier_entries(book_id: str, contact_id: str, user_id: str = Dep
     if not sb.table("suppliers").select("id").eq("id", contact_id).eq("book_id", book_id).eq("user_id", owner_id).limit(1).execute().data:
         raise HTTPException(status_code=404, detail="Supplier not found")
     return sb.table("entries").select("*").eq("supplier_id", contact_id).eq("book_id", book_id).eq("user_id", owner_id).order("entry_date", desc=True).order("entry_time", desc=True).execute().data or []
+
+
+@router.patch("/{book_id}/suppliers/reorder", status_code=204)
+async def reorder_suppliers(book_id: str, payload: ContactReorder, user_id: str = Depends(get_current_user)):
+    sb = get_supabase()
+    owner_id = get_book_owner_id(sb, book_id, user_id)
+    for order, contact_id in enumerate(payload.ordered_ids):
+        sb.table("suppliers").update({"display_order": order}) \
+          .eq("id", contact_id) \
+          .eq("book_id", book_id) \
+          .eq("user_id", owner_id) \
+          .execute()

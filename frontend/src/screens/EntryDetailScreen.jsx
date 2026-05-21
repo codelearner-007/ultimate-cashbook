@@ -136,7 +136,7 @@ export default function EntryDetailScreen() {
             <View style={s.detailCard}>
               <DetailRow label="Remark"       value={entry.remark}                       C={C} Font={Font} />
               <DetailRow label="Category" value={categoryDeleted ? null : entry.category} C={C} Font={Font} />
-              <DetailRow label="Payment Mode" value={PAYMENT_LABELS[entry.payment_mode]} C={C} Font={Font} />
+              <DetailRow label="Payment Mode" value={PAYMENT_LABELS[entry.payment_mode] ?? entry.payment_mode} C={C} Font={Font} />
               {entry.customer_id && (
                 <DetailRow label="Customer" value={entry.contact_name} C={C} Font={Font} />
               )}

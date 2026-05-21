@@ -301,7 +301,8 @@ class BookSummary:   total_in, total_out, net_balance
 ```python
 class ContactCreate:      name, phone?, email?, address?
 class ContactUpdate:      all fields optional
-class ContactResponse:    id, book_id, user_id, name, phone?, email?, address?, total_in, total_out, net_balance, created_at, updated_at
+class ContactReorder:     ordered_ids: List[str]
+class ContactResponse:    id, book_id, user_id, name, phone?, email?, address?, display_order (int, default 0), total_in, total_out, net_balance, created_at, updated_at
 class ContactWithBalance: ContactResponse + balance (mirrors net_balance — kept for API backwards compat)
 ```
 
@@ -309,21 +310,24 @@ class ContactWithBalance: ContactResponse + balance (mirrors net_balance — kep
 ```python
 class CategoryCreate:   name (str, required)
 class CategoryUpdate:   name? (str, optional)
-class CategoryResponse: id, book_id, user_id, name, total_in, total_out, net_balance, created_at
+class CategoryReorder:  ordered_ids: List[str]
+class CategoryResponse: id, book_id, user_id, name, display_order (int, default 0), total_in, total_out, net_balance, created_at
 ```
 
 ### Categories (`routers/categories.py`) — prefix `/api/v1/books`
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| GET | `/{book_id}/categories` | List all categories for a book (ordered by created_at) | ✅ |
+| GET | `/{book_id}/categories` | List all categories (ordered by display_order, then created_at) | ✅ |
 | POST | `/{book_id}/categories` | Create category (name required, unique per book) | ✅ |
 | PUT | `/{book_id}/categories/{id}` | Rename category | ✅ |
 | DELETE | `/{book_id}/categories/{id}` | Delete category (entries.category_id → NULL via FK) | ✅ |
+| PATCH | `/{book_id}/categories/reorder` | Save drag-sorted order `{ ordered_ids: [uuid,...] }` | ✅ |
 | GET | `/{book_id}/categories/{id}/entries` | Entries assigned to this category | ✅ |
 
 **Balance rule:** `total_in`, `total_out`, `net_balance` are maintained by `trg_update_category_balance` (DB trigger on `entries`). Read directly from the row — never recompute in Python.
 **Uniqueness:** category names are case-insensitive unique per book (DB UNIQUE constraint + `ilike` pre-check in the router for a friendly 409 error).
+**Sort order:** `display_order` column added by migration 035; backfilled from `created_at` order per book.
 
 ---
 
@@ -331,20 +335,23 @@ class CategoryResponse: id, book_id, user_id, name, total_in, total_out, net_bal
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| GET | `/{book_id}/customers` | List customers with balance | ✅ |
+| GET | `/{book_id}/customers` | List customers (ordered by display_order, then name) | ✅ |
 | POST | `/{book_id}/customers` | Create customer (name required) | ✅ |
 | GET | `/{book_id}/customers/{id}` | Get customer with balance | ✅ |
 | PUT | `/{book_id}/customers/{id}` | Update customer (not balance) | ✅ |
 | DELETE | `/{book_id}/customers/{id}` | Delete customer (entries keep contact_name) | ✅ |
 | GET | `/{book_id}/customers/{id}/entries` | Entries linked to this customer | ✅ |
-| GET | `/{book_id}/suppliers` | List suppliers with balance | ✅ |
+| PATCH | `/{book_id}/customers/reorder` | Save drag-sorted order `{ ordered_ids: [uuid,...] }` | ✅ |
+| GET | `/{book_id}/suppliers` | List suppliers (ordered by display_order, then name) | ✅ |
 | POST | `/{book_id}/suppliers` | Create supplier | ✅ |
 | GET | `/{book_id}/suppliers/{id}` | Get supplier with balance | ✅ |
 | PUT | `/{book_id}/suppliers/{id}` | Update supplier | ✅ |
 | DELETE | `/{book_id}/suppliers/{id}` | Delete supplier | ✅ |
 | GET | `/{book_id}/suppliers/{id}/entries` | Entries linked to this supplier | ✅ |
+| PATCH | `/{book_id}/suppliers/reorder` | Save drag-sorted order `{ ordered_ids: [uuid,...] }` | ✅ |
 
 **Balance rule:** `total_in`, `total_out`, `net_balance` are stored columns maintained by `trg_update_contact_balance` (DB trigger on `entries`). Read them directly from the row — never recompute in Python. `balance` in `ContactWithBalance` mirrors `net_balance`.
+**Sort order:** `display_order` column added by migration 036; backfilled from `created_at` order per book. Previously ordered alphabetically by name — reorder endpoint overrides that with user-set order.
 
 ---
 

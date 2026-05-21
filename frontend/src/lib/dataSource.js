@@ -62,6 +62,9 @@ import {
   apiDeletePaymentMode     as _apiDeletePaymentMode,
   apiReorderPaymentModes   as _apiReorderPaymentModes,
   apiGetPaymentModeEntries as _apiGetPaymentModeEntries,
+  apiReorderCategories     as _apiReorderCategories,
+  apiReorderCustomers      as _apiReorderCustomers,
+  apiReorderSuppliers      as _apiReorderSuppliers,
 } from './api';
 
 /**
@@ -190,6 +193,9 @@ export const apiDeleteCategory = (bookId, id) =>
 export const apiGetCategoryEntries = (bookId, id) =>
   useLocalDb() ? L.localGetCategoryEntries(bookId, id) : _apiGetCategoryEntries(bookId, id);
 
+export const apiReorderCategories = (bookId, orderedIds) =>
+  _apiReorderCategories(bookId, orderedIds);
+
 // ── Customers ──────────────────────────────────────────────────────────────────
 
 export const apiGetCustomers = (bookId) =>
@@ -216,6 +222,9 @@ export const apiDeleteCustomer = (bookId, id) =>
 export const apiGetCustomerEntries = (bookId, id) =>
   useLocalDb() ? L.localGetCustomerEntries(bookId, id) : _apiGetCustomerEntries(bookId, id);
 
+export const apiReorderCustomers = (bookId, orderedIds) =>
+  _apiReorderCustomers(bookId, orderedIds);
+
 // ── Suppliers ──────────────────────────────────────────────────────────────────
 
 export const apiGetSuppliers = (bookId) =>
@@ -241,6 +250,9 @@ export const apiDeleteSupplier = (bookId, id) =>
 
 export const apiGetSupplierEntries = (bookId, id) =>
   useLocalDb() ? L.localGetSupplierEntries(bookId, id) : _apiGetSupplierEntries(bookId, id);
+
+export const apiReorderSuppliers = (bookId, orderedIds) =>
+  _apiReorderSuppliers(bookId, orderedIds);
 
 // ── Payment Modes ──────────────────────────────────────────────────────────────
 

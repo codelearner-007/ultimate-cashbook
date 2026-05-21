@@ -103,7 +103,7 @@ const EntryForm = forwardRef(function EntryForm(
     const resolved = byName || paymentModes[0];
     setPaymentModeId(resolved.id);
     setPaymentMode(resolved.name);
-  }, [paymentModes]);
+  }, [paymentModes, paymentModeId, paymentMode]);
 
   const contactDeleted = contactName !== '' && !customerId && !supplierId;
   const categoryDeleted = category !== '' && !categoryId;

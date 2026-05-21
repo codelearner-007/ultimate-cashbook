@@ -4,6 +4,7 @@ import {
   apiUpdateCustomer, apiDeleteCustomer, apiGetCustomerEntries,
   apiGetSuppliers, apiCreateSupplier, apiGetSupplier,
   apiUpdateSupplier, apiDeleteSupplier, apiGetSupplierEntries,
+  apiReorderCustomers, apiReorderSuppliers,
 } from '../lib/dataSource';
 import Toast from '../lib/toast';
 
@@ -85,6 +86,27 @@ export function useDeleteCustomer(bookId) {
   });
 }
 
+export function useReorderCustomers(bookId) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderedIds) => apiReorderCustomers(bookId, orderedIds),
+    onMutate: async (orderedIds) => {
+      await qc.cancelQueries({ queryKey: contactKeys.customers(bookId) });
+      const prev = qc.getQueryData(contactKeys.customers(bookId));
+      qc.setQueryData(contactKeys.customers(bookId), (old = []) => {
+        const byId = Object.fromEntries(old.map(c => [c.id, c]));
+        return orderedIds.map((id, i) => ({ ...byId[id], display_order: i })).filter(Boolean);
+      });
+      return { prev };
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.prev) qc.setQueryData(contactKeys.customers(bookId), ctx.prev);
+      Toast.show({ type: 'error', text1: 'Failed to save order', text2: 'Please try again.' });
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: contactKeys.customers(bookId) }),
+  });
+}
+
 // ── Supplier queries ───────────────────────────────────────────────────────────
 
 export function useSuppliers(bookId) {
@@ -151,6 +173,27 @@ export function useDeleteSupplier(bookId) {
   });
 }
 
+export function useReorderSuppliers(bookId) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderedIds) => apiReorderSuppliers(bookId, orderedIds),
+    onMutate: async (orderedIds) => {
+      await qc.cancelQueries({ queryKey: contactKeys.suppliers(bookId) });
+      const prev = qc.getQueryData(contactKeys.suppliers(bookId));
+      qc.setQueryData(contactKeys.suppliers(bookId), (old = []) => {
+        const byId = Object.fromEntries(old.map(c => [c.id, c]));
+        return orderedIds.map((id, i) => ({ ...byId[id], display_order: i })).filter(Boolean);
+      });
+      return { prev };
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.prev) qc.setQueryData(contactKeys.suppliers(bookId), ctx.prev);
+      Toast.show({ type: 'error', text1: 'Failed to save order', text2: 'Please try again.' });
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: contactKeys.suppliers(bookId) }),
+  });
+}
+
 // ── Convenience: unified hook that routes to the right set based on type ───────
 // Used by ContactsListScreen which receives type='customer'|'supplier'
 export function useContacts(bookId, type) {
@@ -189,4 +232,10 @@ export function useContactEntries(bookId, contactId, type) {
   const ce = useCustomerEntries(bookId, contactId);
   const se = useSupplierEntries(bookId, contactId);
   return type === 'supplier' ? se : ce;
+}
+
+export function useReorderContacts(bookId, type) {
+  const rc = useReorderCustomers(bookId);
+  const rs = useReorderSuppliers(bookId);
+  return type === 'supplier' ? rs : rc;
 }

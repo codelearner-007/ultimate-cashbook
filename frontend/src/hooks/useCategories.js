@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   apiGetCategories, apiCreateCategory,
   apiUpdateCategory, apiDeleteCategory, apiGetCategoryEntries,
+  apiReorderCategories,
 } from '../lib/dataSource';
 import Toast from '../lib/toast';
 
@@ -57,5 +58,26 @@ export function useDeleteCategory(bookId) {
       qc.invalidateQueries({ queryKey: ['entries', bookId] });
     },
     onError: () => Toast.show({ type: 'error', text1: 'Failed to delete category', text2: 'Please try again.' }),
+  });
+}
+
+export function useReorderCategories(bookId) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (orderedIds) => apiReorderCategories(bookId, orderedIds),
+    onMutate: async (orderedIds) => {
+      await qc.cancelQueries({ queryKey: categoryKeys.all(bookId) });
+      const prev = qc.getQueryData(categoryKeys.all(bookId));
+      qc.setQueryData(categoryKeys.all(bookId), (old = []) => {
+        const byId = Object.fromEntries(old.map(c => [c.id, c]));
+        return orderedIds.map((id, i) => ({ ...byId[id], display_order: i })).filter(Boolean);
+      });
+      return { prev };
+    },
+    onError: (_err, _ids, ctx) => {
+      if (ctx?.prev) qc.setQueryData(categoryKeys.all(bookId), ctx.prev);
+      Toast.show({ type: 'error', text1: 'Failed to save order', text2: 'Please try again.' });
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: categoryKeys.all(bookId) }),
   });
 }

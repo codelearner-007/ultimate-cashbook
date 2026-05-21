@@ -682,19 +682,31 @@ BookSettingsScreen has multiple tabs:
 | **Suppliers**       | List all suppliers; add / edit / delete      |
 | **Payment Modes**   | List payment modes; add / reorder / delete   |
 
-#### Categories Tab
-| Element                  | Action | Result                                                          |
-|--------------------------|--------|-----------------------------------------------------------------|
-| "+ Add Category" (FAB)   | Tap    | Opens add-category modal → `POST /api/v1/books/:id/categories`  |
-| Category row             | Tap    | Navigate to `CategoryProfileScreen`                             |
+#### Categories Tab (`CategoriesSettingsScreen`)
+- Drag-reorder enabled: drag handle (≡) on the left of each card; order saved to backend via `PATCH /api/v1/books/:id/categories/reorder`
+- Optimistic update on drag-end; refetched from server on settle
+- Order persists across sessions and reflects in the category picker inside AddEntryScreen / EditEntryScreen
 
-#### Customers / Suppliers Tabs
-| Element           | Action | Result                                       |
-|-------------------|--------|----------------------------------------------|
-| "+ Add Contact"   | Tap    | Opens add-contact form                       |
-| Contact row       | Tap    | Opens contact detail / edit screen           |
-| Contact row ⋮    | Tap    | Opens `ContactMenuSheet` (Edit / Delete)     |
-| **Delete**        | Tap    | Opens `DeleteContactSheet` confirm → `DELETE` |
+| Element                  | Action        | Result                                                          |
+|--------------------------|---------------|-----------------------------------------------------------------|
+| "+ Add Category" (FAB)   | Tap           | Opens add-category modal → `POST /api/v1/books/:id/categories`  |
+| Drag handle (≡)          | Press & drag  | Reorders categories; calls `PATCH /categories/reorder` on drop  |
+| Category row (body)      | Tap           | Navigate to `CategoryProfileScreen`                             |
+| Balance pill             | Tap           | Navigate to `CategoryProfileScreen`                             |
+| Search bar               | Type          | Filters list client-side; drag disabled while searching         |
+
+#### Customers / Suppliers Tabs (`ContactsListScreen`)
+- Drag-reorder enabled per type: drag handle (≡) on left of each card; order saved to backend via `PATCH /api/v1/books/:id/customers/reorder` or `.../suppliers/reorder`
+- Optimistic update on drag-end; order persists and reflects in the contact picker inside AddEntryScreen / EditEntryScreen
+
+| Element           | Action        | Result                                                    |
+|-------------------|---------------|-----------------------------------------------------------|
+| "+ Add Contact"   | Tap           | Opens add-contact modal (name + phone)                    |
+| Drag handle (≡)   | Press & drag  | Reorders contacts; calls `PATCH .../reorder` on drop      |
+| Contact row       | Tap           | Opens `ContactDetailScreen`                               |
+| Contact row       | Long-press    | Opens `ContactMenuSheet` (Edit / Delete)                  |
+| Balance pill      | Tap           | Navigate to `ContactBalanceScreen`                        |
+| **Delete**        | Tap in menu   | Opens `DeleteContactSheet` confirm → `DELETE`             |
 
 ---
 

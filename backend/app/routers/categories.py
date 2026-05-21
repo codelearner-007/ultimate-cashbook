@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 from app.auth.jwt import get_current_user
 from app.db.supabase import get_supabase
-from app.models.category import CategoryCreate, CategoryUpdate, CategoryResponse
+from app.models.category import CategoryCreate, CategoryUpdate, CategoryResponse, CategoryReorder
 from app.models.entry import EntryResponse
 from app.utils.book_access import get_book_owner_id
 
@@ -18,6 +18,7 @@ async def get_categories(book_id: str, user_id: str = Depends(get_current_user))
         .select("*")
         .eq("book_id", book_id)
         .eq("user_id", owner_id)
+        .order("display_order")
         .order("created_at")
         .execute()
     )
@@ -132,6 +133,22 @@ async def delete_category(
         raise HTTPException(status_code=404, detail="Category not found")
 
     sb.table("categories").delete().eq("id", category_id).eq("user_id", owner_id).execute()
+
+
+@router.patch("/{book_id}/categories/reorder", status_code=204)
+async def reorder_categories(
+    book_id: str,
+    payload: CategoryReorder,
+    user_id: str = Depends(get_current_user),
+):
+    sb = get_supabase()
+    owner_id = get_book_owner_id(sb, book_id, user_id)
+    for order, category_id in enumerate(payload.ordered_ids):
+        sb.table("categories").update({"display_order": order}) \
+          .eq("id", category_id) \
+          .eq("book_id", book_id) \
+          .eq("user_id", owner_id) \
+          .execute()
 
 
 @router.get("/{book_id}/categories/{category_id}/entries", response_model=List[EntryResponse])

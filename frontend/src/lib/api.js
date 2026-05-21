@@ -217,6 +217,10 @@ export const apiDeleteCustomer = async (bookId, contactId) =>
 export const apiGetCustomerEntries = async (bookId, contactId) =>
   (await api.get(`/api/v1/books/${bookId}/customers/${contactId}/entries`)).data;
 
+/** PATCH /api/v1/books/:bookId/customers/reorder */
+export const apiReorderCustomers = async (bookId, orderedIds) =>
+  (await api.patch(`/api/v1/books/${bookId}/customers/reorder`, { ordered_ids: orderedIds })).data;
+
 
 // ── Suppliers ─────────────────────────────────────────────────────────────────
 
@@ -244,6 +248,10 @@ export const apiDeleteSupplier = async (bookId, contactId) =>
 export const apiGetSupplierEntries = async (bookId, contactId) =>
   (await api.get(`/api/v1/books/${bookId}/suppliers/${contactId}/entries`)).data;
 
+/** PATCH /api/v1/books/:bookId/suppliers/reorder */
+export const apiReorderSuppliers = async (bookId, orderedIds) =>
+  (await api.patch(`/api/v1/books/${bookId}/suppliers/reorder`, { ordered_ids: orderedIds })).data;
+
 
 // ── Categories ────────────────────────────────────────────────────────────────
 
@@ -266,6 +274,10 @@ export const apiDeleteCategory = async (bookId, categoryId) =>
 /** GET /api/v1/books/:bookId/categories/:categoryId/entries */
 export const apiGetCategoryEntries = async (bookId, categoryId) =>
   (await api.get(`/api/v1/books/${bookId}/categories/${categoryId}/entries`)).data;
+
+/** PATCH /api/v1/books/:bookId/categories/reorder */
+export const apiReorderCategories = async (bookId, orderedIds) =>
+  (await api.patch(`/api/v1/books/${bookId}/categories/reorder`, { ordered_ids: orderedIds })).data;
 
 
 // ── Payment Modes ─────────────────────────────────────────────────────────────

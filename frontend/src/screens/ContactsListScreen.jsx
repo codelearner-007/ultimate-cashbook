@@ -421,8 +421,8 @@ export default function ContactsListScreen() {
         </View>
         <Switch
           value={showField}
-          onValueChange={canEdit ? (v) => toggleField.mutate(v) : undefined}
-          disabled={!canEdit}
+          onValueChange={isOwner ? (v) => toggleField.mutate(v) : undefined}
+          disabled={!isOwner}
           trackColor={{ false: C.border, true: C.primary }}
           thumbColor="#fff"
         />

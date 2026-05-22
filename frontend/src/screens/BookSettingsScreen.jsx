@@ -276,8 +276,8 @@ export default function BookSettingsScreen() {
                   </View>
                   <Switch
                     value={fields[item.fieldKey] ?? false}
-                    onValueChange={canEdit ? (val) => handleSetField(id, item.fieldKey, val) : undefined}
-                    disabled={!canEdit}
+                    onValueChange={isOwner ? (val) => handleSetField(id, item.fieldKey, val) : undefined}
+                    disabled={!isOwner}
                     trackColor={{ false: C.border, true: C.primary }}
                     thumbColor="#fff"
                   />

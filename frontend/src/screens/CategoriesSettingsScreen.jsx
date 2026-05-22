@@ -367,8 +367,8 @@ export default function CategoriesSettingsScreen() {
         </View>
         <Switch
           value={showCategory}
-          onValueChange={canEdit ? (v) => toggleCategory.mutate(v) : undefined}
-          disabled={!canEdit}
+          onValueChange={isOwner ? (v) => toggleCategory.mutate(v) : undefined}
+          disabled={!isOwner}
           trackColor={{ false: C.border, true: C.primary }}
           thumbColor="#fff"
         />

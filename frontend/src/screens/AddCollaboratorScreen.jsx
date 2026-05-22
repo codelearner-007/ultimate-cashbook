@@ -60,7 +60,7 @@ export default function AddCollaboratorScreen() {
   );
 
   const toggleScreen = useCallback((key) => {
-    if (key === 'entries') return; // always on
+    if (key === 'entries' || key === 'settings') return; // always on
     setScreens(prev => ({ ...prev, [key]: !prev[key] }));
   }, []);
 

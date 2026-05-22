@@ -39,7 +39,7 @@ export const SCREENS = [
   { key: 'contacts',      label: 'Contacts',      icon: 'users',       required: false },
   { key: 'payment_modes', label: 'Payment Modes', icon: 'credit-card', required: false },
   { key: 'reports',       label: 'Reports',       icon: 'bar-chart-2', required: false },
-  { key: 'settings',      label: 'Settings',      icon: 'settings',    required: false },
+  { key: 'settings',      label: 'Settings',      icon: 'settings',    required: true  },
 ];
 
 export const DEFAULT_SCREENS = {
@@ -48,7 +48,7 @@ export const DEFAULT_SCREENS = {
   contacts:      false,
   payment_modes: false,
   reports:       false,
-  settings:      false,
+  settings:      true,
 };
 
 export const getInitials = (str = '') =>

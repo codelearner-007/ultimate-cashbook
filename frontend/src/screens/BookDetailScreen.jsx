@@ -147,7 +147,7 @@ const EntryCard = memo(({ item, onPress, onLongPress, C, Font, s, isDark, groupe
 
 // ── BalanceCard ───────────────────────────────────────────────────────────────
 
-const BalanceCard = memo(({ summary, onViewReports, C, Font, s }) => {
+const BalanceCard = memo(({ summary, onViewReports, canViewReports, C, Font, s }) => {
   const netColor = summary.net_balance >= 0 ? C.cashIn : C.danger;
   return (
     <View style={s.balanceCard}>
@@ -176,9 +176,11 @@ const BalanceCard = memo(({ summary, onViewReports, C, Font, s }) => {
           </Text>
         </View>
       </View>
-      <TouchableOpacity style={s.viewReportsBtn} onPress={onViewReports} activeOpacity={0.7}>
-        <Text style={s.viewReportsText}>VIEW REPORTS  ›</Text>
-      </TouchableOpacity>
+      {canViewReports && (
+        <TouchableOpacity style={s.viewReportsBtn} onPress={onViewReports} activeOpacity={0.7}>
+          <Text style={s.viewReportsText}>VIEW REPORTS  ›</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 });
@@ -292,6 +294,8 @@ export default function BookDetailScreen() {
   const rights = isOwner ? 'view_create_edit_delete' : (sharedBook?.rights ?? 'view');
   const canCreate = rights === 'view_create_edit' || rights === 'view_create_edit_delete';
   const canDelete = rights === 'view_create_edit_delete';
+  const screens = isOwner ? null : (sharedBook?.screens ?? {});
+  const canViewReports = isOwner || (screens?.reports ?? false);
   const { C, Font, isDark } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
   const qc = useQueryClient();
@@ -468,6 +472,7 @@ export default function BookDetailScreen() {
   }, [deleteEntry]);
 
   const goToReports = useCallback(() => {
+    if (!canViewReports) return;
     const params = { id, name };
 
     if (filterDate) params.initialDate = filterDate;
@@ -477,7 +482,7 @@ export default function BookDetailScreen() {
     if (filterPayment) params.initialPayment = filterPayment;
 
     router.push({ pathname: `${basePath}/[id]/reports`, params });
-  }, [router, basePath, id, name, filterDate, filterType, filterContact, filterCategory, filterPayment]);
+  }, [router, basePath, id, name, filterDate, filterType, filterContact, filterCategory, filterPayment, canViewReports]);
 
   const goToBookSettings = useCallback(() => {
     setMenuVisible(false);
@@ -915,6 +920,7 @@ export default function BookDetailScreen() {
           <BalanceCard
             summary={displaySummary}
             onViewReports={goToReports}
+            canViewReports={canViewReports}
             C={C}
             Font={Font}
             s={s}

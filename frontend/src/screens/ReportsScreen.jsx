@@ -19,6 +19,7 @@ import SearchBar from '../components/ui/SearchBar';
 import { useAuthStore } from '../store/authStore';
 import { canAccess } from '../lib/canAccess';
 import CrownBadge from '../components/ui/CrownBadge';
+import { useBooks } from '../hooks/useBooks';
 
 const PAYMENT_LABEL = { cash: 'Cash', online: 'Online', cheque: 'Cheque', other: 'Other' };
 const PAYMENT_ICON  = { cash: 'dollar-sign', online: 'wifi', cheque: 'file-text', check: 'file-text', other: 'more-horizontal' };
@@ -84,6 +85,8 @@ export default function ReportsScreen() {
 
   const user       = useAuthStore(s => s.user);
   const canExport  = canAccess(user, 'export_reports');
+  const { data: ownBooks = [] } = useBooks();
+  const isOwner = ownBooks.some(b => b.id === id);
 
   const [filterDate,        setFilterDate]        = useState(initialDate || null);
   const [filterType,        setFilterType]        = useState(initialType     || null);
@@ -348,7 +351,7 @@ export default function ReportsScreen() {
            iOS cannot dismiss one Modal and immediately present another in the
            same render cycle; using one modal with changing content avoids this. ── */}
       <Modal
-        visible={exportPhase === 'generating' || exportPhase === 'ready'}
+        visible={isOwner && (exportPhase === 'generating' || exportPhase === 'ready')}
         transparent
         animationType="fade"
         statusBarTranslucent
@@ -606,7 +609,7 @@ export default function ReportsScreen() {
               <Text style={s.headerTitle}>Report Preview</Text>
               {!!name && <Text style={s.headerSub} numberOfLines={1}>{name}</Text>}
             </View>
-            {readyUri && (
+            {readyUri && isOwner && (
               <View style={s.headerBtns}>
                 <TouchableOpacity style={s.headerExportBtn} onPress={handleDownload} activeOpacity={0.8}>
                   <Feather name="download" size={14} color="#fff" />
@@ -721,50 +724,52 @@ export default function ReportsScreen() {
             <View style={{ height: 100 }} />
           </ScrollView>
 
-          {/* Bottom action bar */}
-          <View style={[s.pvBottomBar, { backgroundColor: C.card, borderTopColor: C.border }]}>
-            {readyUri ? (
-              <>
-                <TouchableOpacity style={[s.pvBottomBtn, { backgroundColor: C.primary }]} onPress={handleDownload} activeOpacity={0.85}>
-                  <Feather name="download" size={16} color="#fff" />
-                  <Text style={[s.pvBottomBtnLabel, { color: '#fff' }]}>Download</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[s.pvBottomBtn, { borderWidth: 1.5, borderColor: C.primary }]} onPress={handleShare} activeOpacity={0.85}>
-                  <Feather name="share-2" size={16} color={C.primary} />
-                  <Text style={[s.pvBottomBtnLabel, { color: C.primary }]}>Share</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <TouchableOpacity
-                  style={[s.pvBottomBtn, { borderWidth: 1.5, borderColor: canExport ? C.cashOut : '#F59E0B' }, busy && { opacity: 0.5 }]}
-                  onPress={() => {
-                    setShowPreview(false);
-                    if (!canExport) { setTimeout(() => router.push('/(app)/settings/subscription'), Platform.OS === 'ios' ? 350 : 0); return; }
-                    setTimeout(() => handleExport('pdf'), Platform.OS === 'ios' ? 350 : 0);
-                  }}
-                  disabled={busy}
-                  activeOpacity={0.75}
-                >
-                  <Text style={{ fontSize: 15 }}>{canExport ? '📄' : '👑'}</Text>
-                  <Text style={[s.pvBottomBtnLabel, { color: canExport ? C.cashOut : '#F59E0B' }]}>Export PDF</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[s.pvBottomBtn, { borderWidth: 1.5, borderColor: canExport ? C.cashIn : '#F59E0B' }, busy && { opacity: 0.5 }]}
-                  onPress={() => {
-                    setShowPreview(false);
-                    if (!canExport) { setTimeout(() => router.push('/(app)/settings/subscription'), Platform.OS === 'ios' ? 350 : 0); return; }
-                    setTimeout(() => handleExport('excel'), Platform.OS === 'ios' ? 350 : 0);
-                  }}
-                  disabled={busy}
-                  activeOpacity={0.75}
-                >
-                  <Text style={{ fontSize: 15 }}>{canExport ? '📊' : '👑'}</Text>
-                  <Text style={[s.pvBottomBtnLabel, { color: canExport ? C.cashIn : '#F59E0B' }]}>Export Excel</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
+          {/* Bottom action bar — hidden for collaborators */}
+          {isOwner && (
+            <View style={[s.pvBottomBar, { backgroundColor: C.card, borderTopColor: C.border }]}>
+              {readyUri ? (
+                <>
+                  <TouchableOpacity style={[s.pvBottomBtn, { backgroundColor: C.primary }]} onPress={handleDownload} activeOpacity={0.85}>
+                    <Feather name="download" size={16} color="#fff" />
+                    <Text style={[s.pvBottomBtnLabel, { color: '#fff' }]}>Download</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[s.pvBottomBtn, { borderWidth: 1.5, borderColor: C.primary }]} onPress={handleShare} activeOpacity={0.85}>
+                    <Feather name="share-2" size={16} color={C.primary} />
+                    <Text style={[s.pvBottomBtnLabel, { color: C.primary }]}>Share</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={[s.pvBottomBtn, { borderWidth: 1.5, borderColor: canExport ? C.cashOut : '#F59E0B' }, busy && { opacity: 0.5 }]}
+                    onPress={() => {
+                      setShowPreview(false);
+                      if (!canExport) { setTimeout(() => router.push('/(app)/settings/subscription'), Platform.OS === 'ios' ? 350 : 0); return; }
+                      setTimeout(() => handleExport('pdf'), Platform.OS === 'ios' ? 350 : 0);
+                    }}
+                    disabled={busy}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={{ fontSize: 15 }}>{canExport ? '📄' : '👑'}</Text>
+                    <Text style={[s.pvBottomBtnLabel, { color: canExport ? C.cashOut : '#F59E0B' }]}>Export PDF</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.pvBottomBtn, { borderWidth: 1.5, borderColor: canExport ? C.cashIn : '#F59E0B' }, busy && { opacity: 0.5 }]}
+                    onPress={() => {
+                      setShowPreview(false);
+                      if (!canExport) { setTimeout(() => router.push('/(app)/settings/subscription'), Platform.OS === 'ios' ? 350 : 0); return; }
+                      setTimeout(() => handleExport('excel'), Platform.OS === 'ios' ? 350 : 0);
+                    }}
+                    disabled={busy}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={{ fontSize: 15 }}>{canExport ? '📊' : '👑'}</Text>
+                    <Text style={[s.pvBottomBtnLabel, { color: canExport ? C.cashIn : '#F59E0B' }]}>Export Excel</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
         </SafeAreaView>
       </Modal>
 
@@ -777,24 +782,26 @@ export default function ReportsScreen() {
           <Text style={s.headerTitle}>Reports</Text>
           {!!name && <Text style={s.headerSub} numberOfLines={1}>{name}</Text>}
         </View>
-        <View style={s.headerBtns}>
-          <TouchableOpacity
-            style={[s.headerExportBtn, busy && { opacity: 0.5 }]}
-            onPress={() => handleExportGated('pdf')}
-            disabled={busy}
-          >
-            {!canExport && <Text style={{ fontSize: 10, marginRight: 1 }}>👑</Text>}
-            <Text style={s.headerExportText}>PDF</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.headerExportBtn, busy && { opacity: 0.5 }]}
-            onPress={() => handleExportGated('excel')}
-            disabled={busy}
-          >
-            {!canExport && <Text style={{ fontSize: 10, marginRight: 1 }}>👑</Text>}
-            <Text style={s.headerExportText}>XLS</Text>
-          </TouchableOpacity>
-        </View>
+        {isOwner && (
+          <View style={s.headerBtns}>
+            <TouchableOpacity
+              style={[s.headerExportBtn, busy && { opacity: 0.5 }]}
+              onPress={() => handleExportGated('pdf')}
+              disabled={busy}
+            >
+              {!canExport && <Text style={{ fontSize: 10, marginRight: 1 }}>👑</Text>}
+              <Text style={s.headerExportText}>PDF</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.headerExportBtn, busy && { opacity: 0.5 }]}
+              onPress={() => handleExportGated('excel')}
+              disabled={busy}
+            >
+              {!canExport && <Text style={{ fontSize: 10, marginRight: 1 }}>👑</Text>}
+              <Text style={s.headerExportText}>XLS</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       <ScrollView style={s.scroll} showsVerticalScrollIndicator={false}>
@@ -916,8 +923,8 @@ export default function ReportsScreen() {
           )}
         </View>
 
-        {/* ── Export section ── */}
-        <View style={s.exportSection}>
+        {/* ── Export section — hidden for collaborators ── */}
+        {isOwner && <View style={s.exportSection}>
           <Text style={s.exportTitle}>Export Report</Text>
           <Text style={s.exportSub}>
             {filtered.length} entries  ·  {rangeLabel}
@@ -994,7 +1001,7 @@ export default function ReportsScreen() {
               </Text>
             </View>
           )}
-        </View>
+        </View>}
 
         <View style={{ height: 48 }} />
       </ScrollView>

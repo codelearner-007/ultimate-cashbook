@@ -59,7 +59,8 @@ export default function BookSettingsScreen() {
     return () => clearInterval(t);
   }, [isOwner, qc]);
   const sharedBook = !isOwner ? sharedBooks.find(b => b.id === id) : null;
-  const canEdit  = isOwner || (sharedBook?.rights ?? 'view') !== 'view';
+  const canEdit   = isOwner || (sharedBook?.rights ?? 'view') !== 'view';
+  const sharedScreens = isOwner ? null : (sharedBook?.screens ?? {});
   const bookData = currentBook ?? sharedBook;
   const authUser = useAuthStore(s => s.user);
   const canShare = canAccess(authUser, 'book_sharing');
@@ -169,13 +170,14 @@ export default function BookSettingsScreen() {
     );
   };
 
-  const ENTRY_FIELDS = [
+  const ALL_ENTRY_FIELDS = [
     {
       icon: 'user-check',
       label: 'Customers',
       sub: 'Manage customers for this book',
       count: customers.length,
       fieldKey: 'showCustomer',
+      screensKey: 'contacts',
       route: `${basePath}/[id]/customers`,
       params: { type: 'customer' },
     },
@@ -185,6 +187,7 @@ export default function BookSettingsScreen() {
       sub: 'Manage suppliers for this book',
       count: suppliers.length,
       fieldKey: 'showSupplier',
+      screensKey: 'contacts',
       route: `${basePath}/[id]/suppliers`,
       params: { type: 'supplier' },
     },
@@ -194,6 +197,7 @@ export default function BookSettingsScreen() {
       sub: 'Manage categories for this book',
       count: categories.length,
       fieldKey: 'showCategory',
+      screensKey: 'categories',
       route: `${basePath}/[id]/categories-settings`,
       params: {},
     },
@@ -203,6 +207,7 @@ export default function BookSettingsScreen() {
       sub: 'Manage payment methods for this book',
       count: paymentModes.length,
       alwaysActive: true,
+      screensKey: 'payment_modes',
       route: `${basePath}/[id]/payment-mode-settings`,
       params: {},
     },
@@ -214,6 +219,7 @@ export default function BookSettingsScreen() {
       hasToggleOnly: true,
     },
   ];
+  const ENTRY_FIELDS = ALL_ENTRY_FIELDS;
 
   return (
     <SafeAreaView style={s.safe}>
@@ -276,33 +282,39 @@ export default function BookSettingsScreen() {
                     thumbColor="#fff"
                   />
                 </View>
-              ) : (
-                <TouchableOpacity
+              ) : (() => {
+                const canNav = isOwner || !item.screensKey || (sharedScreens?.[item.screensKey] ?? false);
+                const RowWrapper = canNav ? TouchableOpacity : View;
+                const iconBg = canNav ? C.primaryLight : C.inputBg;
+                const iconColor = canNav ? C.primary : C.textMuted;
+                return (
+                <RowWrapper
                   style={s.row}
-                  onPress={() => router.push({ pathname: item.route, params: { id, name: bookName, ...(item.params || {}) } })}
+                  onPress={canNav ? () => router.push({ pathname: item.route, params: { id, name: bookName, ...(item.params || {}) } }) : undefined}
                   activeOpacity={0.75}
                 >
-                  <View style={[s.iconBox, { backgroundColor: C.primaryLight }]}>
-                    <Feather name={item.icon} size={18} color={C.primary} />
+                  <View style={[s.iconBox, { backgroundColor: iconBg }]}>
+                    <Feather name={item.icon} size={18} color={iconColor} />
                   </View>
                   <View style={s.rowBody}>
-                    <Text style={s.rowLabel}>{item.label}</Text>
+                    <Text style={[s.rowLabel, !canNav && { color: C.textMuted }]}>{item.label}</Text>
                     <Text style={s.rowSub}>{item.sub}</Text>
                   </View>
                   {item.count != null && (
-                    <View style={[s.countBadge, { backgroundColor: C.primaryLight }]}>
-                      <Text style={[s.countBadgeText, { color: C.primary }]}>{item.count}</Text>
+                    <View style={[s.countBadge, { backgroundColor: canNav ? C.primaryLight : C.inputBg }]}>
+                      <Text style={[s.countBadgeText, { color: canNav ? C.primary : C.textMuted }]}>{item.count}</Text>
                     </View>
                   )}
-                  {(item.alwaysActive || (item.fieldKey != null && fields[item.fieldKey])) ? (
+                  {canNav && ((item.alwaysActive || (item.fieldKey != null && fields[item.fieldKey])) ? (
                     <View style={s.arrowActive}>
                       <Feather name="chevron-right" size={15} color={C.primary} />
                     </View>
                   ) : (
                     <Feather name="chevron-right" size={18} color={C.textSubtle} />
-                  )}
-                </TouchableOpacity>
-              )}
+                  ))}
+                </RowWrapper>
+                );
+              })()}
               {idx < ENTRY_FIELDS.length - 1 && (
                 <View style={[s.divider, { backgroundColor: C.border }]} />
               )}

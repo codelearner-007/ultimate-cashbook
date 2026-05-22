@@ -12,6 +12,8 @@ import { useTheme } from '../hooks/useTheme';
 import {
   usePaymentModes, useUpdatePaymentMode, useDeletePaymentMode,
 } from '../hooks/usePaymentModes';
+import { useBooks } from '../hooks/useBooks';
+import { useSharedBooks } from '../hooks/useSharing';
 import AppInput from '../components/ui/Input';
 import SuccessDialog from '../components/ui/SuccessDialog';
 
@@ -21,6 +23,15 @@ export default function PaymentModeDetailScreen() {
   const { id: bookId, name: bookName, modeId, modeName } = useLocalSearchParams();
   const { C, Font } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
+
+  const { data: ownBooks = [] }    = useBooks();
+  const { data: sharedBooks = [] } = useSharedBooks();
+  const currentBook = ownBooks.find(b => b.id === bookId);
+  const isOwner     = !!currentBook;
+  const sharedBook  = !isOwner ? sharedBooks.find(b => b.id === bookId) : null;
+  const rights      = isOwner ? 'view_create_edit_delete' : (sharedBook?.rights ?? 'view');
+  const canEdit     = rights !== 'view';
+  const canDelete   = rights === 'view_create_edit_delete';
 
   const { data: modes = [], isLoading } = usePaymentModes(bookId);
   const mode = modes.find(m => m.id === modeId) ?? null;
@@ -142,26 +153,29 @@ export default function PaymentModeDetailScreen() {
                 <AppInput
                   label="Name"
                   value={name}
-                  onChangeText={markDirty(setName)}
+                  onChangeText={canEdit ? markDirty(setName) : undefined}
+                  editable={canEdit}
                   placeholder="Payment mode name"
                   isLast
                 />
               </View>
             </View>
 
-            {/* Save button */}
-            <View style={s.btnWrap}>
-              <TouchableOpacity
-                style={[s.saveBtn, { backgroundColor: C.primary, opacity: dirty && !updateMode.isPending ? 1 : 0.4 }]}
-                onPress={handleSave}
-                disabled={!dirty || updateMode.isPending}
-                activeOpacity={0.85}
-              >
-                <Text style={[s.saveBtnText, { fontFamily: Font.bold }]}>
-                  {updateMode.isPending ? 'Saving…' : 'Save Changes'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* Save button — hidden for view-only collaborators */}
+            {canEdit && (
+              <View style={s.btnWrap}>
+                <TouchableOpacity
+                  style={[s.saveBtn, { backgroundColor: C.primary, opacity: dirty && !updateMode.isPending ? 1 : 0.4 }]}
+                  onPress={handleSave}
+                  disabled={!dirty || updateMode.isPending}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[s.saveBtnText, { fontFamily: Font.bold }]}>
+                    {updateMode.isPending ? 'Saving…' : 'Save Changes'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {/* View entries */}
             <View style={s.sectionWrap}>
@@ -176,24 +190,26 @@ export default function PaymentModeDetailScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Danger zone */}
-            <View style={s.sectionWrap}>
-              <Text style={[s.sectionLabel, { color: C.textMuted }]}>DANGER ZONE</Text>
-              <View style={[s.card, { backgroundColor: C.card, borderColor: C.border, overflow: 'hidden' }]}>
-                <TouchableOpacity style={s.deleteRow} onPress={() => setShowDeleteSheet(true)} activeOpacity={0.75}>
-                  <View style={s.deleteIconWrap}>
-                    <Feather name="trash-2" size={16} color={C.danger} />
-                  </View>
-                  <View style={s.deleteBody}>
-                    <Text style={[s.deleteTitle, { color: C.danger, fontFamily: Font.semiBold }]}>Delete Payment Mode</Text>
-                    <Text style={[s.deleteSub, { color: C.textMuted, fontFamily: Font.regular }]}>
-                      Linked entries will not be deleted
-                    </Text>
-                  </View>
-                  <Feather name="chevron-right" size={16} color={C.danger} />
-                </TouchableOpacity>
+            {/* Danger zone — hidden for non-full-access collaborators */}
+            {canDelete && (
+              <View style={s.sectionWrap}>
+                <Text style={[s.sectionLabel, { color: C.textMuted }]}>DANGER ZONE</Text>
+                <View style={[s.card, { backgroundColor: C.card, borderColor: C.border, overflow: 'hidden' }]}>
+                  <TouchableOpacity style={s.deleteRow} onPress={() => setShowDeleteSheet(true)} activeOpacity={0.75}>
+                    <View style={s.deleteIconWrap}>
+                      <Feather name="trash-2" size={16} color={C.danger} />
+                    </View>
+                    <View style={s.deleteBody}>
+                      <Text style={[s.deleteTitle, { color: C.danger, fontFamily: Font.semiBold }]}>Delete Payment Mode</Text>
+                      <Text style={[s.deleteSub, { color: C.textMuted, fontFamily: Font.regular }]}>
+                        Linked entries will not be deleted
+                      </Text>
+                    </View>
+                    <Feather name="chevron-right" size={16} color={C.danger} />
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
+            )}
           </>
         )}
 

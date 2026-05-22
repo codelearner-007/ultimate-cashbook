@@ -37,7 +37,7 @@ export default function EditShareSheet({ visible, share, bookId, onClose }) {
   }, [visible, share]);
 
   const toggleScreen = useCallback((key) => {
-    if (key === 'entries') return;
+    if (key === 'entries' || key === 'settings') return; // always on
     setLocalScreens(prev => ({ ...prev, [key]: !prev[key] }));
   }, []);
 

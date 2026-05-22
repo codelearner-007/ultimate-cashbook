@@ -47,12 +47,17 @@ export default function AddCollaboratorScreen() {
     debounceRef.current = setTimeout(() => setDebouncedQ(text.trim()), 400);
   };
 
-  const { data: searchResults = [], isFetching: isSearching } = useQuery({
+  const { data: rawSearchResults = [], isFetching: isSearching } = useQuery({
     queryKey: ['user-search', debouncedQ],
     queryFn:  () => apiSearchUsers(debouncedQ),
     enabled:  debouncedQ.length >= 2,
     staleTime: 30000,
   });
+
+  // Only show a result when the typed text exactly matches the user's email (case-insensitive)
+  const searchResults = rawSearchResults.filter(
+    u => u.email?.toLowerCase() === debouncedQ.trim().toLowerCase()
+  );
 
   const toggleScreen = useCallback((key) => {
     if (key === 'entries') return; // always on

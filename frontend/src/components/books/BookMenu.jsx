@@ -64,10 +64,9 @@ const BookMenu = memo(({ book, anchor, onClose, onSelect, C, Font }) => {
                 gap: 12,
                 paddingHorizontal: 16,
                 paddingVertical: 14,
-                ...(item.key === 'delete' ? {
+                ...((item.key === 'settings' || item.key === 'delete') ? {
                   borderTopWidth: StyleSheet.hairlineWidth,
                   borderTopColor: C.border,
-                  marginTop: 4,
                 } : {}),
               }}
               activeOpacity={0.7}

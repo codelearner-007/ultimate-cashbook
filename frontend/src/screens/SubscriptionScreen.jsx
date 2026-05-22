@@ -677,10 +677,11 @@ export default function SubscriptionScreen() {
   const [pendingTier,      setPendingTier]      = useState(null);
   const [pendingCycle,     setPendingCycle]      = useState('monthly');
   const [pendingCycleSwitch, setPendingCycleSwitch] = useState(null); // { toCycle, proration, renewDate } | null
-  const [showConfirmSheet, setShowConfirmSheet]  = useState(false);
-  const [showSuccess,      setShowSuccess]       = useState(false);
-  const [activatingKey,    setActivatingKey]     = useState(null);
-  const [successTitle,     setSuccessTitle]      = useState('');
+  const [showConfirmSheet,  setShowConfirmSheet]  = useState(false);
+  const [showSuccess,       setShowSuccess]       = useState(false);
+  const [activatingKey,     setActivatingKey]     = useState(null);
+  const [successTitle,      setSuccessTitle]      = useState('');
+  const [successSpinColor,  setSuccessSpinColor]  = useState(null);
 
   const { mutate: activatePlan } = useMutation({
     mutationFn: apiUpdateSubscription,
@@ -695,9 +696,10 @@ export default function SubscriptionScreen() {
 
       setSuccessTitle(
         tier === 'free'  ? 'Downgraded to Free' :
-        isCycleOnly      ? `Switched to ${cycle === 'yearly' ? 'Yearly' : 'Monthly'} Billing 🔄` :
+        isCycleOnly      ? `Switched to ${cycle === 'yearly' ? 'Yearly' : 'Monthly'} Billing` :
                            `${plan?.name ?? tier} Activated! 👑`
       );
+      setSuccessSpinColor(isCycleOnly ? (plan?.color ?? C.primary) : null);
       setUser(updatedProfile, session);
       qc.setQueryData(['profile'], updatedProfile);
       setBilling(cycle);
@@ -902,6 +904,7 @@ export default function SubscriptionScreen() {
         onDismiss={() => setShowSuccess(false)}
         title={successTitle}
         subtitle="Your subscription has been updated"
+        spinIcon={successSpinColor}
       />
 
       {/* Post-upgrade: offer to sync local data to cloud */}

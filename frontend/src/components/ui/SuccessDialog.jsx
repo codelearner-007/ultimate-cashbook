@@ -4,7 +4,49 @@ import { useTheme } from '../../hooks/useTheme';
 
 const SPARKLE_N = 8;
 
-export default function SuccessDialog({ visible, onDismiss, title, subtitle }) {
+// Draws the classic two-arrow sync icon using plain Views (no icon library needed).
+// Two curved arrow "arms" — top-right and bottom-left — as thick rounded stubs with arrowheads.
+function SyncArrows({ color, size = 40 }) {
+  const u = size / 40; // scale unit
+  return (
+    <View style={{ width: size, height: size, position: 'relative' }}>
+      {/* Top-right arrow arm */}
+      <View style={{
+        position: 'absolute',
+        top: u * 4, right: u * 2,
+        width: u * 18, height: u * 8,
+        borderTopWidth: u * 5, borderRightWidth: u * 5,
+        borderColor: color, borderTopRightRadius: u * 10,
+      }} />
+      {/* Top-right arrowhead pointing right */}
+      <View style={{
+        position: 'absolute',
+        top: u * 1, right: u * 0,
+        width: 0, height: 0,
+        borderLeftWidth: u * 7, borderTopWidth: u * 5, borderBottomWidth: u * 5,
+        borderLeftColor: color, borderTopColor: 'transparent', borderBottomColor: 'transparent',
+      }} />
+      {/* Bottom-left arrow arm */}
+      <View style={{
+        position: 'absolute',
+        bottom: u * 4, left: u * 2,
+        width: u * 18, height: u * 8,
+        borderBottomWidth: u * 5, borderLeftWidth: u * 5,
+        borderColor: color, borderBottomLeftRadius: u * 10,
+      }} />
+      {/* Bottom-left arrowhead pointing left */}
+      <View style={{
+        position: 'absolute',
+        bottom: u * 1, left: u * 0,
+        width: 0, height: 0,
+        borderRightWidth: u * 7, borderTopWidth: u * 5, borderBottomWidth: u * 5,
+        borderRightColor: color, borderTopColor: 'transparent', borderBottomColor: 'transparent',
+      }} />
+    </View>
+  );
+}
+
+export default function SuccessDialog({ visible, onDismiss, title, subtitle, spinIcon }) {
   const { C, Font } = useTheme();
 
   const cardScale    = useRef(new Animated.Value(0.5)).current;
@@ -16,6 +58,11 @@ export default function SuccessDialog({ visible, onDismiss, title, subtitle }) {
     Array.from({ length: SPARKLE_N }, () => new Animated.Value(0))
   ).current;
 
+  // Spinning icon animation
+  const iconRotate  = useRef(new Animated.Value(0)).current;
+  const iconOpacity = useRef(new Animated.Value(0)).current;
+  const spinDeg = iconRotate.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
   useEffect(() => {
     if (!visible) return;
 
@@ -24,6 +71,8 @@ export default function SuccessDialog({ visible, onDismiss, title, subtitle }) {
     checkOpacity.setValue(0);
     ringScale.setValue(1);
     ringOpacity.setValue(0.8);
+    iconRotate.setValue(0);
+    iconOpacity.setValue(0);
     sparkleAnims.forEach(a => a.setValue(0));
 
     Animated.spring(cardScale, {
@@ -33,6 +82,13 @@ export default function SuccessDialog({ visible, onDismiss, title, subtitle }) {
         toValue: 1, tension: 260, friction: 7, useNativeDriver: true,
       }).start(() => {
         Animated.timing(checkOpacity, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+
+        if (spinIcon) {
+          Animated.timing(iconOpacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+          Animated.loop(
+            Animated.timing(iconRotate, { toValue: 1, duration: 900, useNativeDriver: true })
+          ).start();
+        }
 
         Animated.loop(
           Animated.parallel([
@@ -60,8 +116,8 @@ export default function SuccessDialog({ visible, onDismiss, title, subtitle }) {
     const t = setTimeout(onDismiss, 2800);
     return () => {
       clearTimeout(t);
-      [cardScale, circleScale, checkOpacity, ringScale, ringOpacity, ...sparkleAnims]
-        .forEach(a => a.stopAnimation());
+      [cardScale, circleScale, checkOpacity, ringScale, ringOpacity,
+        iconRotate, iconOpacity, ...sparkleAnims].forEach(a => a.stopAnimation());
     };
   }, [visible]);
 
@@ -104,7 +160,14 @@ export default function SuccessDialog({ visible, onDismiss, title, subtitle }) {
           </View>
 
           <Text style={[s.title, { color: C.text, fontFamily: Font.bold }]}>{title}</Text>
-          <Text style={[s.sub,   { color: C.textMuted, fontFamily: Font.regular }]}>{subtitle}</Text>
+
+          {spinIcon && (
+            <Animated.View style={{ opacity: iconOpacity, transform: [{ rotate: spinDeg }], marginBottom: 8 }}>
+              <SyncArrows color={spinIcon} size={32} />
+            </Animated.View>
+          )}
+
+          <Text style={[s.sub, { color: C.textMuted, fontFamily: Font.regular }]}>{subtitle}</Text>
 
         </Animated.View>
       </View>
@@ -141,6 +204,6 @@ const s = StyleSheet.create({
     shadowOpacity: 0.4, shadowRadius: 14, elevation: 10,
   },
   checkText: { fontSize: 40, color: '#fff', textAlign: 'center', lineHeight: 50 },
-  title: { fontSize: 20, marginBottom: 6, letterSpacing: 0.3 },
+  title: { fontSize: 20, marginBottom: 8, letterSpacing: 0.3, textAlign: 'center', paddingHorizontal: 20 },
   sub:   { fontSize: 13, textAlign: 'center', paddingHorizontal: 24, lineHeight: 18 },
 });

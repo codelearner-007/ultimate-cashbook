@@ -57,24 +57,11 @@ export default function PaymentModeSettingsScreen() {
   const [search,     setSearch]     = useState('');
   const [addVisible, setAddVisible] = useState(false);
   const [newName,    setNewName]    = useState('');
-  const [kbHeight,   setKbHeight]   = useState(0);
 
   const [menuModeId,    setMenuModeId]    = useState(null);
   const [deletingMode,  setDeletingMode]  = useState(null);
   const [showDeleteSheet, setShowDeleteSheet] = useState(false);
 
-  useEffect(() => {
-    if (!addVisible) { setKbHeight(0); return; }
-    const show = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e) => setKbHeight(e.endCoordinates.height),
-    );
-    const hide = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKbHeight(0),
-    );
-    return () => { show.remove(); hide.remove(); };
-  }, [addVisible]);
 
   const { data: ownBooks = [] }    = useBooks();
   const { data: sharedBooks = [] } = useSharedBooks();
@@ -470,9 +457,10 @@ export default function PaymentModeSettingsScreen() {
       />
 
       {/* Add Modal */}
-      <Modal visible={addVisible} transparent animationType="slide" onRequestClose={() => { setAddVisible(false); setNewName(''); }}>
-        <Pressable style={[s.modalOverlay, { backgroundColor: C.overlay }]} onPress={() => { setAddVisible(false); setNewName(''); }}>
-          <Pressable style={[s.modalSheet, { backgroundColor: C.card, marginBottom: kbHeight }]} onPress={() => {}}>
+      <Modal visible={addVisible} transparent animationType="none" onRequestClose={() => { setAddVisible(false); setNewName(''); }}>
+        <View style={s.modalRoot}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => { setAddVisible(false); setNewName(''); }} />
+          <View style={[s.modalSheet, { backgroundColor: C.card }]}>
             <View style={[s.modalHandle, { backgroundColor: C.border }]} />
             <View style={s.modalHeader}>
               <Text style={[s.modalTitle, { color: C.text, fontFamily: Font.bold }]}>Add Payment Mode</Text>
@@ -510,8 +498,8 @@ export default function PaymentModeSettingsScreen() {
                 }
               </TouchableOpacity>
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -553,7 +541,7 @@ const makeStyles = () => StyleSheet.create({
   fab:     { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
   fabArrow:{ position: 'absolute', bottom: 38, right: 88, flexDirection: 'row', alignItems: 'center', gap: -6 },
 
-  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
+  modalRoot:    { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
   modalSheet:   { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingTop: 12 },
   modalHandle:  { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },

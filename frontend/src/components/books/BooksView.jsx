@@ -23,6 +23,7 @@ import DraggableList from './DraggableList';
 import BookMenu from './BookMenu';
 import SearchBar from '../ui/SearchBar';
 import DeleteBookSheet from '../ui/DeleteBookSheet';
+import LeaveBookSheet from '../ui/LeaveBookSheet';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -463,6 +464,7 @@ export default function BooksView({
   const [renameText,        setRenameText]        = useState('');
   const [deleteDialog,      setDeleteDialog]      = useState(null); // book | null
   const deleteBookSheetCloseRef = useRef(null);
+  const [leaveDialog,       setLeaveDialog]       = useState(null); // book | null
 
   const currency = profile?.currency ?? 'PKR';
 
@@ -492,21 +494,19 @@ export default function BooksView({
   }, [sharedBooks, searchQuery]);
 
   const handleLeaveBook = useCallback((book) => {
-    Alert.alert(
-      'Leave Book',
-      `You'll lose access to "${book.name}". This can only be undone by the owner.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Leave',
-          style: 'destructive',
-          onPress: () => leaveSharedBook.mutate(book.id, {
-            onError: () => Alert.alert('Error', 'Could not leave this book. Please try again.'),
-          }),
-        },
-      ],
-    );
-  }, [leaveSharedBook]);
+    setLeaveDialog(book);
+  }, []);
+
+  const handleConfirmLeave = useCallback(() => {
+    if (!leaveDialog) return;
+    leaveSharedBook.mutate(leaveDialog.id, {
+      onSuccess: () => setLeaveDialog(null),
+      onError: () => {
+        setLeaveDialog(null);
+        Toast.error('Could not leave this book. Please try again.');
+      },
+    });
+  }, [leaveDialog, leaveSharedBook]);
 
   // Auto-reset to personal when the last shared book disappears
   useEffect(() => {
@@ -977,6 +977,16 @@ export default function BooksView({
         C={C}
         Font={Font}
         closeRef={deleteBookSheetCloseRef}
+      />
+
+      <LeaveBookSheet
+        visible={!!leaveDialog}
+        onDismiss={() => setLeaveDialog(null)}
+        onConfirm={handleConfirmLeave}
+        bookName={leaveDialog?.name ?? ''}
+        isLoading={leaveSharedBook.isPending}
+        C={C}
+        Font={Font}
       />
 
       {/* ── Add book modal (slide-up) ────────────────────────────────────── */}

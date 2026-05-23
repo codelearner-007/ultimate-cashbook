@@ -156,3 +156,131 @@ All migrations live in `supabase/migrations/`. Run them **in order** in the Supa
    - Add mobile redirect: `cashbook://auth/callback`
 4. Create a private Storage bucket named `attachments`
 5. Copy keys into `frontend/.env` and `backend/.env` (see above)
+
+---
+
+## Supabase Local ↔ Cloud Workflow
+
+This section covers linking your local Supabase CLI setup to a cloud project so migrations run consistently in both environments.
+
+### Prerequisites
+
+```bash
+# Install Supabase CLI (Windows via scoop, or download from GitHub releases)
+scoop install supabase
+
+# Or via npm (cross-platform)
+npm install -g supabase
+
+# Verify
+supabase --version
+```
+
+### 1. Log in to Supabase
+
+```bash
+supabase login
+# Opens a browser — authorize with your Supabase account
+```
+
+### 2. Link the local project to your cloud project
+
+Run this once from the repo root (where `supabase/` lives):
+
+```bash
+supabase link --project-ref <project-ref>
+# <project-ref> is the subdomain of your Supabase URL:
+# e.g. https://abcdefghijkl.supabase.co → project-ref = abcdefghijkl
+
+# You will be prompted for your database password (set when you created the project)
+```
+
+After linking, a `supabase/.temp/project-ref` file is created — this is gitignored by default.
+
+### 3. Start local Supabase (Docker required)
+
+```bash
+supabase start
+# Starts local Postgres, Auth, Storage, and Studio at http://localhost:54323
+```
+
+Local credentials are printed on first start. Add them to your `.env` files for local development:
+
+```
+# frontend/.env  (local dev)
+EXPO_PUBLIC_SUPABASE_URL=http://localhost:54321
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<local_anon_key>
+
+# backend/.env  (local dev)
+SUPABASE_URL=http://localhost:54321
+SUPABASE_SERVICE_KEY=<local_service_role_key>
+SUPABASE_JWT_SECRET=<local_jwt_secret>
+```
+
+### 4. Push migrations to cloud
+
+After writing a new migration file in `supabase/migrations/`:
+
+```bash
+supabase db push
+# Applies all pending migrations to the LINKED CLOUD project
+```
+
+> **Warning:** `db push` runs against the cloud database. Double-check you are linked to the correct project before running.
+
+### 5. Pull schema changes from cloud (optional)
+
+If you edited the schema directly in the cloud SQL Editor and want to capture the diff locally:
+
+```bash
+supabase db pull
+# Generates a new migration file in supabase/migrations/ with the diff
+```
+
+### 6. Run migrations locally
+
+```bash
+supabase db reset
+# Drops and recreates the local DB, then replays all migration files in order
+# Use this after adding a new migration to test it locally before pushing
+```
+
+### 7. Stop local Supabase
+
+```bash
+supabase stop
+# Stops all local Docker containers (data is preserved)
+
+supabase stop --no-backup
+# Stops and wipes local DB data (clean slate)
+```
+
+### Environment switching (local vs cloud)
+
+Keep two `.env` files and swap them as needed:
+
+| File | Points to |
+|---|---|
+| `backend/.env` | Active environment (local or cloud) |
+| `backend/.env.local` | Local Supabase credentials |
+| `backend/.env.production` | Cloud Supabase credentials |
+
+```bash
+# Switch to local
+cp backend/.env.local backend/.env
+
+# Switch to cloud
+cp backend/.env.production backend/.env
+```
+
+Do the same for `frontend/.env`. **Never commit any `.env` file.**
+
+### Common issues
+
+| Problem | Fix |
+|---|---|
+| `supabase link` fails with auth error | Run `supabase login` again — token may have expired |
+| `db push` says "no migrations to push" | Check `supabase/migrations/` has new files not yet applied |
+| Local Studio not loading | Ensure Docker Desktop is running before `supabase start` |
+| JWT mismatch between local and backend | Use the `JWT Secret` printed by `supabase start`, not the cloud secret |
+| Port 54321 already in use | Another process is using the port — stop it or change the port in `supabase/config.toml` |

@@ -13,7 +13,7 @@
       "backgroundColor": "#3B5BDB"
     },
     "android": {
-      "package": "com.yourname.cashbook",
+      "package": "com.ultimatecashbook.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#3B5BDB"
@@ -36,11 +36,12 @@
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "ios": {
-      "bundleIdentifier": "com.yourname.cashbook",
+      "bundleIdentifier": "com.ultimatecashbook.app",
       "infoPlist": {
         "NSCameraUsageDescription": "Ultimate CashBook uses your camera to take photos for your profile and to attach receipts to entries.",
         "NSPhotoLibraryUsageDescription": "Ultimate CashBook accesses your photo library to set a profile photo and to attach receipt images to entries.",
@@ -67,6 +68,12 @@
         }
       ],
       "expo-sqlite"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "5d00843f-5802-429e-a328-cf395ab0dd74"
+      }
+    }
   }
 }

@@ -13,8 +13,11 @@ class ProfileResponse(BaseModel):
     currency: str = "PKR"
     is_dark_mode: bool = False
     subscription_tier: Literal["free", "pro", "business"] = "free"
+    subscription_status: Literal["free", "active", "cancelled", "expired", "past_due"] = "free"
     subscription_started_at: Optional[datetime] = None
     subscription_billing_cycle: Literal["monthly", "yearly"] = "monthly"
+    subscription_expires_at: Optional[datetime] = None
+    subscription_cancel_at_period_end: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
     storage_mb: float = 0.0
@@ -37,6 +40,9 @@ class UserWithStats(ProfileResponse):
 
 class SubscriptionUpdate(BaseModel):
     subscription_tier: Literal["free", "pro", "business"]
+    subscription_status: Literal["free", "active", "cancelled", "expired", "past_due"] = "active"
     billing_cycle: Literal["monthly", "yearly"] = "monthly"
+    expires_at: Optional[datetime] = None
+    cancel_at_period_end: bool = False
 
 

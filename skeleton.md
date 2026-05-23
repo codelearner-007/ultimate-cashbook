@@ -822,30 +822,52 @@ Allows user to set their preferred currency symbol.
 
 ## 16. SubscriptionScreen — `/(app)/settings/subscription`
 
-**Purpose:** Show available subscription tiers and let the user activate a plan.
+**Purpose:** Show available subscription tiers and let the user subscribe, upgrade, or cancel — all through platform-native billing (Google Play / App Store).
 
 **Navigation in:** SettingsScreen → Subscription & Plans row, tier chip tap, any crown-gated feature tap.
+
+### Subscription Model (per SUBSCRIPTION_LIFECYCLE.md)
+- Payments are processed entirely by Google Play (Android) or App Store (iOS) — the app never touches card data.
+- **No manual downgrade.** Cancellation is the only way to move from a paid plan to Free.
+- Cancellation deep-links the user to the platform subscription management page.
+- Cancelled users keep full paid access until `subscription_expires_at`.
+- When the billing period ends, the system automatically moves the user to Free (server notification).
+
+### Subscription States
+| `subscription_status` | Meaning | Access |
+|---|---|---|
+| `free` | Never subscribed or expired | Free tier limits |
+| `active` | Paid and current | Full paid access |
+| `cancelled` | Cancelled; period still running | Full paid access until `expires_at` |
+| `expired` | Period ended after cancellation | Moved to Free automatically |
+| `past_due` | Renewal payment failed | Full access during retry window |
 
 ### Superadmin View (read-only)
 When `user.role === 'superadmin'`, the screen is fully read-only:
 - Info banner below the header: "👑 As an admin, all features are included at no cost. Plans are shown for reference only."
 - Current Plan Banner shows **"Admin"** with "· All features included" subtitle (no billing cycle chip, no timing grid)
 - Billing toggle (Monthly / Yearly) is **fully functional** — superadmin can switch to browse pricing
-- Every plan card shows **"✓ Included"** outline button — no Activate / Downgrade / Switch buttons
-- `handleActivate` is a no-op for superadmin — confirm sheet never opens
+- Every plan card shows **"✓ Included"** outline button — no action buttons
 
 ### Current Plan Banner (regular users)
 - Shows the user's active tier name + crown emoji (paid plans)
 - Billing cycle chip (Monthly / Yearly) shown for paid plans
-- Timing grid (Started / Renews / Days left) shown for paid plans only
+- **"Cancelled" pill** shown next to tier name when `subscription_cancel_at_period_end = true`
+- Timing grid (Started / Access until or Renews / Days left) shown for paid plans only
 - Free plan shows "· Always free" subtitle, no timing grid
+
+### Past-Due Banner
+Shown above the current plan banner when `subscription_status === 'past_due'`:
+- Yellow warning card: "⚠️ Payment Failed — Please update your payment method in [Google Play / App Store]"
+- Tappable "Open [Platform] →" link deep-links to platform subscription settings
 
 ### Plan Cards (stacked: Free → Pro → Business)
 
 Each card shows:
 - Tier name + crown emoji (Pro/Business), price, billing period
+- "Cancels [date]" badge on the current plan card when cancelled
 - Feature list with ✓ (included, accent color) / ✗ (excluded, muted)
-- Action button (see states below)
+- Action button (per CTA table below)
 
 | Plan        | Color              | Crown | Monthly  | Yearly      |
 |-------------|--------------------|-------|----------|-------------|
@@ -853,43 +875,50 @@ Each card shows:
 | Pro         | #F59E0B (amber)    | 👑    | $4.99/mo | $41.99/yr   |
 | Business    | #7C3AED (purple)   | 👑    | $9.99/mo | $83.99/yr   |
 
-**Plan card button states:**
-| State | Condition | Button |
-|---|---|---|
-| Included (admin) | `isAdminView` | `"✓ Included"` outline (no press) |
-| Active | Same tier + same billing cycle | `"✓ Active Plan"` outline (no press) |
-| Switch cycle | Same tier + different billing cycle | `"Switch to Yearly/Monthly"` filled |
-| Activate | Different tier | `"Activate [Plan]"` or `"Downgrade to Free"` filled |
+**Plan card CTA buttons (per SUBSCRIPTION_LIFECYCLE.md):**
+| User's Tier | Status | Free card | Pro card | Business card |
+|---|---|---|---|---|
+| free | — | "Current Plan" (disabled) | "Activate Pro" | "Activate Business" |
+| pro | active | "Cancel Subscription" (danger) | "Current Plan" (disabled) | "Upgrade to Business" |
+| pro | cancelled | Info outline (no action) | "Reactivate" filled | "Reactivate & Upgrade" |
+| business | active | "Cancel Subscription" (danger) | (no button — lower tier) | "Current Plan" (disabled) |
+| business | cancelled | Info outline (no action) | (no button — lower tier) | "Reactivate" filled |
+| any | (superadmin) | "✓ Included" (all cards) | — | — |
+
+> **Rule:** There is never a "Downgrade to Free" button. Cancellation is the only path.
 
 ### Billing Toggle
 - Monthly / Yearly selector; sticky below banner
 - Yearly shows "Yearly plans save 30% — billed as one annual payment." note
-- Fully functional for superadmin — they can browse monthly/yearly pricing; only the card action buttons are locked
+- Superadmin can browse monthly/yearly pricing; their action buttons are always "✓ Included"
 
-### Activate Flow (no payment gateway yet)
-1. Tap "Activate [Plan]" or "Switch to Yearly/Monthly"
-2. `ActivatePlanSheet` bottom sheet opens with plan details
-3. On confirm → `PATCH /api/v1/profile/subscription { subscription_tier, billing_cycle }`
-4. `onSuccess`: `setUser(updatedProfile, session)` + `qc.setQueryData(['profile'], updatedProfile)`
-5. UI updates instantly — current plan banner + card states refresh
+### Cancel Flow
+1. Tap "Cancel Subscription" on the Free card (when on a paid plan)
+2. `CancelSheet` bottom sheet opens with copy:
+   - Platform name, expiry date, note that access continues until then
+3. Tap "Go to [Google Play / App Store]" → `Linking.openURL(platform subscriptions URL)`
+4. Sheet closes; user manages cancellation on the platform
+5. When platform fires cancellation notification → backend sets `cancel_at_period_end = true`
+6. Frontend polls profile → "Cancelled" pill + "Cancels [date]" badge appear
+
+### Reactivate Flow
+1. Tap "Reactivate" on the current plan card (when `cancelled`)
+2. `Linking.openURL(platform subscriptions URL)` opens immediately — no confirmation sheet
+3. User reactivates on the platform; platform fires notification → backend clears `cancel_at_period_end`
+4. Frontend polls profile → "Cancelled" pill disappears
+
+### Activate / Upgrade Flow
+1. Tap "Activate [Plan]" or "Upgrade to Business"
+2. `ActivateSheet` bottom sheet opens with plan chip + copy:
+   - "You'll be taken to [Platform] to complete the subscription/upgrade."
+3. Tap confirm → `Linking.openURL(platform URL)` → backend updated via server notification
+4. Dev convenience: also fires `PATCH /api/v1/profile/subscription` to simulate the update locally
+5. `onSuccess`: `setUser(updatedProfile, session)` + `qc.setQueryData(['profile'], updatedProfile)`
 
 ### Post-Upgrade: UpgradeSyncSheet (welcome modal)
-Triggered when a **free-tier user** activates any paid plan. Skipped for cycle-only switches.
-
-**On open:** calls `getCloudDeltaStats()` which fetches cloud books + entries and diffs against local SQLite.
-
-- While loading: spinner row "Comparing with cloud…" shown below subtitle
-- **Delta chips** (shown after load, 3 possible variants):
-  - `upload-cloud` icon (accent color) — **X new entries** / **X new books** → items in local not in cloud
-  - `check-circle` icon (green `#10B981`) — **X already synced**
-  - `cloud` icon (amber `#F59E0B`) — **X only in cloud**
-- **Upload button**: "Upload N Item(s)" (only shown if `toUpload > 0`)
-- **"Later"** outline button: dismisses sheet to success dialog
-
-### Downgrade Flow
-1. Tap "Downgrade to Free"
-2. `ActivatePlanSheet` warns that paid features are removed
-3. On confirm → same API call with `tier: 'free'`, button color uses `C.danger`
+Triggered when a **free-tier user** activates any paid plan.
+- "Upload N Item(s)" button — uploads local SQLite data to cloud
+- "Later" outline button → dismisses to SuccessDialog
 
 ---
 

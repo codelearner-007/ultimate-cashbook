@@ -57,11 +57,25 @@ async def update_subscription(
     user_id: str = Depends(get_current_user),
 ):
     sb = get_supabase()
-    update_data = {
-        "subscription_tier":         payload.subscription_tier,
-        "subscription_started_at":   datetime.now(timezone.utc).isoformat(),
-        "subscription_billing_cycle": payload.billing_cycle,
+    now = datetime.now(timezone.utc)
+
+    update_data: dict = {
+        "subscription_tier":              payload.subscription_tier,
+        "subscription_status":            payload.subscription_status,
+        "subscription_billing_cycle":     payload.billing_cycle,
+        "subscription_cancel_at_period_end": payload.cancel_at_period_end,
     }
+
+    # Set started_at only when moving from free → paid for the first time
+    if payload.subscription_tier != "free" and payload.subscription_status == "active":
+        update_data["subscription_started_at"] = now.isoformat()
+
+    # Set expires_at when provided; clear it on free/expired
+    if payload.expires_at is not None:
+        update_data["subscription_expires_at"] = payload.expires_at.isoformat()
+    elif payload.subscription_tier == "free" or payload.subscription_status in ("expired",):
+        update_data["subscription_expires_at"] = None
+
     result = (
         sb.table("profiles")
         .update(update_data)

@@ -110,14 +110,18 @@ async function getDb() {
     `);
     // Add columns introduced after initial schema — safe to run every time (errors ignored)
     for (const ddl of [
-      'ALTER TABLE entries ADD COLUMN customer_id          TEXT',
-      'ALTER TABLE entries ADD COLUMN supplier_id          TEXT',
-      'ALTER TABLE entries ADD COLUMN category_id          TEXT',
-      'ALTER TABLE entries ADD COLUMN payment_mode_id      TEXT',
-      'ALTER TABLE entries ADD COLUMN attachment_url       TEXT',
-      'ALTER TABLE entries ADD COLUMN attachment_path      TEXT',
-      'ALTER TABLE entries ADD COLUMN attachment_provider  TEXT',
-      'ALTER TABLE books   ADD COLUMN cloud_id             TEXT',
+      'ALTER TABLE entries      ADD COLUMN customer_id          TEXT',
+      'ALTER TABLE entries      ADD COLUMN supplier_id          TEXT',
+      'ALTER TABLE entries      ADD COLUMN category_id          TEXT',
+      'ALTER TABLE entries      ADD COLUMN payment_mode_id      TEXT',
+      'ALTER TABLE entries      ADD COLUMN attachment_url       TEXT',
+      'ALTER TABLE entries      ADD COLUMN attachment_path      TEXT',
+      'ALTER TABLE entries      ADD COLUMN attachment_provider  TEXT',
+      'ALTER TABLE books        ADD COLUMN cloud_id             TEXT',
+      'ALTER TABLE categories   ADD COLUMN display_order        INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE customers    ADD COLUMN display_order        INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE suppliers    ADD COLUMN display_order        INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE payment_modes ADD COLUMN display_order       INTEGER NOT NULL DEFAULT 0',
     ]) {
       await db.execAsync(ddl).catch(() => {});
     }
@@ -422,7 +426,7 @@ export async function localDeleteAllEntries(bookId) {
 export async function localGetCategories(bookId) {
   const db = await getDb();
   return db.getAllAsync(
-    `SELECT * FROM categories WHERE book_id = ? ORDER BY created_at ASC`,
+    `SELECT * FROM categories WHERE book_id = ? ORDER BY display_order ASC, created_at ASC`,
     [bookId],
   );
 }
@@ -478,7 +482,7 @@ export async function localGetCategoryEntries(bookId, categoryId) {
 export async function localGetCustomers(bookId) {
   const db = await getDb();
   return db.getAllAsync(
-    `SELECT * FROM customers WHERE book_id = ? ORDER BY created_at ASC`,
+    `SELECT * FROM customers WHERE book_id = ? ORDER BY display_order ASC, created_at ASC`,
     [bookId],
   );
 }
@@ -539,7 +543,7 @@ export async function localGetCustomerEntries(bookId, customerId) {
 export async function localGetSuppliers(bookId) {
   const db = await getDb();
   return db.getAllAsync(
-    `SELECT * FROM suppliers WHERE book_id = ? ORDER BY created_at ASC`,
+    `SELECT * FROM suppliers WHERE book_id = ? ORDER BY display_order ASC, created_at ASC`,
     [bookId],
   );
 }
@@ -600,7 +604,7 @@ export async function localGetSupplierEntries(bookId, supplierId) {
 export async function localGetPaymentModes(bookId) {
   const db = await getDb();
   return db.getAllAsync(
-    `SELECT * FROM payment_modes WHERE book_id = ? ORDER BY created_at ASC`,
+    `SELECT * FROM payment_modes WHERE book_id = ? ORDER BY display_order ASC, created_at ASC`,
     [bookId],
   );
 }
@@ -657,6 +661,48 @@ export async function localGetPaymentModeEntries(bookId, modeId) {
     `SELECT * FROM entries WHERE book_id = ? AND payment_mode = ? ORDER BY entry_date DESC`,
     [bookId, mode.name],
   );
+}
+
+// ── Reorder helpers ────────────────────────────────────────────────────────────
+
+export async function localReorderCategories(bookId, orderedIds) {
+  const db = await getDb();
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.runAsync(
+      `UPDATE categories SET display_order = ? WHERE id = ? AND book_id = ?`,
+      [i, orderedIds[i], bookId],
+    );
+  }
+}
+
+export async function localReorderCustomers(bookId, orderedIds) {
+  const db = await getDb();
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.runAsync(
+      `UPDATE customers SET display_order = ? WHERE id = ? AND book_id = ?`,
+      [i, orderedIds[i], bookId],
+    );
+  }
+}
+
+export async function localReorderSuppliers(bookId, orderedIds) {
+  const db = await getDb();
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.runAsync(
+      `UPDATE suppliers SET display_order = ? WHERE id = ? AND book_id = ?`,
+      [i, orderedIds[i], bookId],
+    );
+  }
+}
+
+export async function localReorderPaymentModes(bookId, orderedIds) {
+  const db = await getDb();
+  for (let i = 0; i < orderedIds.length; i++) {
+    await db.runAsync(
+      `UPDATE payment_modes SET display_order = ? WHERE id = ? AND book_id = ?`,
+      [i, orderedIds[i], bookId],
+    );
+  }
 }
 
 // ── Migration helpers ──────────────────────────────────────────────────────────

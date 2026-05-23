@@ -826,29 +826,52 @@ Allows user to set their preferred currency symbol.
 
 **Navigation in:** SettingsScreen → Subscription & Plans row, tier chip tap, any crown-gated feature tap.
 
-### Current Plan Banner
-- Shows the user's active tier name + crown emoji (Pro/Enterprise)
-- Tapping navigates nowhere (informational only)
+### Superadmin View (read-only)
+When `user.role === 'superadmin'`, the screen is fully read-only:
+- Info banner below the header: "👑 As an admin, all features are included at no cost. Plans are shown for reference only."
+- Current Plan Banner shows **"Admin"** with "· All features included" subtitle (no billing cycle chip, no timing grid)
+- Billing toggle (Monthly / Yearly) is **fully functional** — superadmin can switch to browse pricing
+- Every plan card shows **"✓ Included"** outline button — no Activate / Downgrade / Switch buttons
+- `handleActivate` is a no-op for superadmin — confirm sheet never opens
 
-### Plan Cards (stacked: Free → Pro → Enterprise)
+### Current Plan Banner (regular users)
+- Shows the user's active tier name + crown emoji (paid plans)
+- Billing cycle chip (Monthly / Yearly) shown for paid plans
+- Timing grid (Started / Renews / Days left) shown for paid plans only
+- Free plan shows "· Always free" subtitle, no timing grid
+
+### Plan Cards (stacked: Free → Pro → Business)
 
 Each card shows:
-- Tier name + crown emoji (Pro/Enterprise), price, billing period
-- Feature list with ✓ (included, primary color) / ✗ (excluded, muted)
-- **"Activate [Plan]"** button OR **"✓ Active"** outline button (current plan)
+- Tier name + crown emoji (Pro/Business), price, billing period
+- Feature list with ✓ (included, accent color) / ✗ (excluded, muted)
+- Action button (see states below)
 
-| Plan        | Color              | Crown | Price       |
-|-------------|--------------------|-------|-------------|
-| Free        | C.primary (teal)   | —     | $0/forever  |
-| Pro         | #F59E0B (amber)    | 👑    | $4.99/mo    |
-| Enterprise  | #7C3AED (purple)   | 👑    | $12.99/mo   |
+| Plan        | Color              | Crown | Monthly  | Yearly      |
+|-------------|--------------------|-------|----------|-------------|
+| Free        | C.primary (teal)   | —     | $0       | $0          |
+| Pro         | #F59E0B (amber)    | 👑    | $4.99/mo | $41.99/yr   |
+| Business    | #7C3AED (purple)   | 👑    | $9.99/mo | $83.99/yr   |
+
+**Plan card button states:**
+| State | Condition | Button |
+|---|---|---|
+| Included (admin) | `isAdminView` | `"✓ Included"` outline (no press) |
+| Active | Same tier + same billing cycle | `"✓ Active Plan"` outline (no press) |
+| Switch cycle | Same tier + different billing cycle | `"Switch to Yearly/Monthly"` filled |
+| Activate | Different tier | `"Activate [Plan]"` or `"Downgrade to Free"` filled |
+
+### Billing Toggle
+- Monthly / Yearly selector; sticky below banner
+- Yearly shows "Yearly plans save 30% — billed as one annual payment." note
+- Fully functional for superadmin — they can browse monthly/yearly pricing; only the card action buttons are locked
 
 ### Activate Flow (no payment gateway yet)
-1. Tap "Activate Pro" / "Activate Enterprise"
-2. `Alert.alert` confirmation dialog
-3. On confirm → `PATCH /api/v1/profile/subscription { subscription_tier }` 
-4. `onSuccess`: `setUser(updatedProfile, session)` (updates authStore + SecureStore) + `qc.setQueryData(['profile'], updatedProfile)`
-5. UI updates instantly — current plan badge changes
+1. Tap "Activate [Plan]" or "Switch to Yearly/Monthly"
+2. `ActivatePlanSheet` bottom sheet opens with plan details
+3. On confirm → `PATCH /api/v1/profile/subscription { subscription_tier, billing_cycle }`
+4. `onSuccess`: `setUser(updatedProfile, session)` + `qc.setQueryData(['profile'], updatedProfile)`
+5. UI updates instantly — current plan banner + card states refresh
 
 ### Post-Upgrade: UpgradeSyncSheet (welcome modal)
 Triggered when a **free-tier user** activates any paid plan. Skipped for cycle-only switches.
@@ -857,22 +880,16 @@ Triggered when a **free-tier user** activates any paid plan. Skipped for cycle-o
 
 - While loading: spinner row "Comparing with cloud…" shown below subtitle
 - **Delta chips** (shown after load, 3 possible variants):
-  - `upload-cloud` icon (accent color) — **X new entries** / **X new books** → items in local not in cloud (new or edited since last sync)
-  - `check-circle` icon (green `#10B981`) — **X already synced** → local entries with matching cloud fingerprint
-  - `cloud` icon (amber `#F59E0B`) — **X only in cloud** → cloud entries not found locally (deleted locally or old versions of edited entries)
-- Subtitle text adapts:
-  - `toUpload > 0`: "You have changes since your last sync. Upload to keep your cloud backup up to date."
-  - `toUpload === 0 && onlyInCloud > 0`: "Your local data is synced. The cloud has N entries not on this device."
-  - `toUpload === 0 && onlyInCloud === 0`: "Your local data is already fully synced with the cloud."
-  - No previous cloud data (fresh upgrade): "You have local data on this device. Upload it to the cloud now."
-- **Upload button**: "Upload N Item(s)" (only shown if `toUpload > 0`); pressing → `syncLocalToCloud()` → progress text → done state
-- **"Already in Sync" button** (green): shown when `toUpload === 0` (nothing to upload)
-- **"Later"** outline button: always present when upload is available; dismisses sheet to success dialog
+  - `upload-cloud` icon (accent color) — **X new entries** / **X new books** → items in local not in cloud
+  - `check-circle` icon (green `#10B981`) — **X already synced**
+  - `cloud` icon (amber `#F59E0B`) — **X only in cloud**
+- **Upload button**: "Upload N Item(s)" (only shown if `toUpload > 0`)
+- **"Later"** outline button: dismisses sheet to success dialog
 
 ### Downgrade Flow
 1. Tap "Downgrade to Free"
-2. Alert warns that Pro/Enterprise features are removed
-3. On confirm → same API call with `tier: 'free'`
+2. `ActivatePlanSheet` warns that paid features are removed
+3. On confirm → same API call with `tier: 'free'`, button color uses `C.danger`
 
 ---
 

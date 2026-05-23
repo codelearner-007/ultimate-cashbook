@@ -198,7 +198,7 @@ export const apiGetCategoryEntries = (bookId, id) =>
   useLocalDb() ? L.localGetCategoryEntries(bookId, id) : _apiGetCategoryEntries(bookId, id);
 
 export const apiReorderCategories = (bookId, orderedIds) =>
-  _apiReorderCategories(bookId, orderedIds);
+  useLocalDb() ? L.localReorderCategories(bookId, orderedIds) : _apiReorderCategories(bookId, orderedIds);
 
 // ── Customers ──────────────────────────────────────────────────────────────────
 
@@ -227,7 +227,7 @@ export const apiGetCustomerEntries = (bookId, id) =>
   useLocalDb() ? L.localGetCustomerEntries(bookId, id) : _apiGetCustomerEntries(bookId, id);
 
 export const apiReorderCustomers = (bookId, orderedIds) =>
-  _apiReorderCustomers(bookId, orderedIds);
+  useLocalDb() ? L.localReorderCustomers(bookId, orderedIds) : _apiReorderCustomers(bookId, orderedIds);
 
 // ── Suppliers ──────────────────────────────────────────────────────────────────
 
@@ -256,7 +256,7 @@ export const apiGetSupplierEntries = (bookId, id) =>
   useLocalDb() ? L.localGetSupplierEntries(bookId, id) : _apiGetSupplierEntries(bookId, id);
 
 export const apiReorderSuppliers = (bookId, orderedIds) =>
-  _apiReorderSuppliers(bookId, orderedIds);
+  useLocalDb() ? L.localReorderSuppliers(bookId, orderedIds) : _apiReorderSuppliers(bookId, orderedIds);
 
 // ── Payment Modes ──────────────────────────────────────────────────────────────
 
@@ -280,7 +280,7 @@ export const apiDeletePaymentMode = (bookId, id) =>
   useLocalDb() ? L.localDeletePaymentMode(bookId, id) : _apiDeletePaymentMode(bookId, id);
 
 export const apiReorderPaymentModes = (bookId, orderedIds) =>
-  _apiReorderPaymentModes(bookId, orderedIds);
+  useLocalDb() ? L.localReorderPaymentModes(bookId, orderedIds) : _apiReorderPaymentModes(bookId, orderedIds);
 
 export const apiGetPaymentModeEntries = (bookId, id) =>
   useLocalDb() ? L.localGetPaymentModeEntries(bookId, id) : _apiGetPaymentModeEntries(bookId, id);

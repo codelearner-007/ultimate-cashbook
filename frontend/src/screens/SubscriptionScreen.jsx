@@ -115,9 +115,10 @@ const CrossIcon = ({ color, size = 12 }) => (
 /**
  * isCurrent      — same tier AND same billing cycle as active subscription
  * isSwitchCycle  — same tier BUT billing toggle shows a different cycle (show switch button)
+ * isAdminView    — superadmin: all plans are display-only, buttons replaced with "Included"
  * onActivate(planKey, targetBilling) — called for both new activations and cycle switches
  */
-function PlanCard({ plan, isCurrent, isSwitchCycle, isActivating, billing, onActivate, C, primaryColor }) {
+function PlanCard({ plan, isCurrent, isSwitchCycle, isActivating, billing, onActivate, C, primaryColor, isAdminView }) {
   const accentColor  = plan.color ?? primaryColor;
   const dimmed       = '#9CA3AF';
   const price        = billing === 'yearly' ? plan.yearlyLabel : plan.monthlyLabel;
@@ -211,7 +212,14 @@ function PlanCard({ plan, isCurrent, isSwitchCycle, isActivating, billing, onAct
       </View>
 
       {/* ── CTA ── */}
-      {isCurrent ? (
+      {isAdminView ? (
+        /* Superadmin — all plans included, no actions */
+        <View style={[cardStyles.btnOutline, { borderColor: accentColor }]}>
+          <Text style={[cardStyles.btnOutlineText, { color: accentColor, fontFamily: Font.semiBold }]}>
+            ✓ Included
+          </Text>
+        </View>
+      ) : isCurrent ? (
         /* Exact match — active plan + active billing cycle */
         <View style={[cardStyles.btnOutline, { borderColor: accentColor }]}>
           <Text style={[cardStyles.btnOutlineText, { color: accentColor, fontFamily: Font.semiBold }]}>
@@ -667,6 +675,7 @@ export default function SubscriptionScreen() {
   const session = useAuthStore(s => s.session);
   const setUser = useAuthStore(s => s.setUser);
 
+  const isSuperAdmin        = user?.role === 'superadmin';
   const currentTier         = user?.subscription_tier          ?? 'free';
   const currentBillingCycle = user?.subscription_billing_cycle  ?? 'monthly';
 
@@ -724,6 +733,7 @@ export default function SubscriptionScreen() {
    * builds the appropriate cycleSwitch payload, then opens the confirm sheet.
    */
   const handleActivate = (planKey, targetBilling) => {
+    if (isSuperAdmin) return;
     const plan          = PLANS.find(p => p.key === planKey);
     const sameTier      = planKey === currentTier;
     const sameCycle     = targetBilling === currentBillingCycle;
@@ -774,6 +784,15 @@ export default function SubscriptionScreen() {
         <View style={{ width: 40 }} />
       </View>
 
+      {/* Superadmin info banner — shown above scroll content */}
+      {isSuperAdmin && (
+        <View style={[s.adminBanner, { backgroundColor: C.primaryLight, borderColor: C.primary + '44' }]}>
+          <Text style={[s.adminBannerText, { color: C.primary, fontFamily: Font.semiBold }]}>
+            👑 As an admin, all features are included at no cost. Plans are shown for reference only.
+          </Text>
+        </View>
+      )}
+
       <ScrollView
         style={s.scroll}
         contentContainerStyle={s.scrollContent}
@@ -789,7 +808,7 @@ export default function SubscriptionScreen() {
               <Text style={[s.bannerLabel, { color: C.textMuted, fontFamily: Font.medium }]}>
                 Your current plan
               </Text>
-              {currentTier !== 'free' && (
+              {!isSuperAdmin && currentTier !== 'free' && (
                 <View style={[s.cyclePill, { backgroundColor: accentColor + '22', borderColor: accentColor + '55' }]}>
                   <Text style={[s.cyclePillText, { color: accentColor, fontFamily: Font.bold }]}>
                     {timing.cycle === 'yearly' ? 'Yearly' : 'Monthly'}
@@ -800,19 +819,24 @@ export default function SubscriptionScreen() {
 
             {/* Plan name */}
             <View style={s.bannerTierRow}>
-              {currentTier !== 'free' && <Text style={{ fontSize: 20, marginRight: 6 }}>👑</Text>}
+              <Text style={{ fontSize: 20, marginRight: 6 }}>👑</Text>
               <Text style={[s.bannerTier, { color: accentColor, fontFamily: Font.extraBold }]}>
-                {currentPlan.name}
+                {isSuperAdmin ? 'Super Admin' : currentPlan.name}
               </Text>
-              {currentTier === 'free' && (
+              {isSuperAdmin && (
+                <Text style={[s.bannerTierSub, { color: C.textMuted, fontFamily: Font.regular }]}>
+                  {'  '}· All features included
+                </Text>
+              )}
+              {!isSuperAdmin && currentTier === 'free' && (
                 <Text style={[s.bannerTierSub, { color: C.textMuted, fontFamily: Font.regular }]}>
                   {'  '}· Always free
                 </Text>
               )}
             </View>
 
-            {/* Timing rows — only for paid plans */}
-            {currentTier !== 'free' && (
+            {/* Timing rows — only for paid non-admin plans */}
+            {!isSuperAdmin && currentTier !== 'free' && (
               <View style={[s.timingGrid, { borderTopColor: accentColor + '30' }]}>
                 <View style={s.timingCell}>
                   <Text style={[s.timingLabel, { color: C.textMuted, fontFamily: Font.medium }]}>
@@ -862,11 +886,13 @@ export default function SubscriptionScreen() {
               key={plan.key}
               plan={plan}
               isCurrent={
+                !isSuperAdmin &&
                 plan.key === currentTier && (
                   plan.key === 'free' || billing === currentBillingCycle
                 )
               }
               isSwitchCycle={
+                !isSuperAdmin &&
                 plan.key === currentTier &&
                 plan.key !== 'free' &&
                 billing !== currentBillingCycle
@@ -876,6 +902,7 @@ export default function SubscriptionScreen() {
               onActivate={handleActivate}
               C={C}
               primaryColor={C.primary}
+              isAdminView={isSuperAdmin}
             />
           ))}
 
@@ -966,4 +993,11 @@ const makeStyles = (C) => StyleSheet.create({
 
   yearlyNote: { fontSize: 12, textAlign: 'center', marginBottom: 4 },
   note:       { textAlign: 'center', fontSize: 12, marginTop: 4, paddingHorizontal: 16 },
+
+  adminBanner: {
+    marginHorizontal: 16, marginTop: 12, marginBottom: 4,
+    borderRadius: 14, borderWidth: 1.5,
+    paddingHorizontal: 14, paddingVertical: 11,
+  },
+  adminBannerText: { fontSize: 13, lineHeight: 19, textAlign: 'center' },
 });

@@ -1,7 +1,28 @@
-# CashBook — Subscription Lifecycle & Process
+# Ultimate CashBook — Subscription Lifecycle & Process
 
 This document defines exactly how subscriptions work from first activation through cancellation and expiry.
 It is the single source of truth for lifecycle decisions. Read before touching any subscription-related code.
+
+---
+
+## Payment Gateways
+
+Ultimate CashBook uses **platform-native billing only**. There is no Stripe, no RevenueCat, and no other third-party payment processor.
+
+| Platform | Gateway | API |
+|---|---|---|
+| Android | Google Play Billing | `react-native-iap` or Expo In-App Purchases |
+| iOS | Apple App Store (StoreKit 2) | `react-native-iap` or Expo In-App Purchases |
+
+**How verification works:**
+
+- The payment sheet is opened by the platform SDK (Google Play / App Store) — the app never touches card data.
+- After purchase, the platform returns a **purchase receipt / purchase token**.
+- The app sends that token to the backend (`POST /api/v1/subscriptions/verify`).
+- The backend verifies the token directly with Google Play Developer API or Apple App Store Server API (server-to-server, no third-party middleman).
+- If valid, the backend writes the subscription record and returns the updated profile.
+
+No webhook infrastructure is needed for the initial purchase. Server-to-server notifications (Google RTDN / Apple App Store Server Notifications) are used for renewals, cancellations, and expirations.
 
 ---
 
@@ -22,12 +43,12 @@ It is the single source of truth for lifecycle decisions. Read before touching a
 ```
 [Free]
    │
-   │  User picks Pro or Business + billing cycle → pays
+   │  User picks Pro or Business + billing cycle → pays via Google Play / App Store
    ▼
 [Active]  ◄─────────────────────────────────────────────────────────────────┐
    │                                                                         │
-   │  Stripe auto-charges on renewal date                                   │
-   │  Webhook received → expires_at extended                                │
+   │  Platform auto-charges on renewal date                                 │
+   │  Server notification received → expires_at extended                   │
    │  Continues silently — no user action needed                            │
    │                                                                         │
    │  User can also upgrade (Pro → Business) while active ──────────────────┘
@@ -75,13 +96,15 @@ A user on the Free tier decides to upgrade.
 | 1 | User | Opens Subscription screen, selects Pro or Business |
 | 2 | User | Selects billing cycle: Monthly or Yearly |
 | 3 | User | Taps **Activate** |
-| 4 | App | Opens RevenueCat / Stripe payment sheet |
-| 5 | User | Completes payment |
-| 6 | Payment Gateway | Sends `INITIAL_PURCHASE` webhook to backend |
-| 7 | Backend | Updates DB: tier, status = `active`, started_at, expires_at, billing_cycle |
-| 8 | Frontend | Refreshes profile → new tier reflected in UI immediately |
+| 4 | App | Opens platform payment sheet (Google Play Billing on Android / StoreKit on iOS) |
+| 5 | User | Completes payment inside the platform sheet |
+| 6 | Platform SDK | Returns purchase token / receipt to app |
+| 7 | App | Sends token to `POST /api/v1/subscriptions/verify` |
+| 8 | Backend | Verifies token with Google Play Developer API or Apple App Store Server API (server-to-server) |
+| 9 | Backend | Updates DB: tier, status = `active`, started_at, expires_at, billing_cycle, platform, purchase_token |
+| 10 | Frontend | Refreshes profile → new tier reflected in UI immediately |
 
-### What Backend Sets on Successful Payment
+### What Backend Sets on Successful Verification
 
 | Field | Value Set |
 |---|---|
@@ -91,21 +114,43 @@ A user on the Free tier decides to upgrade.
 | `started_at` | current UTC timestamp |
 | `expires_at` | now + 1 month (monthly) or now + 1 year (yearly) |
 | `cancel_at_period_end` | `false` |
+| `platform` | `google_play` or `app_store` |
+| `purchase_token` | token from the platform (stored for server notification matching) |
+
+### Verify Endpoint
+
+```
+POST /api/v1/subscriptions/verify
+Body: { platform: "google_play" | "app_store", purchase_token: string, product_id: string }
+Auth: Bearer <JWT>
+```
+
+Backend calls:
+- **Google:** `GET https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{packageName}/purchases/subscriptions/{subscriptionId}/tokens/{token}`
+- **Apple:** `POST https://api.storekit.itunes.apple.com/inApps/v2/transactions/verify` (StoreKit 2 JWS payload)
 
 ---
 
 ## Phase 2 — Active Period (Auto-Renewal)
 
-Once active, the subscription renews silently every billing cycle.
+Once active, the subscription renews silently every billing cycle. The platform handles charging — the backend only needs to react to server notifications.
 
 ### Renewal Flow
 
 | Step | Actor | What Happens |
 |---|---|---|
-| 1 | Stripe / RevenueCat | Charges user on renewal date |
-| 2 | Payment Gateway | Sends `RENEWAL` or `invoice.paid` webhook to backend |
-| 3 | Backend | Extends `expires_at` by 1 month or 1 year |
-| 4 | User | Nothing to do — access continues uninterrupted |
+| 1 | Google Play / App Store | Charges user on renewal date |
+| 2 | Platform | Sends server notification to backend (`/api/v1/subscriptions/notifications`) |
+| 3 | Backend | Verifies notification authenticity (Google RTDN signed JWT / Apple JWS) |
+| 4 | Backend | Extends `expires_at` by 1 month or 1 year, confirms `status = active` |
+| 5 | User | Nothing to do — access continues uninterrupted |
+
+### Server Notification Endpoints
+
+| Platform | Notification Type | Backend Endpoint |
+|---|---|---|
+| Google Play | Real-Time Developer Notifications (RTDN) via Pub/Sub | `POST /api/v1/subscriptions/notifications/google` |
+| Apple App Store | App Store Server Notifications (version 2) | `POST /api/v1/subscriptions/notifications/apple` |
 
 ### Billing Cycle Reference
 
@@ -125,9 +170,9 @@ A user on Pro wants to move to Business. This is the only plan-switch available 
 | Step | Actor | What Happens |
 |---|---|---|
 | 1 | User | Opens Subscription screen, taps **Activate Business** |
-| 2 | App | Opens payment sheet for the Business plan |
-| 3 | Payment Gateway | Calculates proration automatically: credits unused Pro days, charges only the Business difference |
-| 4 | Payment Gateway | Sends `customer.subscription.updated` webhook |
+| 2 | App | Opens platform upgrade flow (Google Play handles proration; App Store upgrades immediately) |
+| 3 | Platform | Calculates proration automatically and charges the difference |
+| 4 | Platform | Sends subscription-updated server notification to backend |
 | 5 | Backend | Updates `subscription_tier` to `business`, keeps existing `expires_at` |
 | 6 | Frontend | Refreshes profile → Business features unlock immediately |
 
@@ -135,8 +180,9 @@ A user on Pro wants to move to Business. This is the only plan-switch available 
 
 | Switch | Charge | Takes Effect |
 |---|---|---|
-| Pro Monthly → Business Monthly | Prorated difference only | Immediately |
-| Pro Yearly → Business Yearly | Prorated difference only | Immediately |
+| Pro Monthly → Business Monthly | Prorated difference (Google Play handles this automatically) | Immediately |
+| Pro Yearly → Business Yearly | Prorated difference (Google Play handles this automatically) | Immediately |
+| Pro → Business on iOS | Full Business price; Apple credits unused Pro time per App Store rules | Immediately |
 
 ---
 
@@ -146,8 +192,10 @@ A user wants to switch from Monthly to Yearly (or reverse) without changing thei
 
 | Switch | Charge | Takes Effect |
 |---|---|---|
-| Monthly → Yearly (same plan) | Yearly price minus credit for unused days of current month | Immediately — expires_at jumps to 1 year from now |
-| Yearly → Monthly (same plan) | No charge | At end of current yearly period — then billed monthly |
+| Monthly → Yearly (same plan) | Yearly price; platform credits unused days | Immediately — expires_at jumps to 1 year from now |
+| Yearly → Monthly (same plan) | No immediate charge | At end of current yearly period — then billed monthly |
+
+> **Note:** Cycle switching is handled by the platform billing flow. The backend learns about the change via a subscription-updated server notification and updates `billing_cycle` and `expires_at` accordingly.
 
 ---
 
@@ -170,20 +218,32 @@ There is no "Downgrade to Free" button — only "Cancel Subscription."
 | 1 | User | Taps **Cancel Subscription** on the Subscription screen |
 | 2 | App | Shows confirmation sheet (see copy below) |
 | 3 | User | Confirms cancellation |
-| 4 | Backend | Calls payment gateway to cancel at period end |
-| 5 | Backend | Sets `cancel_at_period_end = true` in DB. No other fields change. |
-| 6 | Frontend | Refreshes profile → "Cancels on [date]" badge appears on plan card |
-| 7 | User | Continues using full paid-tier access until `expires_at` |
-| 8 | expires_at reached | System automatically moves user to Free (see Phase 6) |
+| 4 | App | Deep-links user to Google Play Subscriptions page or Apple Subscriptions settings to cancel (platform-managed) |
+| 5 | Platform | User completes cancellation on the platform side |
+| 6 | Platform | Sends cancellation server notification to backend |
+| 7 | Backend | Sets `cancel_at_period_end = true` in DB. No other fields change. |
+| 8 | Frontend | Refreshes profile → "Cancels on [date]" badge appears on plan card |
+| 9 | User | Continues using full paid-tier access until `expires_at` |
+| 10 | expires_at reached | System automatically moves user to Free (see Phase 6) |
+
+> **Why deep-link instead of in-app cancel:** Google Play and the App Store require subscriptions to be cancelled through their own subscription management UI. Apps cannot cancel on behalf of a user via API.
 
 ### Cancellation Confirmation Sheet Copy
 
 > **Cancel Subscription?**
 >
-> Your subscription will not renew. You'll keep full **[Pro / Business]** access until **[expires_at formatted as "Month D, YYYY"]**.
+> You'll be taken to **[Google Play / App Store]** to cancel your subscription.
+> You'll keep full **[Pro / Business]** access until **[expires_at formatted as "Month D, YYYY"]**.
 > After that, your account moves to **Free** automatically.
 >
-> [**Confirm Cancel**]   [Maybe Later]
+> [**Go to [Google Play / App Store]**]   [Maybe Later]
+
+### Deep-Link References
+
+| Platform | Link |
+|---|---|
+| Google Play | `https://play.google.com/store/account/subscriptions` |
+| Apple App Store | `itms-apps://apps.apple.com/account/subscriptions` |
 
 ### UI States After Cancellation
 
@@ -198,7 +258,7 @@ There is no "Downgrade to Free" button — only "Cancel Subscription."
 
 ## Phase 6 — Expiry (Automatic Move to Free)
 
-Triggered by the `customer.subscription.deleted` or `EXPIRATION` webhook when `expires_at` is reached.
+Triggered by the `SUBSCRIPTION_EXPIRED` (Google) or `EXPIRED` (Apple) server notification when the billing period ends without renewal.
 No user action is needed or possible — this is fully automatic.
 
 ### What Backend Does on Expiry
@@ -229,22 +289,23 @@ No user action is needed or possible — this is fully automatic.
 
 ## Phase 7 — Reactivation
 
-A user who cancelled but has not yet expired can undo the cancellation.
-
 ### Before Expiry (Still in Cancelled State)
+
+The user goes back to the platform subscription management page to reactivate.
 
 | Step | Actor | What Happens |
 |---|---|---|
 | 1 | User | Taps **Reactivate** on the Subscription screen |
-| 2 | Backend | Calls payment gateway to remove the `cancel_at_period_end` flag |
-| 3 | Backend | Sets `cancel_at_period_end = false` in DB |
-| 4 | Frontend | "Cancels on [date]" badge disappears — plan card returns to normal active state |
-| 5 | Next renewal date | Auto-renewal fires as normal — subscription continues |
+| 2 | App | Deep-links to Google Play Subscriptions or Apple Subscriptions settings |
+| 3 | User | Reactivates on the platform |
+| 4 | Platform | Sends subscription-updated notification (cancellation flag removed) |
+| 5 | Backend | Sets `cancel_at_period_end = false` in DB |
+| 6 | Frontend | Polls profile → "Cancels on [date]" badge disappears — plan card returns to normal active state |
 
 ### After Expiry (Already on Free)
 
 The user treats this as a brand-new subscription and goes through Phase 1 again.
-Previous data is intact and cloud-synced data becomes accessible again immediately after re-subscribing.
+Previous data is intact and becomes accessible again immediately after re-subscribing.
 
 ---
 
@@ -254,12 +315,48 @@ If the renewal charge fails (expired card, insufficient funds):
 
 | Timeline | What Happens |
 |---|---|
-| Day 0 (renewal date) | Charge fails — Stripe retries automatically |
-| Days 1–7 | User keeps full paid-tier access — Stripe retries up to 3 times |
-| During retry window | App shows a "Payment failed — please update your card" banner |
-| User action | User can update card via Stripe billing portal link |
-| Final retry succeeds | Webhook fires → `expires_at` extended → status back to `active` |
-| All retries fail (Day 7) | `customer.subscription.deleted` webhook fires → same as Phase 6 expiry |
+| Day 0 (renewal date) | Charge fails — platform retries automatically |
+| Days 1–7 | User keeps full paid-tier access — platform retries |
+| During retry window | App shows a "Payment failed — please update your payment method" banner |
+| User action | User updates payment method in Google Play / App Store account settings |
+| Final retry succeeds | Server notification fires → `expires_at` extended → status back to `active` |
+| All retries fail | `SUBSCRIPTION_EXPIRED` / `EXPIRED` notification fires → same as Phase 6 expiry |
+
+---
+
+## Server Notification Events to Handle
+
+### Google Play (RTDN via Pub/Sub)
+
+| `notificationType` | What Backend Does |
+|---|---|
+| `SUBSCRIPTION_PURCHASED` (1) | Set tier, status = active, started_at, expires_at, billing_cycle |
+| `SUBSCRIPTION_RENEWED` (2) | Extend expires_at, confirm status = active |
+| `SUBSCRIPTION_CANCELED` (3) | Set cancel_at_period_end = true |
+| `SUBSCRIPTION_PURCHASED` after cancel | Set cancel_at_period_end = false (reactivation) |
+| `SUBSCRIPTION_ON_HOLD` (5) | Set status = past_due |
+| `SUBSCRIPTION_IN_GRACE_PERIOD` (6) | Keep status = active, show banner |
+| `SUBSCRIPTION_RESTARTED` (7) | Set cancel_at_period_end = false |
+| `SUBSCRIPTION_PRICE_CHANGE_CONFIRMED` (8) | No DB change needed |
+| `SUBSCRIPTION_DEFERRED` (9) | Update expires_at |
+| `SUBSCRIPTION_EXPIRED` (13) | Set tier = free, status = expired, cancel_at_period_end = false |
+| `SUBSCRIPTION_REVOKED` (12) | Same as expired |
+| `SUBSCRIPTION_PAUSED` (10) | Set status = past_due |
+
+### Apple App Store (App Store Server Notifications v2)
+
+| `notificationType` | What Backend Does |
+|---|---|
+| `SUBSCRIBED` | Set tier, status = active, started_at, expires_at, billing_cycle |
+| `DID_RENEW` | Extend expires_at, confirm status = active |
+| `DID_FAIL_TO_RENEW` | Set status = past_due, show banner |
+| `EXPIRED` | Set tier = free, status = expired, cancel_at_period_end = false |
+| `GRACE_PERIOD_EXPIRED` | Same as EXPIRED |
+| `DID_CHANGE_RENEWAL_STATUS` (subtype `AUTO_RENEW_DISABLED`) | Set cancel_at_period_end = true |
+| `DID_CHANGE_RENEWAL_STATUS` (subtype `AUTO_RENEW_ENABLED`) | Set cancel_at_period_end = false |
+| `DID_CHANGE_RENEWAL_PREF` | Update billing_cycle or tier on next renewal |
+| `REFUND` | Set tier = free, status = expired |
+| `CONSUMPTION_REQUEST` | Log and respond — no DB change |
 
 ---
 
@@ -290,24 +387,10 @@ This table defines exactly which button to show on each plan card based on curre
 
 ---
 
-## Backend Webhooks to Handle
-
-| Webhook Event | What Backend Does |
-|---|---|
-| `INITIAL_PURCHASE` / `customer.subscription.created` | Set tier, status = active, started_at, expires_at, billing_cycle |
-| `RENEWAL` / `invoice.paid` | Extend expires_at, confirm status = active |
-| `customer.subscription.updated` | Update tier and/or billing_cycle (upgrade or cycle switch) |
-| `CANCELLATION` (cancel_at_period_end set) | Set cancel_at_period_end = true in DB — no other changes |
-| `EXPIRATION` / `customer.subscription.deleted` | Set tier = free, status = expired, cancel_at_period_end = false |
-| `invoice.payment_failed` | Set status = past_due, trigger payment-failed banner |
-| `invoice.payment_succeeded` (after past_due) | Set status = active, extend expires_at |
-
----
-
 ## Database Fields Required
 
 These live in a dedicated `subscriptions` table (not on `profiles` — Phase 3 migration in `SUBSCRIPTION_PROCESS.md`).
-`profiles.subscription_tier` is a denormalized copy updated by the webhook handler for fast feature-gate reads.
+`profiles.subscription_tier` is a denormalized copy updated by the notification handler for fast feature-gate reads.
 
 | Column | Type | Description |
 |---|---|---|
@@ -319,8 +402,9 @@ These live in a dedicated `subscriptions` table (not on `profiles` — Phase 3 m
 | `started_at` | TIMESTAMPTZ | When the current paid period started |
 | `expires_at` | TIMESTAMPTZ | When the current paid period ends |
 | `cancel_at_period_end` | BOOLEAN | true if cancelled but period still running |
-| `revenuecat_user_id` | TEXT | RevenueCat customer ID |
-| `stripe_subscription_id` | TEXT | Stripe subscription object ID (if using Stripe) |
+| `platform` | TEXT | `google_play` or `app_store` |
+| `purchase_token` | TEXT | Platform purchase token (used for server notification matching and verification) |
+| `product_id` | TEXT | Platform product ID (e.g. `cashbook_pro_monthly`) |
 
 ---
 
@@ -344,5 +428,5 @@ The superadmin account is outside the subscription system entirely:
 
 - `canAccess()` returns `true` for every feature regardless of `subscription_tier`
 - No subscription screen shown in the admin dashboard
-- No RevenueCat or Stripe interaction is ever triggered for superadmin accounts
+- No Google Play or App Store interaction is ever triggered for superadmin accounts
 - Superadmin does not count toward book limits

@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-Supabase provides three things for CashBook:
+Supabase provides three things for Ultimate CashBook:
 1. **PostgreSQL database** — profiles, books, entries tables
 2. **Auth** — Google OAuth + Email OTP + JWT issuance
 3. **Storage** — entry photo attachments

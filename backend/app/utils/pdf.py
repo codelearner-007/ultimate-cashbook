@@ -48,7 +48,7 @@ def _page_deco(canv, doc):
 
     canv.setFont("Helvetica-Bold", 12)
     canv.setFillColor(WHITE)
-    canv.drawString(MARGIN, PAGE_H - 7.5 * mm, "CashBook")
+    canv.drawString(MARGIN, PAGE_H - 7.5 * mm, "Ultimate CashBook")
 
     canv.setFont("Helvetica", 8.5)
     canv.setFillColor(colors.HexColor("#D1EDED"))

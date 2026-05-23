@@ -403,7 +403,7 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
           </View>
         </View>
 
-        <Text style={[s.version, { color: C.textSubtle, fontFamily: Font.regular }]}>CashBook v1.0.0</Text>
+        <Text style={[s.version, { color: C.textSubtle, fontFamily: Font.regular }]}>Ultimate CashBook v1.0.0</Text>
 
       </ScrollView>
 

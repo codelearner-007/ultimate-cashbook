@@ -1,5 +1,5 @@
 /**
- * API Layer — CashBook
+ * API Layer — Ultimate CashBook
  * All functions call the real FastAPI backend.
  * The Axios interceptor attaches the Supabase JWT automatically.
  */

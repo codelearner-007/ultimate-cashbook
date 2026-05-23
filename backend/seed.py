@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-seed.py — CashBook test data seeder
+seed.py — Ultimate CashBook test data seeder
 
 Usage:
   python seed.py            # Insert seed data for ALL users

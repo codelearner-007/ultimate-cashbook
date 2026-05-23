@@ -19,7 +19,7 @@ export async function registerPushToken() {
 
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
-      name: 'CashBook',
+      name: 'Ultimate CashBook',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#3B5BDB',

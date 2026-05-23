@@ -1,4 +1,4 @@
-# CashBook — Subscription Plans
+# Ultimate CashBook — Subscription Plans
 
 ## Feature Matrix
 

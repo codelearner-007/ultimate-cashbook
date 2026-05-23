@@ -293,7 +293,7 @@ export default function ReportsScreen() {
         const uri = await getRenamedUri();
         await Sharing.shareAsync(uri, {
           mimeType,
-          dialogTitle: 'Save CashBook Report',
+          dialogTitle: 'Save Ultimate CashBook Report',
           UTI: exportType === 'pdf'
             ? 'com.adobe.pdf'
             : 'org.openxmlformats.spreadsheetml.sheet',
@@ -314,7 +314,7 @@ export default function ReportsScreen() {
         mimeType: exportType === 'pdf'
           ? 'application/pdf'
           : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        dialogTitle: 'Share CashBook Report',
+        dialogTitle: 'Share Ultimate CashBook Report',
         UTI: exportType === 'pdf'
           ? 'com.adobe.pdf'
           : 'org.openxmlformats.spreadsheetml.sheet',
@@ -394,7 +394,7 @@ export default function ReportsScreen() {
                 </View>
                 <View style={s.readyInfoText}>
                   <Text style={s.readyInfoTitle} numberOfLines={1}>
-                    {exportType === 'pdf' ? 'PDF' : 'Excel'} Report — {name || 'CashBook'}
+                    {exportType === 'pdf' ? 'PDF' : 'Excel'} Report — {name || 'Ultimate CashBook'}
                   </Text>
                   <Text style={s.readyInfoSub}>{rangeLabel}</Text>
                 </View>
@@ -625,7 +625,7 @@ export default function ReportsScreen() {
             <View style={s.pvDoc}>
 
               {/* Document title block */}
-              <Text style={[s.pvDocTitle, { color: C.text }]} numberOfLines={2}>{name || 'CashBook Report'}</Text>
+              <Text style={[s.pvDocTitle, { color: C.text }]} numberOfLines={2}>{name || 'Ultimate CashBook Report'}</Text>
               <Text style={[s.pvDocPeriod, { color: C.textMuted }]}>{rangeLabel}</Text>
               <Text style={[s.pvDocCount, { color: C.textSubtle }]}>{filtered.length} transaction{filtered.length !== 1 ? 's' : ''}</Text>
               <View style={[s.pvDocDivider, { backgroundColor: C.border }]} />

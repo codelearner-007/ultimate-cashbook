@@ -278,7 +278,7 @@ export default function LoginScreen() {
           <View style={styles.logoBox}>
             <Text style={styles.logoLetter}>C</Text>
           </View>
-          <Text style={styles.appName}>CashBook</Text>
+          <Text style={styles.appName}>Ultimate CashBook</Text>
           <Text style={styles.tagline}>Smart money tracking for your business</Text>
         </View>
 
@@ -331,7 +331,7 @@ export default function LoginScreen() {
         {/* Trust badge */}
         <View style={styles.trustBadge}>
           <ShieldCheckIcon size={13} color="#15803D" />
-          <Text style={styles.trustText}>CashBook is trusted by 3 million users</Text>
+          <Text style={styles.trustText}>Ultimate CashBook is trusted by 3 million users</Text>
         </View>
 
       </View>

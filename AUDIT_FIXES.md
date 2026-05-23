@@ -1,4 +1,4 @@
-# CashBook — CodeRabbit Audit Fix Tracker
+# Ultimate CashBook — CodeRabbit Audit Fix Tracker
 
 Generated: 2026-05-13  
 Auditor: CodeRabbit (coderabbit:code-reviewer agent)

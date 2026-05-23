@@ -1,5 +1,5 @@
 /**
- * CashBook — Developer Audit Script
+ * Ultimate CashBook — Developer Audit Script
  *
  * Run:  node audit.js
  * Fix:  node audit.js --fix   (auto-applies safe fixes)
@@ -416,7 +416,7 @@ function printSummary() {
 
 // ── Run ───────────────────────────────────────────────────────────────────────
 
-console.log(`\n${BOLD}${CYAN}CashBook — Developer Audit${RESET}  ${DIM}(node audit.js)${RESET}`);
+console.log(`\n${BOLD}${CYAN}Ultimate CashBook — Developer Audit${RESET}  ${DIM}(node audit.js)${RESET}`);
 console.log(`Scanning: ${DIM}${rel(ROOT)}${RESET}  +  ${DIM}${rel(APP_DIR)}${RESET}`);
 
 const srcFiles = collectFiles(ROOT);

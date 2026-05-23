@@ -1,6 +1,6 @@
-# CLAUDE.md — CashBook App Implementation Guide
+# CLAUDE.md — Ultimate CashBook App Implementation Guide
 
-This file is the single source of truth for AI-assisted development of the CashBook app.
+This file is the single source of truth for AI-assisted development of the Ultimate CashBook app.
 Read this fully before writing any code.
 
 ## Sub-Documentation (read before touching that area)
@@ -40,7 +40,7 @@ Update the relevant section(s) only — do not rewrite unrelated sections.
 
 ## Project Identity
 
-- **App Name:** CashBook
+- **App Name:** Ultimate CashBook
 - **Purpose:** Daily income & expense tracker with multiple books per user
 - **Platforms:** Android + iOS (via React Native + Expo)
 - **Backend:** FastAPI (Python)

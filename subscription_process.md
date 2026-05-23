@@ -1,4 +1,4 @@
-# CashBook — Subscription Plan & Remaining Development Roadmap
+# Ultimate CashBook — Subscription Plan & Remaining Development Roadmap
 
 > **This is the single source of truth** for what the subscription system looks like and what remains to be built before launch.
 > Plans are finalized. Sequence below is the order of implementation.

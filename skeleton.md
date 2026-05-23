@@ -1,6 +1,6 @@
-# CashBook — Full App Skeleton & Use-Case Reference
+# Ultimate CashBook — Full App Skeleton & Use-Case Reference
 
-This file is the authoritative click-by-click use-case map of the CashBook app.
+This file is the authoritative click-by-click use-case map of the Ultimate CashBook app.
 **Every time any screen, component, or navigation flow changes, update this file.**
 
 ---

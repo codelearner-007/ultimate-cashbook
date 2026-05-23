@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from app.routers import books, entries, reports, upload, profile, admin, contacts, categories, payment_modes, notifications, sharing, invitations, migration
 from app.config import settings
 
-app = FastAPI(title="CashBook API", version="1.0.0")
+app = FastAPI(title="Ultimate CashBook API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,

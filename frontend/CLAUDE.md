@@ -64,6 +64,7 @@ frontend/
 │           ├── currency.jsx      # → CurrencyScreen
 │           ├── manage-access.jsx # → ManageAccessScreen
 │           ├── subscription.jsx  # → SubscriptionScreen
+│           ├── privacy-policy.jsx # → PrivacyPolicyScreen
 │           └── business/
 │               ├── index.jsx     # → BusinessSettingsScreen
 │               ├── profile.jsx   # → BusinessProfileScreen
@@ -252,6 +253,13 @@ frontend/
 
 ### `ProfileScreen` → `/(app)/settings/profile`
 - `useProfile()` loads data; save → `useUpdateProfile(payload)` → `invalidate(['profile'])`
+
+---
+
+### `PrivacyPolicyScreen` → `/(app)/settings/privacy-policy`
+- Static scrollable screen — no API calls, no state
+- Intro card with `C.primaryLight` / `C.primaryMid` styling; 11 policy sections rendered in a single `C.card` container
+- Back navigates to settings; header matches all other settings sub-screens
 
 ---
 

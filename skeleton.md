@@ -27,6 +27,7 @@ App Start
 /(app)/settings/business                  BusinessSettingsScreen
 /(app)/settings/currency                  CurrencyScreen
 /(app)/settings/subscription              SubscriptionScreen
+/(app)/settings/privacy-policy            PrivacyPolicyScreen
 /(app)/dashboard/users                    AdminUsersScreen     [superadmin]
 /(app)/dashboard/books                    AdminBooksScreen     [superadmin]
 /(app)/dashboard/settings                 SettingsScreen       [superadmin]
@@ -741,7 +742,7 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 |-----------------------|--------------------|--------|----------------------------------------------------------------------|
 | **Manage Access**     | 👑 Pro (if free)  | Tap    | Navigate to manage-access (if Pro+) OR subscription screen (if free) |
 | **Notifications**     | —                  | Tap    | Navigate to notifications                                            |
-| Privacy & Security    | —                  | TODO   | —                                                                    |
+| **Privacy & Security** | —                 | Tap    | Navigate to `/(app)/settings/privacy-policy` (PrivacyPolicyScreen)  |
 | **Backup & Sync**     | 👑 Pro (if free)  | Tap    | Navigate to subscription (if free), TODO otherwise                   |
 | Language              | —                  | TODO   | —                                                                    |
 
@@ -963,7 +964,7 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 | Crown gates on locked features    | SettingsScreen, ReportsScreen, BooksView  | ✅ Complete               |
 | Invite collaborator               | BookDetailScreen user-plus icon           | Not implemented           |
 | Notifications settings            | SettingsScreen                            | Not implemented           |
-| Privacy & Security                | SettingsScreen                            | Not implemented           |
+| Privacy & Security (Privacy Policy) | PrivacyPolicyScreen                     | ✅ Complete               |
 | Backup & Sync                     | SettingsScreen                            | Not implemented           |
 | Language picker                   | SettingsScreen                            | Not implemented           |
 | Help & FAQ                        | SettingsScreen                            | Not implemented           |

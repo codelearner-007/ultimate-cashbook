@@ -274,7 +274,7 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
       items: [
         { Icon: ShareIcon,  label: 'Manage Access',      sub: 'Invitations & shared books', route: hasSharing ? '/(app)/settings/manage-access' : '/(app)/settings/subscription', accent: null, badge: hasSharing ? pendingInviteCount : 0, crown: hasSharing ? null : 'pro' },
         { Icon: BellIcon,   label: 'Notifications',      sub: 'Manage alerts',              route: '/(app)/settings/notifications', accent: null },
-        { Icon: ShieldIcon, label: 'Privacy & Security', sub: 'PIN, biometric',             route: null, accent: null },
+        { Icon: ShieldIcon, label: 'Privacy & Security', sub: 'Privacy policy',              route: '/(app)/settings/privacy-policy', accent: null },
         { Icon: CloudIcon,  label: 'Backup & Sync',      sub: hasCloud ? 'Cloud sync active' : 'Requires Pro or Business', route: hasCloud ? '/(app)/settings/backup-sync' : '/(app)/settings/subscription', accent: null, crown: hasCloud ? null : 'pro' },
         { Icon: GlobeIcon,  label: 'Language',           sub: 'English',                    route: null, accent: null },
       ],

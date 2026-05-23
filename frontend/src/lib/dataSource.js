@@ -26,6 +26,7 @@
 
 import { useAuthStore } from '../store/authStore';
 import { useSyncStore }  from '../store/syncStore';
+import { DEV_TIER, DEV_OVERRIDE_LOCAL } from './devConfig';
 import * as L from './localDb';
 import {
   apiGetBooks              as _apiGetBooks,
@@ -72,8 +73,9 @@ import {
  * False means: cloud is primary, but local gets a backup copy of every write.
  */
 function useLocalDb() {
+  if (DEV_OVERRIDE_LOCAL) return true;       // explicit local-only dev override
   const state    = useAuthStore.getState();
-  const tier     = state.subscription_tier ?? 'free';
+  const tier     = DEV_TIER ?? state.subscription_tier ?? 'free';
   const role     = state.user?.role;
   const isOnline = useSyncStore.getState().isOnline;
   if (!isOnline) return true;

@@ -481,10 +481,11 @@ export async function localGetCategoryEntries(bookId, categoryId) {
 
 export async function localGetCustomers(bookId) {
   const db = await getDb();
-  return db.getAllAsync(
+  const rows = await db.getAllAsync(
     `SELECT * FROM customers WHERE book_id = ? ORDER BY display_order ASC, created_at ASC`,
     [bookId],
   );
+  return rows.map(r => ({ ...r, balance: r.net_balance ?? 0 }));
 }
 
 export async function localCreateCustomer(bookId, payload) {
@@ -501,10 +502,11 @@ export async function localCreateCustomer(bookId, payload) {
 
 export async function localGetCustomer(bookId, customerId) {
   const db = await getDb();
-  return db.getFirstAsync(
+  const row = await db.getFirstAsync(
     `SELECT * FROM customers WHERE id = ? AND book_id = ?`,
     [customerId, bookId],
   );
+  return row ? { ...row, balance: row.net_balance ?? 0 } : null;
 }
 
 export async function localUpdateCustomer(bookId, customerId, payload) {
@@ -542,10 +544,11 @@ export async function localGetCustomerEntries(bookId, customerId) {
 
 export async function localGetSuppliers(bookId) {
   const db = await getDb();
-  return db.getAllAsync(
+  const rows = await db.getAllAsync(
     `SELECT * FROM suppliers WHERE book_id = ? ORDER BY display_order ASC, created_at ASC`,
     [bookId],
   );
+  return rows.map(r => ({ ...r, balance: r.net_balance ?? 0 }));
 }
 
 export async function localCreateSupplier(bookId, payload) {
@@ -562,10 +565,11 @@ export async function localCreateSupplier(bookId, payload) {
 
 export async function localGetSupplier(bookId, supplierId) {
   const db = await getDb();
-  return db.getFirstAsync(
+  const row = await db.getFirstAsync(
     `SELECT * FROM suppliers WHERE id = ? AND book_id = ?`,
     [supplierId, bookId],
   );
+  return row ? { ...row, balance: row.net_balance ?? 0 } : null;
 }
 
 export async function localUpdateSupplier(bookId, supplierId, payload) {

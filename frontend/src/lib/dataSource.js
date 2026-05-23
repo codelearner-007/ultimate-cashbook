@@ -26,6 +26,7 @@
 
 import { useAuthStore } from '../store/authStore';
 import { useSyncStore }  from '../store/syncStore';
+import { DEV_TIER }      from './devConfig';
 import * as L from './localDb';
 import {
   apiGetBooks              as _apiGetBooks,
@@ -73,7 +74,7 @@ import {
  */
 function useLocalDb() {
   const state    = useAuthStore.getState();
-  const tier     = state.subscription_tier ?? 'free';
+  const tier     = DEV_TIER ?? state.subscription_tier ?? 'free';
   const role     = state.user?.role;
   const isOnline = useSyncStore.getState().isOnline;
   if (!isOnline) return true;

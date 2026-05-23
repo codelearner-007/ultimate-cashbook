@@ -2,6 +2,8 @@
  * Feature-gate map — source of truth: SUBSCRIPTION_PLANS.md
  * Tiers (ordered): free < pro < business
  */
+import { DEV_TIER } from './devConfig';
+
 const TIER_RANK = { free: 0, pro: 1, business: 2 };
 
 const FEATURES = {
@@ -45,7 +47,7 @@ const LIMITS = {
  */
 export function canAccess(user, feature) {
   if (user?.role === 'superadmin') return true;
-  const userTier = user?.subscription_tier ?? 'free';
+  const userTier = DEV_TIER ?? user?.subscription_tier ?? 'free';
   const required = FEATURES[feature] ?? 'free';
   return (TIER_RANK[userTier] ?? 0) >= (TIER_RANK[required] ?? 0);
 }
@@ -57,7 +59,7 @@ export function canAccess(user, feature) {
  */
 export function getLimit(user, feature) {
   if (user?.role === 'superadmin') return Infinity;
-  const userTier = user?.subscription_tier ?? 'free';
+  const userTier = DEV_TIER ?? user?.subscription_tier ?? 'free';
   return LIMITS[feature]?.[userTier] ?? Infinity;
 }
 

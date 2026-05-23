@@ -1,6 +1,9 @@
 # Environment
 .env
 *.env
+.env.*
+**/.env
+**/.env.*
 
 # Node
 node_modules/

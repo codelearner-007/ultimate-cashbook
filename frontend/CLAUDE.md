@@ -163,6 +163,18 @@ frontend/
 
 ## Screen Logic Reference
 
+### `OnboardingScreen` — rendered inside `app/index.jsx` (first launch only)
+- Shown once after the splash screen on first install; skipped on all subsequent launches
+- Persistence: `expo-secure-store` key `onboarding_seen_v1` (native) / `localStorage` (web)
+- 5 horizontal swipeable slides, each with an in-app mock illustration, title, subtitle
+- Dot indicators: active dot = 24 px wide teal; inactive = 8 px grey
+- **Skip** button (top-right, slides 1–4): marks flag + navigates
+- **Next** button: advances to next slide; becomes **Get Started** on slide 5
+- `onFinish` prop called by both Skip and Get Started → `app/index.jsx` writes flag then navigates
+- `AuthGuard` in `_layout.jsx` is inert while on the root index (`segments[0] === undefined`)
+
+---
+
 ### `LoginScreen` → `/(auth)/login`
 - Email/password or Google → `supabase.auth.signIn*` → on session event → `apiGetProfile()` → `setUser(profile, session)`
 - AuthGuard redirects based on role after login

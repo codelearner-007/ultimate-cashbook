@@ -9,8 +9,14 @@ This file is the authoritative click-by-click use-case map of the Ultimate CashB
 
 ```
 App Start
-  └─ app/index.jsx → redirect to /(auth)/login
+  └─ app/index.jsx
+        ├─ SplashScreen (always, ~2.6 s)
+        │     └─ onFinish
+        │           ├─ [first launch]  → OnboardingScreen (5 slides)
+        │           │                       └─ "Get Started" / "Skip" → /(auth)/login
+        │           └─ [returning user] → /(auth)/login  (or /(app)/books|dashboard if already logged in)
 
+OnboardingScreen      (shown once, rendered inside app/index.jsx — first install only)
 /(auth)/login         LoginScreen
 /(app)/books          BooksScreen          [role: user]
 /(app)/dashboard      AdminUsersScreen     [role: superadmin]  ← lands here
@@ -38,6 +44,43 @@ App Start
 - `role === 'superadmin'` → push `/(app)/dashboard/users`
 - `role === 'user'` → push `/(app)/books`
 - On `SIGNED_OUT` event → push `/(auth)/login`
+
+---
+
+## 0. OnboardingScreen — rendered inside `app/index.jsx` (first launch only)
+
+**Purpose:** Showcase app features to new users before they reach the login screen. Shown exactly once; after completion the flag `onboarding_seen_v1` is written to `expo-secure-store` (native) / `localStorage` (web).
+
+### Flow
+
+1. App opens → `SplashScreen` animates (~2.6 s)
+2. `app/index.jsx` reads `onboarding_seen_v1` from SecureStore
+3. **First install:** flag is absent → `OnboardingScreen` renders
+4. **Returning user:** flag = `"true"` → skip onboarding → navigate directly
+
+### Slides (5 total — swipeable horizontal FlatList)
+
+| # | Title | Mock illustration |
+|---|---|---|
+| 1 | Manage Multiple Books | BooksScreen card list (3 books, balances, accent colors) |
+| 2 | Track Every Transaction | BookDetailScreen summary chips + 4 entry rows |
+| 3 | Powerful Reports | ReportsScreen bar chart + PDF/Excel export buttons |
+| 4 | Quick Entry Form | AddEntryScreen form with Cash In / Cash Out toggle |
+| 5 | Organize & Analyze | Categories list with progress bars + contacts note |
+
+### UI Elements
+
+| Element | State | Action | Result |
+|---|---|---|---|
+| Slide area | all slides | Swipe left/right | Scrolls to adjacent slide; active dot updates |
+| Dot indicators | all slides | Visual only | Filled teal dot = current; grey = others; active dot widens to 24 px |
+| **Skip** button (top-right) | slides 1–4 | Tap | Marks onboarding seen → navigates to login (or app if already logged in) |
+| **Next** button (bottom) | slides 1–4 | Tap | Scrolls to next slide |
+| **Get Started** button (bottom) | slide 5 only | Tap | Marks onboarding seen → navigates to login (or app if already logged in) |
+
+### States
+- Loading state: `null` (reading SecureStore) → renders `null` (no flash — splash is still visible during this window)
+- Onboarding flag already set → component never mounts; navigation happens via `useEffect`
 
 ---
 

@@ -157,11 +157,14 @@ function AuthGuard() {
   useEffect(() => {
     if (!navReady) return;
 
-    const inApp = segments[0] === '(app)';
+    const inApp  = segments[0] === '(app)';
+    const inAuth = segments[0] === '(auth)';
+    // segments[0] === undefined means we're on the root index (animated splash) — don't interrupt it
+    const onIndex = segments[0] === undefined;
 
     if (!user && inApp) {
       router.replace('/(auth)/login');
-    } else if (user && !inApp) {
+    } else if (user && !inApp && !onIndex) {
       if (user.role === 'superadmin') {
         router.replace('/(app)/dashboard/users');
       } else {

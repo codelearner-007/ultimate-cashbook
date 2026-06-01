@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   StatusBar, Dimensions, Modal, ActivityIndicator, Alert, TextInput,
-  Keyboard, Animated, Platform,
+  Keyboard, Animated, Platform, Image,
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -275,8 +275,12 @@ export default function LoginScreen() {
 
         {/* Logo block */}
         <View style={styles.logoBlock}>
-          <View style={styles.logoBox}>
-            <Text style={styles.logoLetter}>C</Text>
+          <View style={styles.logoCircle}>
+            <Image
+              source={require('../../assets/logo1.jpg')}
+              style={styles.logoImage}
+              resizeMode="cover"
+            />
           </View>
           <Text style={styles.appName}>Ultimate CashBook</Text>
           <Text style={styles.tagline}>Smart money tracking for your business</Text>
@@ -331,7 +335,7 @@ export default function LoginScreen() {
         {/* Trust badge */}
         <View style={styles.trustBadge}>
           <ShieldCheckIcon size={13} color="#15803D" />
-          <Text style={styles.trustText}>Ultimate CashBook is trusted by 3 million users</Text>
+          <Text style={styles.trustText}>Ultimate CashBook — your finances, safe and secure</Text>
         </View>
 
       </View>
@@ -347,13 +351,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
 
   logoBlock: { alignItems: 'center', marginBottom: 28 },
-  logoBox: {
-    width: 64, height: 64, borderRadius: 18, backgroundColor: C.primary,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 12,
-    shadowColor: C.primary, shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35, shadowRadius: 14, elevation: 8,
+  logoCircle: {
+    width: 110, height: 110, borderRadius: 55, marginBottom: 12,
+    overflow: 'hidden',
+    borderWidth: 3, borderColor: C.primary,
+    shadowColor: C.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25, shadowRadius: 12, elevation: 8,
   },
-  logoLetter: { color: '#fff', fontSize: 30, fontWeight: '900', letterSpacing: -1 },
+  logoImage: { width: '100%', height: '100%' },
   appName:    { fontSize: 24, fontWeight: '900', color: C.primary, letterSpacing: 0.5, marginBottom: 4 },
   tagline:    { fontSize: 13, color: C.textMuted, letterSpacing: 0.1 },
 

@@ -157,6 +157,12 @@ async def verify_otp(body: VerifyOtpRequest):
     Validate the OTP, upsert the user in Supabase Auth, and return a JWT session.
     Always returns the same error message for wrong/expired codes (no brute-force hint).
     """
+    if not settings.GMAIL_SMTP_USER:
+        raise HTTPException(
+            status_code=503,
+            detail="SMTP not configured — use Supabase native OTP in dev mode",
+        )
+
     email = _normalize(body.email)
     code  = body.code.strip()
 

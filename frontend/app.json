@@ -67,7 +67,13 @@
           "defaultChannel": "default"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.729677181390-oi5va7a0s6tc2a6c8kv5tsu19cqk5sch"
+        }
+      ]
     ],
     "extra": {
       "router": {},

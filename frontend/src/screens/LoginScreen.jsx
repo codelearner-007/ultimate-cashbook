@@ -6,16 +6,17 @@ import {
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import Svg, { Path, Circle } from 'react-native-svg';
-import * as WebBrowser from 'expo-web-browser';
-import { makeRedirectUri } from 'expo-auth-session';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { LightColors } from '../constants/colors';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
-import { apiGetProfile } from '../lib/api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
-WebBrowser.maybeCompleteAuthSession();
+GoogleSignin.configure({
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  scopes: ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
+});
 
 const C = LightColors;
 const { width, height } = Dimensions.get('window');
@@ -163,7 +164,7 @@ function EmailModal({ visible, onClose }) {
         throw new Error(data.detail || 'Invalid or expired code.');
       }
 
-      const { access_token, refresh_token, user: authUser } = await res.json();
+      const { access_token, refresh_token } = await res.json();
 
       // Hydrate the Supabase client with the new session so all subsequent
       // API calls (via api.js interceptor) carry the correct JWT.
@@ -288,27 +289,24 @@ export default function LoginScreen() {
   const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
-      const redirectTo = makeRedirectUri({ scheme: 'cashbook', path: 'auth/callback' });
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+      const idToken = userInfo.data?.idToken ?? userInfo.idToken;
+      if (!idToken) throw new Error('No ID token returned from Google');
 
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      // Pass the Google ID token to Supabase — this fires onAuthStateChange(SIGNED_IN)
+      // in _layout.jsx which fetches the profile and calls setUser automatically.
+      const { error } = await supabase.auth.signInWithIdToken({
         provider: 'google',
-        options: { redirectTo, skipBrowserRedirect: true },
+        token: idToken,
       });
-
       if (error) throw error;
-
-      if (data?.url) {
-        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-        if (result.type === 'success' && result.url) {
-          // Exchange the code from the redirect URL for a session
-          const url = new URL(result.url);
-          const code = url.searchParams.get('code');
-          if (code) {
-            await supabase.auth.exchangeCodeForSession(result.url);
-          }
-        }
-      }
+      // AuthGuard in _layout.jsx redirects based on role after setUser runs.
     } catch (err) {
+      if (
+        err.code === statusCodes.SIGN_IN_CANCELLED ||
+        err.code === statusCodes.IN_PROGRESS
+      ) return;
       Alert.alert('Sign-in failed', err?.message || 'Could not connect. Check your network.');
     } finally {
       setLoading(false);

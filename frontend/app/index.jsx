@@ -8,7 +8,6 @@ import OnboardingScreen from '../src/screens/OnboardingScreen';
 
 const ONBOARDING_KEY = 'onboarding_seen_v1';
 
-// Web fallback — SecureStore is not available in browsers
 const storage = {
   getItem: (key) =>
     Platform.OS === 'web'
@@ -24,19 +23,18 @@ export default function Index() {
   const router = useRouter();
   const user   = useAuthStore((s) => s.user);
 
-  // null = still checking, true = show onboarding, false = skip to next screen
+  // null = still reading storage
   const [showOnboarding, setShowOnboarding] = useState(null);
-  const [splashDone, setSplashDone] = useState(false);
+  const [splashDone,     setSplashDone]     = useState(false);
 
+  // Read storage immediately — runs in parallel with the splash animation
   useEffect(() => {
-    storage.getItem(ONBOARDING_KEY).then((val) => {
-      setShowOnboarding(val !== 'true');
-    }).catch(() => {
-      setShowOnboarding(false);
-    });
+    storage.getItem(ONBOARDING_KEY)
+      .then((val) => setShowOnboarding(val !== 'true'))
+      .catch(()  => setShowOnboarding(false));
   }, []);
 
-  function navigateAfterOnboarding() {
+  function navigateAway() {
     if (!user) {
       router.replace('/(auth)/login');
     } else if (user.role === 'superadmin') {
@@ -48,37 +46,39 @@ export default function Index() {
 
   async function handleOnboardingFinish() {
     await storage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
-    navigateAfterOnboarding();
+    navigateAway();
   }
 
+  // When splash animation ends, decide what to show next
   function handleSplashFinish() {
     setSplashDone(true);
-    // showOnboarding state drives the render; if it's already resolved to false,
-    // the useEffect below will catch the splashDone change and navigate.
   }
 
-  // Navigate away as soon as both splash is done AND storage is read (showOnboarding === false)
+  // Once splash is done AND we know if onboarding is needed → act
   useEffect(() => {
-    if (splashDone && showOnboarding === false) {
-      navigateAfterOnboarding();
+    if (!splashDone || showOnboarding === null) return;
+    if (showOnboarding === false) {
+      // Onboarding already seen — go straight to login/books
+      navigateAway();
     }
+    // showOnboarding === true → render OnboardingScreen below
   }, [splashDone, showOnboarding]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Show splash first — always
+  // Phase 1: always show animated splash first
   if (!splashDone) {
     return <SplashScreen onFinish={handleSplashFinish} />;
   }
 
-  // Still reading storage — splash is done but we don't know yet → skip straight through
-  // (very rare, storage read is fast; avoids any blank flash)
+  // Phase 2a: storage still reading (extremely rare — splash takes 2.8 s)
   if (showOnboarding === null) {
     return null;
   }
 
+  // Phase 2b: first install — show onboarding slides
   if (showOnboarding) {
     return <OnboardingScreen onFinish={handleOnboardingFinish} />;
   }
 
-  // Should not reach here — handleSplashFinish navigates away when showOnboarding is false
+  // Phase 2c: navigateAway() already called above
   return null;
 }

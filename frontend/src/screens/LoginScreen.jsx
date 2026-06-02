@@ -10,6 +10,10 @@ import * as WebBrowser from 'expo-web-browser';
 import { makeRedirectUri } from 'expo-auth-session';
 import { LightColors } from '../constants/colors';
 import { supabase } from '../lib/supabase';
+import { useAuthStore } from '../store/authStore';
+import { apiGetProfile } from '../lib/api';
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -43,14 +47,6 @@ function ShieldCheckIcon({ size = 13, color = '#15803D' }) {
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <Path d="M9 12l2 2 4-4" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
-
-function ChevronRight({ size = 13, color = C.primary }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M9 18l6-6-6-6" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
     </Svg>
   );
 }
@@ -104,12 +100,34 @@ function EmailModal({ visible, onClose }) {
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({ email: trimmed });
-    setLoading(false);
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
+    try {
+      // Production path: custom backend sends OTP via Gmail SMTP.
+      // Backend returns 503 when GMAIL_SMTP_USER is not set (local dev),
+      // in which case we fall back to Supabase native OTP → Inbucket.
+      const res = await fetch(`${API_BASE_URL}/api/v1/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: trimmed }),
+      });
+
+      if (res.status === 503) {
+        // Dev fallback — Supabase native OTP (goes to Inbucket on port 54324)
+        const { error } = await supabase.auth.signInWithOtp({ email: trimmed });
+        if (error) throw new Error(error.message);
+        setStep('otp');
+        return;
+      }
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || 'Failed to send OTP. Try again.');
+      }
+
       setStep('otp');
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Could not send OTP. Check your connection.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -120,17 +138,48 @@ function EmailModal({ visible, onClose }) {
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.verifyOtp({
-      email: email.trim().toLowerCase(),
-      token: code,
-      type:  'email',
-    });
-    setLoading(false);
-    if (error) {
-      Alert.alert('Verification Failed', error.message);
-    } else {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/auth/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), code }),
+      });
+
+      if (res.status === 503) {
+        // Dev fallback — verify via Supabase native OTP
+        const { error } = await supabase.auth.verifyOtp({
+          email: email.trim().toLowerCase(),
+          token: code,
+          type:  'email',
+        });
+        if (error) throw new Error(error.message);
+        reset();
+        onClose();
+        return;
+      }
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || 'Invalid or expired code.');
+      }
+
+      const { access_token, refresh_token, user: authUser } = await res.json();
+
+      // Hydrate the Supabase client with the new session so all subsequent
+      // API calls (via api.js interceptor) carry the correct JWT.
+      await supabase.auth.setSession({ access_token, refresh_token });
+
+      // Fetch full profile from backend (role, subscription_tier, etc.)
+      const profile = await apiGetProfile();
+      useAuthStore.getState().setUser(profile, { access_token, refresh_token });
+
       reset();
       onClose();
+      // AuthGuard in _layout.jsx will redirect based on profile.role
+    } catch (err) {
+      Alert.alert('Verification Failed', err.message || 'Invalid or expired code.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -326,12 +375,6 @@ export default function LoginScreen() {
           <Text style={styles.link}>Privacy Policy</Text>
         </Text>
 
-        {/* Other login */}
-        <TouchableOpacity style={styles.otherRow} onPress={() => setShowEmail(true)} activeOpacity={0.7}>
-          <Text style={styles.otherText}>Other ways to login</Text>
-          <ChevronRight size={13} color={C.primary} />
-        </TouchableOpacity>
-
         {/* Trust badge */}
         <View style={styles.trustBadge}>
           <ShieldCheckIcon size={13} color="#15803D" />
@@ -394,9 +437,6 @@ const styles = StyleSheet.create({
 
   terms: { fontSize: 12, color: C.textSubtle, textAlign: 'center', lineHeight: 18, marginBottom: 14, paddingHorizontal: 8 },
   link:  { color: C.primary, fontWeight: '600' },
-
-  otherRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 20 },
-  otherText: { fontSize: 13, fontWeight: '700', color: C.primary },
 
   trustBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

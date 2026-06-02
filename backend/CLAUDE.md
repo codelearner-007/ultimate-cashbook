@@ -14,6 +14,7 @@ backend/
 │   ├── auth/
 │   │   └── jwt.py            # Supabase JWT validation, get_current_user dependency
 │   ├── routers/
+│   │   ├── auth.py           # POST /api/v1/auth/send-otp + /verify-otp (production Gmail SMTP; 503 → dev fallback)
 │   │   ├── profile.py        # GET/PUT /api/v1/profile + GET /api/v1/profile/search
 │   │   ├── books.py          # GET/POST/PUT/DELETE /api/v1/books + GET /api/v1/books/shared
 │   │   ├── sharing.py        # GET/POST/PATCH/DELETE /api/v1/books/{id}/shares + DELETE /leave
@@ -66,6 +67,12 @@ SUPABASE_SERVICE_KEY=  # service_role key (NOT the anon key)
 SUPABASE_JWT_SECRET=   # JWT secret from Project Settings → API
 ALLOWED_ORIGINS=       # Optional: comma-separated CORS origins, e.g. "https://app.example.com"
                        # Defaults to "*" (allow all) when not set — fine for mobile-only apps
+
+# Gmail SMTP — required for production OTP emails (leave empty in local dev)
+GMAIL_SMTP_USER=       # farhan.butt2023@gmail.com
+GMAIL_SMTP_PASSWORD=   # 16-char App Password (NOT account password)
+GMAIL_FROM_NAME=       # Ultimate CashBook
+GMAIL_FROM_ADDRESS=    # info@ultimatecashbook.com
 ```
 
 **Never use the anon key on the backend.** The service key bypasses RLS — always add `user_id` filters manually in every query (defence in depth).
@@ -110,6 +117,25 @@ Used as `admin_id: str = Depends(require_superadmin)` on every admin endpoint.
 ## API Endpoint Reference
 
 All routes are prefixed `/api/v1`. All protected routes require `Authorization: Bearer <JWT>`.
+
+### Auth (`routers/auth.py`) — prefix `/api/v1/auth`
+
+No JWT auth required (these are the endpoints that issue the JWT).
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/send-otp` | Generate 6-digit code, store in `otp_codes` table, send via Gmail SMTP. Returns 503 when `GMAIL_SMTP_USER` is empty (dev fallback signal to frontend). Rate-limited: max 3 per email per 10 min. |
+| POST | `/verify-otp` | Validate code, upsert user in Supabase Auth via Admin API, exchange magic-link for session tokens. Returns `{ access_token, refresh_token, user: { id, email, full_name, role } }`. |
+
+**Dev/prod branching:** When `GMAIL_SMTP_USER` is not set, `send-otp` returns HTTP 503. The frontend catches this and falls back to `supabase.auth.signInWithOtp()` (Supabase native → Inbucket). The `verify-otp` endpoint also returns 503 in this case. This means in local dev the entire OTP flow goes through Supabase/Inbucket without any backend involvement.
+
+**`otp_codes` table** (must exist in DB — see `supabase/migrations/`):
+```sql
+id UUID PK, email TEXT, code TEXT, expires_at TIMESTAMPTZ, used BOOLEAN, created_at TIMESTAMPTZ
+```
+No RLS — only the backend service key touches this table.
+
+---
 
 ### Profile (`routers/profile.py`) — prefix `/api/v1/profile`
 

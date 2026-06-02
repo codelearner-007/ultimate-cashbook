@@ -10,6 +10,14 @@ class Settings(BaseSettings):
     # Leave unset to allow all origins (development default).
     ALLOWED_ORIGINS: str = "*"
 
+    # Gmail SMTP — used by the custom OTP email sender (production only).
+    # In development, leave these empty; the frontend calls supabase.auth.signInWithOtp()
+    # which routes through Inbucket (local email testing server on port 54324).
+    GMAIL_SMTP_USER:     str = ""
+    GMAIL_SMTP_PASSWORD: str = ""
+    GMAIL_FROM_NAME:     str = "Ultimate CashBook"
+    GMAIL_FROM_ADDRESS:  str = "info@ultimatecashbook.com"
+
     @property
     def cors_origins(self) -> List[str]:
         if self.ALLOWED_ORIGINS == "*":

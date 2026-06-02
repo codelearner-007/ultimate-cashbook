@@ -2,21 +2,21 @@
   "expo": {
     "name": "Ultimate CashBook",
     "slug": "cashbook",
-    "scheme": "cashbook",
+    "scheme": "ultimatecashbook",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#3B5BDB"
+      "resizeMode": "cover",
+      "backgroundColor": "#33AEB3"
     },
     "android": {
       "package": "com.ultimatecashbook.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#3B5BDB"
+        "backgroundColor": "#33AEB3"
       },
       "intentFilters": [
         {
@@ -24,7 +24,7 @@
           "autoVerify": true,
           "data": [
             {
-              "scheme": "cashbook"
+              "scheme": "ultimatecashbook"
             }
           ],
           "category": [
@@ -74,6 +74,7 @@
       "eas": {
         "projectId": "5d00843f-5802-429e-a328-cf395ab0dd74"
       }
-    }
+    },
+    "owner": "devautobot07"
   }
 }

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.routers import books, entries, reports, upload, profile, admin, contacts, categories, payment_modes, notifications, sharing, invitations, migration
+from app.routers import books, entries, reports, upload, profile, admin, contacts, categories, payment_modes, notifications, sharing, invitations, migration, auth
 from app.config import settings
 
 app = FastAPI(title="Ultimate CashBook API", version="1.0.0")
@@ -39,6 +39,7 @@ app.include_router(notifications.router,   prefix="/api/v1/notifications", tags=
 app.include_router(sharing.router,         prefix="/api/v1/books",         tags=["sharing"])
 app.include_router(invitations.router,     prefix="/api/v1/invitations",   tags=["invitations"])
 app.include_router(migration.router,       prefix="/api/v1/migrate/offline", tags=["migration"])
+app.include_router(auth.router,            prefix="/api/v1/auth",            tags=["auth"])
 
 
 @app.get("/health")

@@ -235,25 +235,25 @@ export default function PaymentModeSettingsScreen() {
     return (
       <View key={item.id} style={s.cardWrap}>
         <View style={[s.card, { backgroundColor: C.card, borderColor: C.border }]}>
-          {/* Up/Down arrows */}
+          {/* Up/Down arrows — left strip inside card */}
           {canEdit && !isFiltering && (
-            <View style={[s.arrowCol, { borderColor: C.border }]}>
+            <View style={[s.arrowCol, { borderRightColor: C.primaryMid }]}>
               <TouchableOpacity
                 onPress={() => moveItem(idx, -1)}
                 disabled={isFirst}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                style={[s.arrowBtn, { backgroundColor: isFirst ? 'transparent' : C.primaryLight }]}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                style={[s.arrowBtn, { opacity: isFirst ? 0.25 : 1 }]}
               >
-                <Feather name="chevron-up" size={15} color={isFirst ? 'transparent' : C.primary} />
+                <Feather name="chevron-up" size={15} color={C.primary} />
               </TouchableOpacity>
-              <View style={[s.arrowDivider, { backgroundColor: C.border }]} />
+              <View style={[s.arrowDivider, { backgroundColor: C.primaryMid }]} />
               <TouchableOpacity
                 onPress={() => moveItem(idx, 1)}
                 disabled={isLast}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                style={[s.arrowBtn, { backgroundColor: isLast ? 'transparent' : C.primaryLight }]}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                style={[s.arrowBtn, { opacity: isLast ? 0.25 : 1 }]}
               >
-                <Feather name="chevron-down" size={15} color={isLast ? 'transparent' : C.primary} />
+                <Feather name="chevron-down" size={15} color={C.primary} />
               </TouchableOpacity>
             </View>
           )}
@@ -466,9 +466,9 @@ const makeStyles = () => StyleSheet.create({
   listContent: { paddingTop: 12, paddingBottom: 120 },
 
   cardWrap:    { marginHorizontal: 16, marginBottom: 10 },
-  card:        { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingVertical: 6, paddingLeft: 6, paddingRight: 14, borderWidth: 1.5 },
-  arrowCol:    { flexDirection: 'column', alignItems: 'center', marginRight: 10, borderWidth: 1, borderRadius: 10, overflow: 'hidden' },
-  arrowBtn:    { width: 28, height: 26, alignItems: 'center', justifyContent: 'center' },
+  card:        { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingVertical: 6, paddingLeft: 0, paddingRight: 14, borderWidth: 1.5, overflow: 'hidden' },
+  arrowCol:    { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: 36, alignSelf: 'stretch', borderRightWidth: 1, marginRight: 8 },
+  arrowBtn:    { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center' },
   arrowDivider:{ width: '100%', height: 1 },
   avatar:       { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   cardBody:     { flex: 1 },

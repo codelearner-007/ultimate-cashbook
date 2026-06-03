@@ -1,28 +1,41 @@
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
-import { View, Text, StyleSheet, Animated, Platform, Dimensions, Image } from 'react-native';
+import { View, Text, StyleSheet, Animated, Dimensions, Image } from 'react-native';
+import Svg, { Ellipse } from 'react-native-svg';
 import { useAuthStore } from '../src/store/authStore';
 
 const { width, height } = Dimensions.get('window');
 
-const TEAL = '#39AAAA';
-const TEAL_DARK = '#2B8080';
+const BG = '#EEF7F7';
+const PRIMARY = '#39AAAA';
+const TEXT = '#0F172A';
+const TEXT_MUTED = '#64748B';
+const TEXT_SUBTLE = '#94A3B8';
+
+function BackgroundBlobs() {
+  return (
+    <Svg style={StyleSheet.absoluteFill} width={width} height={height} pointerEvents="none">
+      <Ellipse cx={width * 0.92} cy={height * 0.06} rx={140} ry={130} fill="rgba(57,170,170,0.14)" />
+      <Ellipse cx={0} cy={height * 0.36} rx={100} ry={95} fill="rgba(57,170,170,0.10)" />
+      <Ellipse cx={-30} cy={height + 30} rx={160} ry={150} fill="rgba(57,170,170,0.55)" />
+      <Ellipse cx={width + 20} cy={height - 20} rx={120} ry={115} fill="rgba(57,170,170,0.35)" />
+    </Svg>
+  );
+}
 
 export default function Index() {
   const router = useRouter();
-  const user   = useAuthStore((s) => s.user);
+  const user = useAuthStore((s) => s.user);
 
-  const fadeAnim  = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.85)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(24)).current;
 
   useEffect(() => {
-    // Animate the card in
     Animated.parallel([
-      Animated.timing(fadeAnim,  { toValue: 1, duration: 600, useNativeDriver: true }),
-      Animated.spring(scaleAnim, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 600, useNativeDriver: true }),
     ]).start();
 
-    // Navigate after 1.8 s
     const timer = setTimeout(() => {
       if (!user) {
         router.replace('/(auth)/login');
@@ -38,34 +51,31 @@ export default function Index() {
 
   return (
     <View style={s.root}>
-      <Animated.View style={[s.card, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-        {/* App icon */}
-        <View style={s.iconWrap}>
-          <Image
-            source={require('../assets/icon.png')}
-            style={s.icon}
-            resizeMode="contain"
-          />
+      <BackgroundBlobs />
+
+      <Animated.View style={[s.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+        {/* Logo */}
+        <View style={s.logoBorder}>
+          <View style={s.logoCircle}>
+            <Image
+              source={require('../assets/logo1.jpg')}
+              style={s.logoImage}
+              resizeMode="cover"
+            />
+          </View>
         </View>
 
-        {/* App name */}
+        {/* App name + tagline */}
         <Text style={s.appName}>Ultimate CashBook</Text>
+        <Text style={s.tagline}>Smart money tracking for your business</Text>
 
-        {/* Feature pills */}
-        <View style={s.pillsRow}>
-          {['Income', 'Expense', 'Reports'].map((label) => (
-            <View key={label} style={s.pill}>
-              <Text style={s.pillText}>{label}</Text>
-            </View>
-          ))}
+        {/* Dev credit */}
+        <View style={s.devRow}>
+          <Text style={s.devCredit}>
+            Developed by <Text style={s.devName}>DevAutoBot</Text>
+          </Text>
         </View>
       </Animated.View>
-
-      {/* Footer */}
-      <View style={s.footer}>
-        <Text style={s.footerText}>Developed by Devautobot</Text>
-        <Text style={s.footerSub}>devautobot.com</Text>
-      </View>
     </View>
   );
 }
@@ -73,72 +83,55 @@ export default function Index() {
 const s = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: TEAL,
+    backgroundColor: BG,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  card: {
-    width: width * 0.62,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 24,
-    paddingVertical: 32,
-    paddingHorizontal: 24,
+  content: {
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    paddingHorizontal: 32,
   },
-  iconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 18,
-    backgroundColor: TEAL_DARK,
+  logoBorder: {
+    width: 122,
+    height: 122,
+    borderRadius: 61,
+    borderWidth: 3,
+    borderColor: 'rgba(57,170,170,0.30)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 20,
+  },
+  logoCircle: {
+    width: 110,
+    height: 110,
+    borderRadius: 55,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.20,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  icon: {
-    width: 60,
-    height: 60,
-  },
+  logoImage: { width: '100%', height: '100%' },
   appName: {
-    fontSize: 18,
+    fontSize: 26,
     fontWeight: '800',
-    color: '#fff',
+    color: PRIMARY,
+    letterSpacing: 0.3,
+    marginBottom: 6,
     textAlign: 'center',
-    marginBottom: 16,
-    letterSpacing: 0.2,
   },
-  pillsRow: {
+  tagline: {
+    fontSize: 14,
+    color: TEXT_MUTED,
+    textAlign: 'center',
+    letterSpacing: 0.1,
+    marginBottom: 40,
+  },
+  devRow: {
     flexDirection: 'row',
-    gap: 8,
-  },
-  pill: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.30)',
-  },
-  pillText: {
-    fontSize: 11,
-    color: '#fff',
-    fontWeight: '600',
-  },
-  footer: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 40 : 28,
     alignItems: 'center',
   },
-  footerText: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
-    fontWeight: '500',
-  },
-  footerSub: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
-    marginTop: 2,
-  },
+  devCredit: { fontSize: 12, color: TEXT_SUBTLE, fontWeight: '400' },
+  devName: { fontSize: 12, color: PRIMARY, fontWeight: '700', letterSpacing: 0.2 },
 });

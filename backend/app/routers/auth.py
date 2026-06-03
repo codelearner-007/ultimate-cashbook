@@ -54,10 +54,13 @@ def _now_utc() -> datetime:
 def _send_otp_email(to_email: str, code: str) -> None:
     """Send the OTP email via Gmail SMTP (STARTTLS, port 587)."""
     msg = MIMEMultipart("alternative")
+    # Gmail SMTP requires From to match the authenticated SMTP user.
+    # Use GMAIL_FROM_ADDRESS only if it is the same account; otherwise fall back to SMTP user.
+    from_address = settings.GMAIL_FROM_ADDRESS if settings.GMAIL_FROM_ADDRESS else settings.GMAIL_SMTP_USER
     msg["Subject"] = f"{code} is your Ultimate CashBook sign-in code"
-    msg["From"]    = f"{settings.GMAIL_FROM_NAME} <{settings.GMAIL_FROM_ADDRESS}>"
+    msg["From"]    = f"{settings.GMAIL_FROM_NAME} <{from_address}>"
     msg["To"]      = to_email
-    msg["Reply-To"] = settings.GMAIL_FROM_ADDRESS
+    msg["Reply-To"] = from_address
 
     plain = (
         f"Your Ultimate CashBook sign-in code is: {code}\n\n"
@@ -79,7 +82,7 @@ def _send_otp_email(to_email: str, code: str) -> None:
   </p>
   <hr style="border:none;border-top:1px solid #E2E8F0;margin:24px 0;">
   <p style="color:#94A3B8;font-size:12px;">
-    Ultimate CashBook &middot; {settings.GMAIL_FROM_ADDRESS}
+    Ultimate CashBook &middot; {from_address}
   </p>
 </div>
 """
@@ -90,7 +93,7 @@ def _send_otp_email(to_email: str, code: str) -> None:
         smtp.ehlo()
         smtp.starttls()
         smtp.login(settings.GMAIL_SMTP_USER, settings.GMAIL_SMTP_PASSWORD)
-        smtp.sendmail(settings.GMAIL_FROM_ADDRESS, to_email, msg.as_string())
+        smtp.sendmail(settings.GMAIL_SMTP_USER, to_email, msg.as_string())
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -144,9 +147,15 @@ async def send_otp(body: SendOtpRequest):
     # Send email
     try:
         _send_otp_email(email, code)
+    except smtplib.SMTPAuthenticationError as exc:
+        logger.error("SMTP auth failed for %s: %s", email, exc)
+        raise HTTPException(status_code=500, detail="Email service authentication failed. Contact support.")
+    except smtplib.SMTPRecipientsRefused as exc:
+        logger.error("SMTP recipient refused for %s: %s", email, exc)
+        raise HTTPException(status_code=400, detail="Could not deliver to that email address.")
     except Exception as exc:
-        logger.error("SMTP send failed for %s: %s", email, exc)
-        raise HTTPException(status_code=500, detail="Failed to send OTP email. Try again.")
+        logger.error("SMTP send failed for %s: %s", email, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to send OTP email: {exc}")
 
     return {"message": "OTP sent"}
 

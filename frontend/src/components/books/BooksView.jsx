@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, memo, useRef, useEffect } from '
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   StatusBar, TextInput, Modal, Alert, ActivityIndicator, Pressable, Image, Dimensions, Animated,
+  Keyboard, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import SafeAreaView from '../ui/AppSafeAreaView';
@@ -455,6 +456,19 @@ export default function BooksView({
   // Add-book modal
   const [showModal,   setShowModal]   = useState(false);
   const [newBookName, setNewBookName] = useState('');
+  const kbOffset = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const showEv = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEv = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const up   = Keyboard.addListener(showEv, (e) =>
+      Animated.timing(kbOffset, { toValue: e.endCoordinates.height, duration: Platform.OS === 'ios' ? e.duration : 150, useNativeDriver: false }).start()
+    );
+    const down = Keyboard.addListener(hideEv, (e) =>
+      Animated.timing(kbOffset, { toValue: 0, duration: Platform.OS === 'ios' ? e.duration : 150, useNativeDriver: false }).start()
+    );
+    return () => { up.remove(); down.remove(); };
+  }, [kbOffset]);
 
   // Popup menu state: { book, anchor } or null
   const [menuState, setMenuState] = useState(null);
@@ -989,46 +1003,51 @@ export default function BooksView({
         Font={Font}
       />
 
-      {/* ── Add book modal (slide-up) ────────────────────────────────────── */}
-      <Modal visible={showModal} transparent animationType="slide" onRequestClose={closeModal}>
-        <Pressable style={s.modalOverlay} onPress={closeModal}>
-          <Pressable style={s.modalBox} onPress={() => {}}>
-            <View style={s.modalHandle} />
-            <View style={s.modalTitleRow}>
-              <Text style={s.modalTitle}>New Book</Text>
-              <TouchableOpacity
-                style={s.modalCloseBtn}
-                onPress={closeModal}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <XIcon color={C.textMuted} size={16} />
-              </TouchableOpacity>
+      {/* ── Add book modal (slide-up, keyboard-aware) ───────────────────── */}
+      <Modal visible={showModal} transparent animationType="none" onRequestClose={closeModal} statusBarTranslucent>
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: C.overlay }]}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={closeModal} activeOpacity={1} />
+        </Animated.View>
+        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }} pointerEvents="box-none">
+          <Animated.View style={{ marginBottom: kbOffset }}>
+            <View style={s.modalBox}>
+              <View style={s.modalHandle} />
+              <View style={s.modalTitleRow}>
+                <Text style={s.modalTitle}>New Book</Text>
+                <TouchableOpacity
+                  style={s.modalCloseBtn}
+                  onPress={closeModal}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <XIcon color={C.textMuted} size={16} />
+                </TouchableOpacity>
+              </View>
+              <Text style={s.modalSub}>Give it a clear, recognisable name</Text>
+              <TextInput
+                style={s.modalInput}
+                placeholder="e.g. Business Expenses, Personal"
+                placeholderTextColor={C.textSubtle}
+                value={newBookName}
+                onChangeText={setNewBookName}
+                autoFocus
+                maxLength={40}
+              />
+              <Text style={s.charCount}>{newBookName.length}/40</Text>
+              <View style={s.modalActions}>
+                <TouchableOpacity style={s.cancelBtn} onPress={closeModal}>
+                  <Text style={s.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.createBtn, !newBookName.trim() && s.createBtnDisabled]}
+                  onPress={handleCreate}
+                  disabled={!newBookName.trim() || createBook.isPending}
+                >
+                  <Text style={s.createBtnText}>{createBook.isPending ? 'Creating…' : 'Create'}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            <Text style={s.modalSub}>Give it a clear, recognisable name</Text>
-            <TextInput
-              style={s.modalInput}
-              placeholder="e.g. Business Expenses, Personal"
-              placeholderTextColor={C.textSubtle}
-              value={newBookName}
-              onChangeText={setNewBookName}
-              autoFocus
-              maxLength={40}
-            />
-            <Text style={s.charCount}>{newBookName.length}/40</Text>
-            <View style={s.modalActions}>
-              <TouchableOpacity style={s.cancelBtn} onPress={closeModal}>
-                <Text style={s.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.createBtn, !newBookName.trim() && s.createBtnDisabled]}
-                onPress={handleCreate}
-                disabled={!newBookName.trim() || createBook.isPending}
-              >
-                <Text style={s.createBtnText}>{createBook.isPending ? 'Creating…' : 'Create'}</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
+          </Animated.View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -1174,7 +1193,6 @@ const makeStyles = (C, Font) => StyleSheet.create({
   leaveBtnText: { fontSize: 14, lineHeight: 20 },
 
   // Slide-up modal (add new book)
-  modalOverlay:    { flex: 1, backgroundColor: C.overlay, justifyContent: 'flex-end' },
   modalBox:        { backgroundColor: C.card, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingTop: 12 },
   modalHandle:     { width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginBottom: 20 },
   modalTitleRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },

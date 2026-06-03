@@ -48,11 +48,12 @@ const PROVIDERS = {
 
 function shouldUseLocal() {
   const state    = useAuthStore.getState();
-  const tier     = state.subscription_tier ?? 'free';
   const role     = state.user?.role;
   const isOnline = useSyncStore.getState()?.isOnline ?? true;
   if (!isOnline) return true;
-  if (role === 'superadmin') return false;   // superadmin always uses Supabase Storage
+  // superadmin behaves like a paid user — Supabase Storage when online, local when offline
+  if (role === 'superadmin') return false;
+  const tier = state.user?.subscription_tier ?? 'free';
   return tier === 'free';
 }
 

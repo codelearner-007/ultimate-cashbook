@@ -75,11 +75,12 @@ import {
 function useLocalDb() {
   if (DEV_OVERRIDE_LOCAL) return true;       // explicit local-only dev override
   const state    = useAuthStore.getState();
-  const tier     = DEV_TIER ?? state.subscription_tier ?? 'free';
   const role     = state.user?.role;
   const isOnline = useSyncStore.getState().isOnline;
   if (!isOnline) return true;
-  if (role === 'superadmin') return false;   // superadmin always uses cloud
+  // superadmin behaves like a paid user — cloud primary, local backup, offline fallback
+  if (role === 'superadmin') return false;
+  const tier = DEV_TIER ?? state.user?.subscription_tier ?? 'free';
   return tier === 'free';
 }
 

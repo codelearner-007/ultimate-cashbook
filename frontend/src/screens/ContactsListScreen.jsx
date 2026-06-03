@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Pressable, StatusBar,
   ScrollView, Modal, Alert, ActivityIndicator, Animated,
@@ -20,7 +20,6 @@ import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiUpdateBookFieldSettings } from '../lib/dataSource';
-import { DragHandleIcon } from '../components/books/DraggableList';
 
 const TYPE_CONFIG = {
   customer: { label: 'Customers', icon: 'user-check', emptyIcon: 'user-plus' },
@@ -135,79 +134,23 @@ export default function ContactsListScreen() {
     [menuContactId, contacts],
   );
 
-  // ── Drag state ────────────────────────────────────────────────────────────
-  const ITEM_H = 72; // card height 62 + marginBottom 10
-  const clamp  = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  const [listItems, setListItems] = useState(() => [...contacts]);
 
-  const [listItems,  setListItems]  = useState(() => [...contacts]);
-  const [dragIdx,    setDragIdx]    = useState(-1);
-  const [insertAt,   setInsertAt]   = useState(-1);
-
-  const dragIdxRef    = useRef(-1);
-  const insertAtRef   = useRef(-1);
-  const dragStartYRef = useRef(0);
-  const dragDy        = useRef(new Animated.Value(0)).current;
-
-  // Sync local list when contacts update from server (not while dragging)
+  // Sync local list when contacts update from server
   useEffect(() => {
-    if (dragIdx < 0) setListItems([...contacts]);
-  }, [contacts, dragIdx]);
+    setListItems([...contacts]);
+  }, [contacts]);
 
-  const startDrag = useCallback((idx, pageY) => {
-    dragIdxRef.current    = idx;
-    insertAtRef.current   = idx;
-    dragStartYRef.current = pageY;
-    dragDy.setValue(0);
-    setDragIdx(idx);
-    setInsertAt(idx);
-  }, [dragDy]);
-
-  const moveDrag = useCallback((pageY) => {
-    const dy = pageY - dragStartYRef.current;
-    dragDy.setValue(dy);
-    const newInsert = clamp(
-      Math.round((dragIdxRef.current * ITEM_H + dy) / ITEM_H),
-      0,
-      listItems.length - 1,
-    );
-    if (newInsert !== insertAtRef.current) {
-      insertAtRef.current = newInsert;
-      setInsertAt(newInsert);
-    }
-  }, [dragDy, listItems.length]);
-
-  const endDrag = useCallback(() => {
-    const from = dragIdxRef.current;
-    const to   = insertAtRef.current;
-
-    if (from >= 0 && from !== to) {
-      setListItems(prev => {
-        const next = [...prev];
-        const [moved] = next.splice(from, 1);
-        next.splice(to, 0, moved);
-        reorderContacts.mutate(next.map(c => c.id));
-        return next;
-      });
-    }
-
-    dragIdxRef.current  = -1;
-    insertAtRef.current = -1;
-    Animated.timing(dragDy, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
-      setDragIdx(-1);
-      setInsertAt(-1);
+  const moveItem = useCallback((idx, direction) => {
+    setListItems(prev => {
+      const next = [...prev];
+      const target = idx + direction;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      reorderContacts.mutate(next.map(c => c.id));
+      return next;
     });
-  }, [dragDy, reorderContacts]);
-
-  const makeHandleProps = useCallback((idx) => ({
-    onStartShouldSetResponder:        () => true,
-    onMoveShouldSetResponder:         () => true,
-    onStartShouldSetResponderCapture: () => true,
-    onMoveShouldSetResponderCapture:  () => true,
-    onResponderGrant:     (e) => startDrag(idx, e.nativeEvent.pageY),
-    onResponderMove:      (e) => moveDrag(e.nativeEvent.pageY),
-    onResponderRelease:   endDrag,
-    onResponderTerminate: endDrag,
-  }), [startDrag, moveDrag, endDrag]);
+  }, [reorderContacts]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return listItems;
@@ -219,6 +162,7 @@ export default function ContactsListScreen() {
     );
   }, [listItems, search]);
 
+  const isFiltering = search.trim().length > 0;
   const isEmpty = !isLoading && listItems.length === 0;
 
   // ── FAB animations ────────────────────────────────────────────────────────
@@ -308,37 +252,32 @@ export default function ContactsListScreen() {
   // ── Render card ───────────────────────────────────────────────────────────
 
   const renderContact = (item, idx) => {
-    const balance  = item.balance ?? 0;
-    const isActive = idx === dragIdx;
+    const balance = item.balance ?? 0;
+    const isFirst = idx === 0;
+    const isLast  = idx === listItems.length - 1;
 
-    const showLineBefore =
-      dragIdx >= 0 && insertAt === idx && insertAt !== dragIdx && !(dragIdx + 1 === insertAt);
-    const isLast       = idx === listItems.length - 1;
-    const showLineAfter =
-      isLast && dragIdx >= 0 && insertAt === listItems.length - 1 &&
-      dragIdx !== listItems.length - 1 && dragIdx < insertAt;
-
-    const card = (
-      <Animated.View
-        style={[
-          s.cardWrap,
-          isActive && {
-            transform:     [{ translateY: dragDy }],
-            zIndex:        100,
-            elevation:     10,
-            shadowColor:   C.primary,
-            shadowOffset:  { width: 0, height: 6 },
-            shadowOpacity: 0.22,
-            shadowRadius:  12,
-            opacity:       0.97,
-          },
-        ]}
-      >
-        <View style={[s.card, { backgroundColor: C.card, borderColor: isActive ? C.primary : C.border }]}>
-          {/* Drag handle */}
-          {canEdit && (
-            <View {...makeHandleProps(idx)} style={s.handle}>
-              <DragHandleIcon color={isActive ? C.primary : C.textMuted} />
+    return (
+      <View key={item.id} style={s.cardWrap}>
+        <View style={[s.card, { backgroundColor: C.card, borderColor: C.border }]}>
+          {/* Up/Down arrows */}
+          {canEdit && !isFiltering && (
+            <View style={s.arrowCol}>
+              <TouchableOpacity
+                onPress={() => moveItem(idx, -1)}
+                disabled={isFirst}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                style={[s.arrowBtn, isFirst && s.arrowDisabled]}
+              >
+                <Feather name="chevron-up" size={18} color={isFirst ? C.border : C.textMuted} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => moveItem(idx, 1)}
+                disabled={isLast}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                style={[s.arrowBtn, isLast && s.arrowDisabled]}
+              >
+                <Feather name="chevron-down" size={18} color={isLast ? C.border : C.textMuted} />
+              </TouchableOpacity>
             </View>
           )}
 
@@ -378,15 +317,7 @@ export default function ContactsListScreen() {
             <Feather name="chevron-right" size={11} color={balance >= 0 ? C.cashIn : C.danger} />
           </TouchableOpacity>
         </View>
-      </Animated.View>
-    );
-
-    return (
-      <Fragment key={item.id}>
-        {showLineBefore && <View style={[s.insertLine, { backgroundColor: C.primary }]} />}
-        {card}
-        {showLineAfter  && <View style={[s.insertLine, { backgroundColor: C.primary }]} />}
-      </Fragment>
+      </View>
     );
   };
 
@@ -451,7 +382,6 @@ export default function ContactsListScreen() {
         </View>
       ) : (
         <ScrollView
-          scrollEnabled={dragIdx < 0}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={s.listContent}
         >
@@ -603,16 +533,17 @@ const makeStyles = () => StyleSheet.create({
   searchWrap:  { paddingVertical: 10, borderBottomWidth: 1 },
   listContent: { paddingTop: 12, paddingBottom: 120 },
 
-  cardWrap:    { marginHorizontal: 16, marginBottom: 10 },
-  card:        { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingVertical: 6, paddingLeft: 6, paddingRight: 14, borderWidth: 1.5 },
-  handle:      { paddingHorizontal: 8, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
-  avatar:      { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  cardBody:    { flex: 1 },
-  cardName:    { fontSize: 14, lineHeight: 20 },
-  cardSub:     { fontSize: 12, lineHeight: 18, marginTop: 1 },
-  insertLine:  { height: 3, borderRadius: 2, marginHorizontal: 16, marginVertical: 3 },
-  balancePill: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6 },
-  balanceText: { fontSize: 13, lineHeight: 18 },
+  cardWrap:     { marginHorizontal: 16, marginBottom: 10 },
+  card:         { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingVertical: 6, paddingLeft: 4, paddingRight: 14, borderWidth: 1.5 },
+  arrowCol:     { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginRight: 2 },
+  arrowBtn:     { padding: 3, alignItems: 'center', justifyContent: 'center' },
+  arrowDisabled:{ opacity: 0.35 },
+  avatar:       { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  cardBody:     { flex: 1 },
+  cardName:     { fontSize: 14, lineHeight: 20 },
+  cardSub:      { fontSize: 12, lineHeight: 18, marginTop: 1 },
+  balancePill:  { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6 },
+  balanceText:  { fontSize: 13, lineHeight: 18 },
 
   empty:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 60 },
   emptyTitle: { fontSize: 17, lineHeight: 26 },

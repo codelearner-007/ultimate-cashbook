@@ -1,27 +1,24 @@
 /**
- * Data source router — offline-first with cloud backup.
+ * Data source router — local-always, cloud-backup architecture.
  *
- * Read routing:
- *   Paid + online  → cloud API (freshest multi-device data)
- *   Free / offline → local SQLite
+ * Golden rule: Internet is NEVER required for any CRUD operation.
+ * Local SQLite is the primary store for ALL users. Cloud sync is a
+ * background side-effect, never a prerequisite.
  *
- * Write routing (CREATE / UPDATE / DELETE):
- *   Free / offline → local SQLite only
- *   Paid + online  → cloud API (primary) + local SQLite (backup)
+ * Read routing (ALL tiers):
+ *   Always → local SQLite (instant, works offline/online, no network check)
  *
- * Why dual-write on paid+online:
- *   If a user creates data while on a paid plan and later downgrades to free,
- *   the local DB must already have that data — otherwise it disappears.
- *   Cloud is the authoritative source while the plan is active; local is the
- *   safety net that survives plan changes and offline transitions.
+ * Write routing:
+ *   Free tier          → local SQLite only (never touches cloud)
+ *   Paid / Superadmin  → local SQLite first (instant, returned to caller),
+ *                        then fire-and-forget background push to cloud.
+ *                        If offline or push fails → silent; AutoSyncMonitor
+ *                        uploads queued writes on next reconnect.
  *
- * ID bridge:
- *   Cloud and local use different UUIDs for the same book. The `cloud_id`
- *   column on the local `books` table links them. It is populated:
- *     (a) when a book is created on paid+online (apiCreateBook dual-write), and
- *     (b) when syncLocalToCloud runs (syncManager sets cloud_id on matched books).
- *   All other entity backups (entries, categories, etc.) look up the local book
- *   via its cloud_id to find the correct local book_id for insertion.
+ * Initial cloud → local pull:
+ *   When a paid/superadmin user logs in on a new device with no local data,
+ *   syncManager.syncCloudToLocal() is triggered from _layout.jsx to
+ *   download all cloud data into SQLite once.
  */
 
 import { useAuthStore } from '../store/authStore';
@@ -69,37 +66,25 @@ import {
 } from './api';
 
 /**
- * Returns true when ALL operations should stay in local SQLite.
- * False means: cloud is primary, but local gets a backup copy of every write.
+ * Returns true when this user/session is eligible for background cloud push.
+ * Used ONLY to decide whether to fire a side-effect — never to block a write.
+ *   - Must be paid tier or superadmin
+ *   - Must currently be online
+ *   - DEV_OVERRIDE_LOCAL disables cloud push for testing
  */
-function useLocalDb() {
-  if (DEV_OVERRIDE_LOCAL) return true;       // explicit local-only dev override
+function shouldBackupToCloud() {
+  if (DEV_OVERRIDE_LOCAL) return false;
   const state    = useAuthStore.getState();
-  const role     = state.user?.role;
   const isOnline = useSyncStore.getState().isOnline;
-  if (!isOnline) return true;
-  // superadmin behaves like a paid user — cloud primary, local backup, offline fallback
-  if (role === 'superadmin') return false;
+  if (!isOnline) return false;
+  if (state.user?.role === 'superadmin') return true;
   const tier = DEV_TIER ?? state.user?.subscription_tier ?? 'free';
-  return tier === 'free';
-}
-
-/**
- * Wrap a cloud read with a local SQLite fallback.
- * If the cloud call throws (e.g. no network), silently return local data instead.
- * This handles cases where isOnline is stale-true but the network is actually down.
- */
-async function withLocalFallback(cloudFn, localFn) {
-  try {
-    return await cloudFn();
-  } catch {
-    return localFn();
-  }
+  return tier !== 'free';
 }
 
 /**
  * Resolve the local book record that corresponds to a cloud book ID.
- * Returns null if the mapping has not been established yet (no sync has run).
+ * Returns null if no mapping exists yet (sync hasn't run for this book).
  */
 function localBookForCloud(cloudBookId) {
   return L.localGetBookByCloudId(cloudBookId);
@@ -107,220 +92,389 @@ function localBookForCloud(cloudBookId) {
 
 // ── Books ──────────────────────────────────────────────────────────────────────
 
-export const apiGetBooks = () =>
-  useLocalDb() ? L.localGetBooks() : withLocalFallback(_apiGetBooks, L.localGetBooks);
+// Reads always come from local SQLite regardless of tier or connectivity.
+export const apiGetBooks = () => L.localGetBooks();
 
 export const apiCreateBook = async (name, cur) => {
-  if (useLocalDb()) return L.localCreateBook(name, cur);
+  // Write local first — instant, no network involved.
+  const localBook = await L.localCreateBook(name, cur);
 
-  // Paid + online: cloud is primary; backup to local and link IDs
-  const cloudBook = await _apiCreateBook(name, cur);
-  const localBook = await L.localCreateBook(name, cur).catch(() => null);
-  if (localBook) {
-    L.localSetBookCloudId(localBook.id, cloudBook.id).catch(() => {});
+  if (shouldBackupToCloud()) {
+    // Fire-and-forget — user never waits on this.
+    _apiCreateBook(name, cur)
+      .then(cloud => L.localSetBookCloudId(localBook.id, cloud.id).catch(() => {}))
+      .catch(() => {}); // silent — AutoSyncMonitor retries on reconnect
   }
-  return cloudBook;
+
+  return localBook;
 };
 
 export const apiUpdateBook = async (id, p) => {
-  if (useLocalDb()) return L.localUpdateBook(id, p);
+  const result = await L.localUpdateBook(id, p);
 
-  const result = await _apiUpdateBook(id, p);
-  const local  = await localBookForCloud(id);
-  if (local) L.localUpdateBook(local.id, p).catch(() => {});
+  if (shouldBackupToCloud()) {
+    // id here is a local book id; look up the cloud id for the push.
+    localBookForCloud(id)
+      .then(local => {
+        // If id is already a cloud id (superadmin case during initial sync),
+        // fall back to using it directly.
+        const cloudId = local?.cloud_id ?? id;
+        _apiUpdateBook(cloudId, p).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
   return result;
 };
 
 export const apiDeleteBook = async (id) => {
-  if (useLocalDb()) return L.localDeleteBook(id);
+  await L.localDeleteBook(id);
 
-  await _apiDeleteBook(id);
-  const local = await localBookForCloud(id);
-  if (local) L.localDeleteBook(local.id).catch(() => {});
+  if (shouldBackupToCloud()) {
+    localBookForCloud(id)
+      .then(local => {
+        const cloudId = local?.cloud_id ?? id;
+        _apiDeleteBook(cloudId).catch(() => {});
+      })
+      .catch(() => {});
+  }
 };
 
 export const apiUpdateBookFieldSettings = async (id, s) => {
-  if (useLocalDb()) return L.localUpdateBookFieldSettings(id, s);
+  const result = await L.localUpdateBookFieldSettings(id, s);
 
-  const result = await _apiUpdateBookFieldSettings(id, s);
-  const local  = await localBookForCloud(id);
-  if (local) L.localUpdateBookFieldSettings(local.id, s).catch(() => {});
+  if (shouldBackupToCloud()) {
+    localBookForCloud(id)
+      .then(local => {
+        const cloudId = local?.cloud_id ?? id;
+        _apiUpdateBookFieldSettings(cloudId, s).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
   return result;
 };
 
 // ── Entries ────────────────────────────────────────────────────────────────────
 
-export const apiGetEntries = (bookId, params) =>
-  useLocalDb()
-    ? L.localGetEntries(bookId, params)
-    : withLocalFallback(() => _apiGetEntries(bookId, params), () => L.localGetEntries(bookId, params));
-
-export const apiGetSummary = (bookId) =>
-  useLocalDb()
-    ? L.localGetSummary(bookId)
-    : withLocalFallback(() => _apiGetSummary(bookId), () => L.localGetSummary(bookId));
+export const apiGetEntries  = (bookId, params) => L.localGetEntries(bookId, params);
+export const apiGetSummary  = (bookId)          => L.localGetSummary(bookId);
 
 export const apiCreateEntry = async (bookId, p) => {
-  if (useLocalDb()) return L.localCreateEntry(bookId, p);
+  const localEntry = await L.localCreateEntry(bookId, p);
 
-  // Paid + online: cloud is primary; backup to local
-  const cloudEntry = await _apiCreateEntry(bookId, p);
-  const local      = await localBookForCloud(bookId);
-  if (local) {
-    // Null-out cloud FK IDs — local has different ID space; text snapshots are preserved
-    L.localCreateEntry(local.id, {
-      ...p,
-      category_id:     null,
-      customer_id:     null,
-      supplier_id:     null,
-      payment_mode_id: null,
-    }).catch(() => {});
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiCreateEntry(cloudBookId, {
+          ...p,
+          // FK IDs are local — null them out; text snapshots (category, contact_name) are preserved
+          category_id:     null,
+          customer_id:     null,
+          supplier_id:     null,
+          payment_mode_id: null,
+        }).catch(() => {});
+      })
+      .catch(() => {});
   }
-  return cloudEntry;
+
+  return localEntry;
 };
 
-export const apiUpdateEntry = (bookId, id, p) =>
-  useLocalDb() ? L.localUpdateEntry(bookId, id, p) : _apiUpdateEntry(bookId, id, p);
+export const apiUpdateEntry = async (bookId, id, p) => {
+  const result = await L.localUpdateEntry(bookId, id, p);
 
-export const apiDeleteEntry = (bookId, id) =>
-  useLocalDb() ? L.localDeleteEntry(bookId, id) : _apiDeleteEntry(bookId, id);
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiUpdateEntry(cloudBookId, id, p).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
+  return result;
+};
+
+export const apiDeleteEntry = async (bookId, id) => {
+  await L.localDeleteEntry(bookId, id);
+
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiDeleteEntry(cloudBookId, id).catch(() => {});
+      })
+      .catch(() => {});
+  }
+};
 
 export const apiDeleteAllEntries = async (bookId) => {
-  if (useLocalDb()) return L.localDeleteAllEntries(bookId);
+  await L.localDeleteAllEntries(bookId);
 
-  await _apiDeleteAllEntries(bookId);
-  const local = await localBookForCloud(bookId);
-  if (local) L.localDeleteAllEntries(local.id).catch(() => {});
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiDeleteAllEntries(cloudBookId).catch(() => {});
+      })
+      .catch(() => {});
+  }
 };
 
 // ── Categories ─────────────────────────────────────────────────────────────────
 
-export const apiGetCategories = (bookId) =>
-  useLocalDb()
-    ? L.localGetCategories(bookId)
-    : withLocalFallback(() => _apiGetCategories(bookId), () => L.localGetCategories(bookId));
+export const apiGetCategories      = (bookId)     => L.localGetCategories(bookId);
+export const apiGetCategoryEntries = (bookId, id) => L.localGetCategoryEntries(bookId, id);
 
 export const apiCreateCategory = async (bookId, payload) => {
   const name = typeof payload === 'object' ? payload.name : payload;
-  if (useLocalDb()) return L.localCreateCategory(bookId, name);
+  const result = await L.localCreateCategory(bookId, name);
 
-  const cloudResult = await _apiCreateCategory(bookId, payload);
-  const local       = await localBookForCloud(bookId);
-  if (local) L.localCreateCategory(local.id, name).catch(() => {});
-  return cloudResult;
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiCreateCategory(cloudBookId, payload).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
+  return result;
 };
 
-export const apiUpdateCategory = (bookId, id, p) =>
-  useLocalDb() ? L.localUpdateCategory(bookId, id, p) : _apiUpdateCategory(bookId, id, p);
+export const apiUpdateCategory = async (bookId, id, p) => {
+  const result = await L.localUpdateCategory(bookId, id, p);
 
-export const apiDeleteCategory = (bookId, id) =>
-  useLocalDb() ? L.localDeleteCategory(bookId, id) : _apiDeleteCategory(bookId, id);
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiUpdateCategory(cloudBookId, id, p).catch(() => {});
+      })
+      .catch(() => {});
+  }
 
-export const apiGetCategoryEntries = (bookId, id) =>
-  useLocalDb()
-    ? L.localGetCategoryEntries(bookId, id)
-    : withLocalFallback(() => _apiGetCategoryEntries(bookId, id), () => L.localGetCategoryEntries(bookId, id));
+  return result;
+};
 
-export const apiReorderCategories = (bookId, orderedIds) =>
-  useLocalDb() ? L.localReorderCategories(bookId, orderedIds) : _apiReorderCategories(bookId, orderedIds);
+export const apiDeleteCategory = async (bookId, id) => {
+  await L.localDeleteCategory(bookId, id);
+
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiDeleteCategory(cloudBookId, id).catch(() => {});
+      })
+      .catch(() => {});
+  }
+};
+
+export const apiReorderCategories = async (bookId, orderedIds) => {
+  const result = await L.localReorderCategories(bookId, orderedIds);
+
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiReorderCategories(cloudBookId, orderedIds).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
+  return result;
+};
 
 // ── Customers ──────────────────────────────────────────────────────────────────
 
-export const apiGetCustomers = (bookId) =>
-  useLocalDb()
-    ? L.localGetCustomers(bookId)
-    : withLocalFallback(() => _apiGetCustomers(bookId), () => L.localGetCustomers(bookId));
+export const apiGetCustomers      = (bookId)     => L.localGetCustomers(bookId);
+export const apiGetCustomer       = (bookId, id) => L.localGetCustomer(bookId, id);
+export const apiGetCustomerEntries = (bookId, id) => L.localGetCustomerEntries(bookId, id);
 
 export const apiCreateCustomer = async (bookId, p) => {
-  if (useLocalDb()) return L.localCreateCustomer(bookId, p);
+  const result = await L.localCreateCustomer(bookId, p);
 
-  const cloudResult = await _apiCreateCustomer(bookId, p);
-  const local       = await localBookForCloud(bookId);
-  if (local) L.localCreateCustomer(local.id, p).catch(() => {});
-  return cloudResult;
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiCreateCustomer(cloudBookId, p).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
+  return result;
 };
 
-export const apiGetCustomer = (bookId, id) =>
-  useLocalDb()
-    ? L.localGetCustomer(bookId, id)
-    : withLocalFallback(() => _apiGetCustomer(bookId, id), () => L.localGetCustomer(bookId, id));
+export const apiUpdateCustomer = async (bookId, id, p) => {
+  const result = await L.localUpdateCustomer(bookId, id, p);
 
-export const apiUpdateCustomer = (bookId, id, p) =>
-  useLocalDb() ? L.localUpdateCustomer(bookId, id, p) : _apiUpdateCustomer(bookId, id, p);
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiUpdateCustomer(cloudBookId, id, p).catch(() => {});
+      })
+      .catch(() => {});
+  }
 
-export const apiDeleteCustomer = (bookId, id) =>
-  useLocalDb() ? L.localDeleteCustomer(bookId, id) : _apiDeleteCustomer(bookId, id);
+  return result;
+};
 
-export const apiGetCustomerEntries = (bookId, id) =>
-  useLocalDb()
-    ? L.localGetCustomerEntries(bookId, id)
-    : withLocalFallback(() => _apiGetCustomerEntries(bookId, id), () => L.localGetCustomerEntries(bookId, id));
+export const apiDeleteCustomer = async (bookId, id) => {
+  await L.localDeleteCustomer(bookId, id);
 
-export const apiReorderCustomers = (bookId, orderedIds) =>
-  useLocalDb() ? L.localReorderCustomers(bookId, orderedIds) : _apiReorderCustomers(bookId, orderedIds);
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiDeleteCustomer(cloudBookId, id).catch(() => {});
+      })
+      .catch(() => {});
+  }
+};
+
+export const apiReorderCustomers = async (bookId, orderedIds) => {
+  const result = await L.localReorderCustomers(bookId, orderedIds);
+
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiReorderCustomers(cloudBookId, orderedIds).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
+  return result;
+};
 
 // ── Suppliers ──────────────────────────────────────────────────────────────────
 
-export const apiGetSuppliers = (bookId) =>
-  useLocalDb()
-    ? L.localGetSuppliers(bookId)
-    : withLocalFallback(() => _apiGetSuppliers(bookId), () => L.localGetSuppliers(bookId));
+export const apiGetSuppliers       = (bookId)     => L.localGetSuppliers(bookId);
+export const apiGetSupplier        = (bookId, id) => L.localGetSupplier(bookId, id);
+export const apiGetSupplierEntries = (bookId, id) => L.localGetSupplierEntries(bookId, id);
 
 export const apiCreateSupplier = async (bookId, p) => {
-  if (useLocalDb()) return L.localCreateSupplier(bookId, p);
+  const result = await L.localCreateSupplier(bookId, p);
 
-  const cloudResult = await _apiCreateSupplier(bookId, p);
-  const local       = await localBookForCloud(bookId);
-  if (local) L.localCreateSupplier(local.id, p).catch(() => {});
-  return cloudResult;
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiCreateSupplier(cloudBookId, p).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
+  return result;
 };
 
-export const apiGetSupplier = (bookId, id) =>
-  useLocalDb()
-    ? L.localGetSupplier(bookId, id)
-    : withLocalFallback(() => _apiGetSupplier(bookId, id), () => L.localGetSupplier(bookId, id));
+export const apiUpdateSupplier = async (bookId, id, p) => {
+  const result = await L.localUpdateSupplier(bookId, id, p);
 
-export const apiUpdateSupplier = (bookId, id, p) =>
-  useLocalDb() ? L.localUpdateSupplier(bookId, id, p) : _apiUpdateSupplier(bookId, id, p);
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiUpdateSupplier(cloudBookId, id, p).catch(() => {});
+      })
+      .catch(() => {});
+  }
 
-export const apiDeleteSupplier = (bookId, id) =>
-  useLocalDb() ? L.localDeleteSupplier(bookId, id) : _apiDeleteSupplier(bookId, id);
+  return result;
+};
 
-export const apiGetSupplierEntries = (bookId, id) =>
-  useLocalDb()
-    ? L.localGetSupplierEntries(bookId, id)
-    : withLocalFallback(() => _apiGetSupplierEntries(bookId, id), () => L.localGetSupplierEntries(bookId, id));
+export const apiDeleteSupplier = async (bookId, id) => {
+  await L.localDeleteSupplier(bookId, id);
 
-export const apiReorderSuppliers = (bookId, orderedIds) =>
-  useLocalDb() ? L.localReorderSuppliers(bookId, orderedIds) : _apiReorderSuppliers(bookId, orderedIds);
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiDeleteSupplier(cloudBookId, id).catch(() => {});
+      })
+      .catch(() => {});
+  }
+};
+
+export const apiReorderSuppliers = async (bookId, orderedIds) => {
+  const result = await L.localReorderSuppliers(bookId, orderedIds);
+
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiReorderSuppliers(cloudBookId, orderedIds).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
+  return result;
+};
 
 // ── Payment Modes ──────────────────────────────────────────────────────────────
 
-export const apiGetPaymentModes = (bookId) =>
-  useLocalDb()
-    ? L.localGetPaymentModes(bookId)
-    : withLocalFallback(() => _apiGetPaymentModes(bookId), () => L.localGetPaymentModes(bookId));
+export const apiGetPaymentModes      = (bookId)     => L.localGetPaymentModes(bookId);
+export const apiGetPaymentModeEntries = (bookId, id) => L.localGetPaymentModeEntries(bookId, id);
 
 export const apiCreatePaymentMode = async (bookId, p) => {
   const name = typeof p === 'object' ? p.name : p;
-  if (useLocalDb()) return L.localCreatePaymentMode(bookId, name);
+  const result = await L.localCreatePaymentMode(bookId, name);
 
-  const cloudResult = await _apiCreatePaymentMode(bookId, p);
-  const local       = await localBookForCloud(bookId);
-  if (local) L.localCreatePaymentMode(local.id, name).catch(() => {});
-  return cloudResult;
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiCreatePaymentMode(cloudBookId, p).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
+  return result;
 };
 
-export const apiUpdatePaymentMode = (bookId, id, p) =>
-  useLocalDb() ? L.localUpdatePaymentMode(bookId, id, p) : _apiUpdatePaymentMode(bookId, id, p);
+export const apiUpdatePaymentMode = async (bookId, id, p) => {
+  const result = await L.localUpdatePaymentMode(bookId, id, p);
 
-export const apiDeletePaymentMode = (bookId, id) =>
-  useLocalDb() ? L.localDeletePaymentMode(bookId, id) : _apiDeletePaymentMode(bookId, id);
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiUpdatePaymentMode(cloudBookId, id, p).catch(() => {});
+      })
+      .catch(() => {});
+  }
 
-export const apiReorderPaymentModes = (bookId, orderedIds) =>
-  useLocalDb() ? L.localReorderPaymentModes(bookId, orderedIds) : _apiReorderPaymentModes(bookId, orderedIds);
+  return result;
+};
 
-export const apiGetPaymentModeEntries = (bookId, id) =>
-  useLocalDb()
-    ? L.localGetPaymentModeEntries(bookId, id)
-    : withLocalFallback(() => _apiGetPaymentModeEntries(bookId, id), () => L.localGetPaymentModeEntries(bookId, id));
+export const apiDeletePaymentMode = async (bookId, id) => {
+  await L.localDeletePaymentMode(bookId, id);
+
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiDeletePaymentMode(cloudBookId, id).catch(() => {});
+      })
+      .catch(() => {});
+  }
+};
+
+export const apiReorderPaymentModes = async (bookId, orderedIds) => {
+  const result = await L.localReorderPaymentModes(bookId, orderedIds);
+
+  if (shouldBackupToCloud()) {
+    localBookForCloud(bookId)
+      .then(local => {
+        const cloudBookId = local?.cloud_id ?? bookId;
+        _apiReorderPaymentModes(cloudBookId, orderedIds).catch(() => {});
+      })
+      .catch(() => {});
+  }
+
+  return result;
+};

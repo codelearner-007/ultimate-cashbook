@@ -1,13 +1,12 @@
 """
-Custom OTP auth router — production email path.
+OTP auth router — production email path.
 
 Flow:
-  POST /api/v1/auth/send-otp   → generate code, store in otp_codes, send via Gmail SMTP
+  POST /api/v1/auth/send-otp   → generate 6-digit code, store in otp_codes, send via Gmail SMTP
   POST /api/v1/auth/verify-otp → validate code, upsert Supabase user, return JWT session
 
-The Gmail SMTP credentials are read from config.  When GMAIL_SMTP_USER is empty
-(local dev), this router is still registered but will return 503 on send-otp so
-the frontend knows to fall back to the native Supabase OTP flow.
+When GMAIL_SMTP_USER is empty (local dev) both endpoints return 503 so the
+frontend knows to fall back to the native Supabase OTP flow (Inbucket).
 """
 
 import random
@@ -54,10 +53,8 @@ def _now_utc() -> datetime:
 
 def _send_otp_email(to_email: str, code: str) -> None:
     """Send the OTP email via Gmail SMTP (STARTTLS, port 587)."""
-    msg = MIMEMultipart("alternative")
-    # Gmail SMTP requires From to match the authenticated SMTP user.
-    # Use GMAIL_FROM_ADDRESS only if it is the same account; otherwise fall back to SMTP user.
     from_address = settings.GMAIL_FROM_ADDRESS if settings.GMAIL_FROM_ADDRESS else settings.GMAIL_SMTP_USER
+    msg = MIMEMultipart("alternative")
     msg["Subject"] = f"{code} is your Ultimate CashBook sign-in code"
     msg["From"]    = f"{settings.GMAIL_FROM_NAME} <{from_address}>"
     msg["To"]      = to_email
@@ -103,7 +100,7 @@ def _send_otp_email(to_email: str, code: str) -> None:
 async def send_otp(body: SendOtpRequest):
     """
     Generate a 6-digit OTP, store it in otp_codes, and send via Gmail SMTP.
-    Returns 503 when GMAIL_SMTP_USER is not configured (local dev).
+    Returns 503 when GMAIL_SMTP_USER is not configured (local dev fallback signal).
     """
     if not settings.GMAIL_SMTP_USER:
         raise HTTPException(
@@ -129,7 +126,7 @@ async def send_otp(body: SendOtpRequest):
     if (rate_check.count or 0) >= 3:
         raise HTTPException(
             status_code=429,
-            detail="Too many OTP requests. Please wait a few minutes.",
+            detail="Too many requests. Please wait a few minutes.",
         )
 
     # Delete any existing unused codes for this email
@@ -155,7 +152,6 @@ async def send_otp(body: SendOtpRequest):
         logger.error("SMTP recipient refused for %s: %s", email, exc)
         raise HTTPException(status_code=400, detail="Could not deliver to that email address.")
     except (OSError, socket.error, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected) as exc:
-        # Network unreachable / SMTP port blocked — fall back to Supabase native OTP
         logger.warning("SMTP network error for %s (%s) — returning 503 for client fallback", email, exc)
         raise HTTPException(status_code=503, detail="SMTP not reachable — use Supabase native OTP")
     except Exception as exc:
@@ -169,7 +165,7 @@ async def send_otp(body: SendOtpRequest):
 async def verify_otp(body: VerifyOtpRequest):
     """
     Validate the OTP, upsert the user in Supabase Auth, and return a JWT session.
-    Always returns the same error message for wrong/expired codes (no brute-force hint).
+    Always returns the same error for wrong/expired codes (no brute-force hint).
     """
     if not settings.GMAIL_SMTP_USER:
         raise HTTPException(
@@ -268,7 +264,6 @@ async def verify_otp(body: VerifyOtpRequest):
             follow_redirects=False,
         )
         # Supabase returns a redirect (3xx) with the tokens in the fragment.
-        # Extract access_token + refresh_token from the Location header.
         location = verify_res.headers.get("location", "")
         if not location:
             raise HTTPException(status_code=500, detail="Session exchange failed")

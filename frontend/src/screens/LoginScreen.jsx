@@ -66,7 +66,7 @@ function BackgroundBlobs() {
 function EmailModal({ visible, onClose }) {
   const [email,   setEmail]   = useState('');
   const [otp,     setOtp]     = useState('');
-  const [step,    setStep]    = useState('email');
+  const [step,    setStep]    = useState('email'); // 'email' | 'otp'
   const [loading, setLoading] = useState(false);
 
   const kbOffset = useRef(new Animated.Value(0)).current;
@@ -107,6 +107,7 @@ function EmailModal({ visible, onClose }) {
         body: JSON.stringify({ email: trimmed }),
       });
       if (res.status === 503) {
+        // Dev fallback: Supabase native OTP (routes via Inbucket)
         const { error } = await supabase.auth.signInWithOtp({ email: trimmed });
         if (error) throw new Error(error.message);
         setStep('otp');
@@ -114,11 +115,11 @@ function EmailModal({ visible, onClose }) {
       }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail || 'Failed to send OTP. Try again.');
+        throw new Error(data.detail || 'Failed to send code. Try again.');
       }
       setStep('otp');
     } catch (err) {
-      Alert.alert('Error', err.message || 'Could not send OTP. Check your connection.');
+      Alert.alert('Error', err.message || 'Could not send code. Check your connection.');
     } finally {
       setLoading(false);
     }
@@ -138,6 +139,7 @@ function EmailModal({ visible, onClose }) {
         body: JSON.stringify({ email: email.trim().toLowerCase(), code }),
       });
       if (res.status === 503) {
+        // Dev fallback: Supabase native verify
         const { error } = await supabase.auth.verifyOtp({
           email: email.trim().toLowerCase(),
           token: code,

@@ -237,22 +237,23 @@ export default function PaymentModeSettingsScreen() {
         <View style={[s.card, { backgroundColor: C.card, borderColor: C.border }]}>
           {/* Up/Down arrows */}
           {canEdit && !isFiltering && (
-            <View style={s.arrowCol}>
+            <View style={[s.arrowCol, { borderColor: C.border }]}>
               <TouchableOpacity
                 onPress={() => moveItem(idx, -1)}
                 disabled={isFirst}
-                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-                style={[s.arrowBtn, isFirst && s.arrowDisabled]}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                style={[s.arrowBtn, { backgroundColor: isFirst ? 'transparent' : C.primaryLight }]}
               >
-                <Feather name="chevron-up" size={18} color={isFirst ? C.border : C.textMuted} />
+                <Feather name="chevron-up" size={15} color={isFirst ? 'transparent' : C.primary} />
               </TouchableOpacity>
+              <View style={[s.arrowDivider, { backgroundColor: C.border }]} />
               <TouchableOpacity
                 onPress={() => moveItem(idx, 1)}
                 disabled={isLast}
-                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-                style={[s.arrowBtn, isLast && s.arrowDisabled]}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                style={[s.arrowBtn, { backgroundColor: isLast ? 'transparent' : C.primaryLight }]}
               >
-                <Feather name="chevron-down" size={18} color={isLast ? C.border : C.textMuted} />
+                <Feather name="chevron-down" size={15} color={isLast ? 'transparent' : C.primary} />
               </TouchableOpacity>
             </View>
           )}
@@ -464,11 +465,11 @@ const makeStyles = () => StyleSheet.create({
   searchWrap: { paddingVertical: 10, borderBottomWidth: 1 },
   listContent: { paddingTop: 12, paddingBottom: 120 },
 
-  cardWrap:     { marginHorizontal: 16, marginBottom: 10 },
-  card:         { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingVertical: 6, paddingLeft: 4, paddingRight: 14, borderWidth: 1.5 },
-  arrowCol:     { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginRight: 2 },
-  arrowBtn:     { padding: 3, alignItems: 'center', justifyContent: 'center' },
-  arrowDisabled:{ opacity: 0.35 },
+  cardWrap:    { marginHorizontal: 16, marginBottom: 10 },
+  card:        { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingVertical: 6, paddingLeft: 6, paddingRight: 14, borderWidth: 1.5 },
+  arrowCol:    { flexDirection: 'column', alignItems: 'center', marginRight: 10, borderWidth: 1, borderRadius: 10, overflow: 'hidden' },
+  arrowBtn:    { width: 28, height: 26, alignItems: 'center', justifyContent: 'center' },
+  arrowDivider:{ width: '100%', height: 1 },
   avatar:       { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   cardBody:     { flex: 1 },
   cardName:     { fontSize: 14, lineHeight: 20 },

@@ -338,7 +338,7 @@ export default function BackupSyncScreen() {
           <Feather name="info" size={14} color={C.primary} />
           <Text style={[s.infoText, { color: C.primary, fontFamily: Font.regular }]}>
             {canSync
-              ? 'When offline, entries are saved locally and uploaded automatically when you reconnect.'
+              ? 'Data is saved locally first. Use the Sync button above to upload your data to the cloud.'
               : 'Free plan stores data on this device only. Uninstalling the app will delete all data.'
             }
           </Text>

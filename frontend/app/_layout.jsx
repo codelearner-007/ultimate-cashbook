@@ -29,6 +29,7 @@ import {
 } from '../src/lib/pushNotifications';
 import { syncCloudToLocal } from '../src/lib/syncManager';
 import { localGetBooks } from '../src/lib/localDb';
+import { apiGetBooks as apiGetCloudBooks } from '../src/lib/api';
 import * as SecureStore from 'expo-secure-store';
 import { useNotificationPopupStore } from '../src/store/notificationPopupStore';
 import { useNotifications } from '../src/hooks/useNotifications';
@@ -75,21 +76,19 @@ function NetworkMonitor() {
 
 
 /**
- * On first login on a new device (no local books), pulls all cloud data down
- * into local SQLite so the user sees their data immediately.
- * Gated by SecureStore flag so it only runs once per device install.
+ * Checks once per device install whether cloud has data the user would want
+ * to restore. If local is empty AND cloud has books, sets showRestorePrompt=true
+ * so the user sees a modal asking whether to restore.
+ * The actual sync is triggered by RestoreCloudModal on user confirmation.
  */
 function InitialPullMonitor() {
-  const user      = useAuthStore(s => s.user);
-  const isOnline  = useSyncStore(s => s.isOnline);
-  const isSyncing = useSyncStore(s => s.isSyncing);
-  const startSync  = useSyncStore(s => s.startSync);
-  const setProgress = useSyncStore(s => s.setProgress);
-  const finishSync = useSyncStore(s => s.finishSync);
-  const failSync   = useSyncStore(s => s.failSync);
-  const pullLock   = useRef(false);
+  const user             = useAuthStore(s => s.user);
+  const isOnline         = useSyncStore(s => s.isOnline);
+  const isSyncing        = useSyncStore(s => s.isSyncing);
+  const setRestorePrompt = useSyncStore(s => s.setRestorePrompt);
+  const checkLock        = useRef(false);
 
-  const shouldPull = (u) => {
+  const isEligible = (u) => {
     if (!u) return false;
     if (u.role === 'superadmin') return true;
     const tier = u?.subscription_tier;
@@ -97,53 +96,38 @@ function InitialPullMonitor() {
   };
 
   useEffect(() => {
-    if (!user || !isOnline || isSyncing || pullLock.current) return;
-    if (!shouldPull(user)) return;
+    if (!user || !isOnline || isSyncing || checkLock.current) return;
+    if (!isEligible(user)) return;
 
     const PULL_FLAG = `cashbook_initial_pull_done_${user.id}`;
 
     SecureStore.getItemAsync(PULL_FLAG)
       .then(async (done) => {
-        if (done) return; // already pulled on this device
+        if (done) return; // already decided on this device
 
         const localBooks = await localGetBooks().catch(() => []);
         if (localBooks.length > 0) {
-          // Local data already exists — mark as done, skip pull
+          // Local data exists — no need to prompt
           SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
           return;
         }
 
-        // No local data — pull from cloud
-        pullLock.current = true;
-        startSync();
-        Toast.show({
-          type: 'info',
-          text1: 'Restoring your data…',
-          text2: 'Downloading books & entries from cloud',
-          visibilityTime: 4000,
-        });
-
-        syncCloudToLocal((done, total, step) => setProgress(done, total, step))
-          .then(result => {
-            finishSync(new Date().toISOString());
+        // Local is empty — check if cloud has any books
+        checkLock.current = true;
+        try {
+          const cloudBooks = await apiGetCloudBooks();
+          if (cloudBooks && cloudBooks.length > 0) {
+            // Cloud has data → ask the user what they want
+            setRestorePrompt(true);
+          } else {
+            // Cloud is also empty — nothing to restore, mark done
             SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
-            Toast.show({
-              type: 'success',
-              text1: 'Data restored!',
-              text2: `${result.synced} item${result.synced !== 1 ? 's' : ''} downloaded from cloud`,
-              visibilityTime: 4000,
-            });
-          })
-          .catch(err => {
-            failSync(err?.message ?? 'Restore failed');
-            Toast.show({
-              type: 'error',
-              text1: 'Restore failed',
-              text2: 'You can retry from Backup & Sync in Settings',
-              visibilityTime: 4000,
-            });
-          })
-          .finally(() => { pullLock.current = false; });
+          }
+        } catch {
+          // Network error — silently skip; will re-check on next session
+        } finally {
+          checkLock.current = false;
+        }
       })
       .catch(() => {});
   }, [user, isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -359,6 +343,139 @@ function NotificationPopup() {
   );
 }
 
+// ── Restore Cloud Data Modal ───────────────────────────────────────────────────
+//
+// Shown once per device install when local DB is empty but cloud has books.
+// User chooses "Restore" (pulls cloud → local) or "Start Fresh" (skips sync).
+
+function RestoreCloudModal() {
+  const user             = useAuthStore(s => s.user);
+  const { C }            = useTheme();
+  const visible          = useSyncStore(s => s.showRestorePrompt);
+  const setRestorePrompt = useSyncStore(s => s.setRestorePrompt);
+  const startSync        = useSyncStore(s => s.startSync);
+  const setProgress      = useSyncStore(s => s.setProgress);
+  const finishSync       = useSyncStore(s => s.finishSync);
+  const failSync         = useSyncStore(s => s.failSync);
+  const [loading, setLoading] = useState(false);
+
+  if (!visible) return null;
+
+  const PULL_FLAG = `cashbook_initial_pull_done_${user?.id}`;
+
+  const dismiss = () => {
+    setRestorePrompt(false);
+    SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
+  };
+
+  const handleRestore = async () => {
+    setLoading(true);
+    startSync();
+    setRestorePrompt(false);
+
+    try {
+      const result = await syncCloudToLocal((done, total, step) => setProgress(done, total, step));
+      finishSync(new Date().toISOString());
+      SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
+      Toast.show({
+        type: 'success',
+        text1: 'Data restored!',
+        text2: `${result.synced} item${result.synced !== 1 ? 's' : ''} downloaded from cloud`,
+        visibilityTime: 4000,
+      });
+    } catch (err) {
+      failSync(err?.message ?? 'Restore failed');
+      Toast.show({
+        type: 'error',
+        text1: 'Restore failed',
+        text2: 'You can retry from Backup & Sync in Settings',
+        visibilityTime: 4000,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartFresh = () => {
+    dismiss();
+    Toast.show({
+      type: 'info',
+      text1: 'Starting fresh',
+      text2: 'Your cloud data is safe and can be restored anytime from Settings',
+      visibilityTime: 3500,
+    });
+  };
+
+  return (
+    <Modal transparent animationType="fade" visible statusBarTranslucent>
+      <View style={restoreStyles.overlay}>
+        <View style={[restoreStyles.card, { backgroundColor: C.card }]}>
+          <View style={[restoreStyles.iconWrap, { backgroundColor: C.primaryLight }]}>
+            <Text style={{ fontSize: 30 }}>☁️</Text>
+          </View>
+
+          <Text style={[restoreStyles.title, { color: C.text, fontFamily: Font.bold }]}>
+            Cloud Data Found
+          </Text>
+          <Text style={[restoreStyles.body, { color: C.textMuted, fontFamily: Font.regular }]}>
+            We found your backed-up data in the cloud. Would you like to restore it to this device?
+          </Text>
+          <Text style={[restoreStyles.hint, { color: C.textSubtle, fontFamily: Font.regular }]}>
+            New entries will continue to sync automatically.
+          </Text>
+
+          <TouchableOpacity
+            style={[restoreStyles.btnPrimary, { backgroundColor: C.primary }, loading && restoreStyles.btnDisabled]}
+            onPress={handleRestore}
+            activeOpacity={0.85}
+            disabled={loading}
+          >
+            <Text style={[restoreStyles.btnPrimaryText, { fontFamily: Font.bold }]}>
+              {loading ? 'Restoring…' : 'Restore Cloud Data'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[restoreStyles.btnSecondary, { borderColor: C.border }]}
+            onPress={handleStartFresh}
+            activeOpacity={0.75}
+            disabled={loading}
+          >
+            <Text style={[restoreStyles.btnSecondaryText, { color: C.textMuted, fontFamily: Font.medium }]}>
+              Start Fresh
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const restoreStyles = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  card: {
+    width: '100%', borderRadius: 24, padding: 28,
+    alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18, shadowRadius: 24, elevation: 16,
+  },
+  iconWrap:          { width: 72, height: 72, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  title:             { fontSize: 20, textAlign: 'center', marginBottom: 10 },
+  body:              { fontSize: 14, textAlign: 'center', lineHeight: 22, marginBottom: 8 },
+  hint:              { fontSize: 12, textAlign: 'center', lineHeight: 18, marginBottom: 28 },
+  btnPrimary:        { width: '100%', paddingVertical: 14, borderRadius: 14, alignItems: 'center', marginBottom: 12 },
+  btnPrimaryText:    { fontSize: 15, color: '#fff' },
+  btnSecondary:      { width: '100%', paddingVertical: 13, borderRadius: 14, alignItems: 'center', borderWidth: 1.5 },
+  btnSecondaryText:  { fontSize: 14 },
+  btnDisabled:       { opacity: 0.6 },
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 const popupStyles = StyleSheet.create({
   overlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.6)',
@@ -408,6 +525,7 @@ export default function RootLayout() {
       <SupabaseAuthListener />
       <AuthGuard />
       <Slot />
+      <RestoreCloudModal />
       <NotificationPopup />
       <Toast config={toastConfig} />
     </QueryClientProvider>

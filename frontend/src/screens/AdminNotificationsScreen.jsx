@@ -432,7 +432,7 @@ const sentRowStyles = StyleSheet.create({
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
 export default function AdminNotificationsScreen() {
-  const { C } = useTheme();
+  const { C, isDark } = useTheme();
   const send   = useSendNotification();
   const { data: sent = [], isLoading: sentLoading } = useSentNotifications();
   const { data: allUsers = [] } = useQuery({ queryKey: ['admin-users'], queryFn: apiGetAllUsers });
@@ -673,8 +673,8 @@ export default function AdminNotificationsScreen() {
   ), [C, s, targetType, isSpecific, summary, title, body, canSend, send.isPending, recipientCount, daysThreshold]);
 
   return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+    <SafeAreaView applyTop={false} style={s.safe}>
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={s.header}>

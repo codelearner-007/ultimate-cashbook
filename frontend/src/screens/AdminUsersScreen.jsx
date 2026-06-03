@@ -467,7 +467,7 @@ export default function AdminUsersScreen() {
 
   return (
     <SafeAreaView applyTop={false} style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <View style={s.header}>

@@ -12,7 +12,7 @@ import { ChevronLeftIcon } from '../components/ui/Icons';
 export default function AddEntryScreen() {
   const router = useRouter();
   const { id, type } = useLocalSearchParams();
-  const { C, Font } = useTheme();
+  const { C, Font, isDark } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
   const qc = useQueryClient();
   const formRef = useRef();
@@ -47,7 +47,7 @@ export default function AddEntryScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} style={s.headerBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>

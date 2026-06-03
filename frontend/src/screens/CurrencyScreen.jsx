@@ -111,7 +111,7 @@ const CurrencyRow = ({ item, isSelected, onPress, C, isLast }) => (
 
 export default function CurrencyScreen() {
   const router        = useRouter();
-  const { C }         = useTheme();
+  const { C, isDark }         = useTheme();
   const { data: profile, isLoading: profileLoading } = useProfile();
   const updateProfile = useUpdateProfile();
 
@@ -162,7 +162,7 @@ export default function CurrencyScreen() {
 
   return (
     <SafeAreaView applyTop style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={s.header}>

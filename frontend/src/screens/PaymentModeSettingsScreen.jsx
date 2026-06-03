@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Pressable, StatusBar,
   ScrollView, Modal, Alert, ActivityIndicator, Animated,
@@ -18,7 +18,6 @@ import PaymentModeMenuSheet from '../components/books/PaymentModeMenuSheet';
 import DeleteContactSheet from '../components/ui/DeleteContactSheet';
 import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
-import { DragHandleIcon } from '../components/books/DraggableList';
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
@@ -51,12 +50,25 @@ export default function PaymentModeSettingsScreen() {
   const router   = useRouter();
   const basePath = useBookBasePath();
   const { id: bookId, name: bookName } = useLocalSearchParams();
-  const { C, Font } = useTheme();
+  const { C, Font, isDark } = useTheme();
   const s = useMemo(() => makeStyles(), []);
 
   const [search,     setSearch]     = useState('');
   const [addVisible, setAddVisible] = useState(false);
   const [newName,    setNewName]    = useState('');
+
+  const kbOffset = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const showEv = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEv = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const up   = Keyboard.addListener(showEv, (e) =>
+      Animated.timing(kbOffset, { toValue: e.endCoordinates.height, duration: Platform.OS === 'ios' ? e.duration : 150, useNativeDriver: false }).start()
+    );
+    const down = Keyboard.addListener(hideEv, () =>
+      Animated.timing(kbOffset, { toValue: 0, duration: 150, useNativeDriver: false }).start()
+    );
+    return () => { up.remove(); down.remove(); };
+  }, [kbOffset]);
 
   const [menuModeId,    setMenuModeId]    = useState(null);
   const [deletingMode,  setDeletingMode]  = useState(null);
@@ -78,79 +90,23 @@ export default function PaymentModeSettingsScreen() {
   const updateMode  = useUpdatePaymentMode(bookId, menuModeId);
   const reorderMode = useReorderPaymentModes(bookId);
 
-  // ── Drag state ────────────────────────────────────────────────────────────
-  const ITEM_H = 68; // card height 58 + marginBottom 10
-  const clamp  = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+  const [listItems, setListItems] = useState(() => [...modes]);
 
-  const [listItems,  setListItems]  = useState(() => [...modes]);
-  const [dragIdx,    setDragIdx]    = useState(-1);
-  const [insertAt,   setInsertAt]   = useState(-1);
-
-  const dragIdxRef    = useRef(-1);
-  const insertAtRef   = useRef(-1);
-  const dragStartYRef = useRef(0);
-  const dragDy        = useRef(new Animated.Value(0)).current;
-
-  // Sync local list when modes update from server (but not while dragging)
+  // Sync local list when modes update from server
   useEffect(() => {
-    if (dragIdx < 0) setListItems([...modes]);
-  }, [modes, dragIdx]);
+    setListItems([...modes]);
+  }, [modes]);
 
-  const startDrag = useCallback((idx, pageY) => {
-    dragIdxRef.current    = idx;
-    insertAtRef.current   = idx;
-    dragStartYRef.current = pageY;
-    dragDy.setValue(0);
-    setDragIdx(idx);
-    setInsertAt(idx);
-  }, [dragDy]);
-
-  const moveDrag = useCallback((pageY) => {
-    const dy = pageY - dragStartYRef.current;
-    dragDy.setValue(dy);
-    const newInsert = clamp(
-      Math.round((dragIdxRef.current * ITEM_H + dy) / ITEM_H),
-      0,
-      listItems.length - 1,
-    );
-    if (newInsert !== insertAtRef.current) {
-      insertAtRef.current = newInsert;
-      setInsertAt(newInsert);
-    }
-  }, [dragDy, listItems.length]);
-
-  const endDrag = useCallback(() => {
-    const from = dragIdxRef.current;
-    const to   = insertAtRef.current;
-
-    if (from >= 0 && from !== to) {
-      setListItems(prev => {
-        const next = [...prev];
-        const [moved] = next.splice(from, 1);
-        next.splice(to, 0, moved);
-        reorderMode.mutate(next.map(m => m.id));
-        return next;
-      });
-    }
-
-    dragIdxRef.current  = -1;
-    insertAtRef.current = -1;
-    Animated.timing(dragDy, { toValue: 0, duration: 120, useNativeDriver: true }).start(() => {
-      setDragIdx(-1);
-      setInsertAt(-1);
+  const moveItem = useCallback((idx, direction) => {
+    setListItems(prev => {
+      const next = [...prev];
+      const target = idx + direction;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      reorderMode.mutate(next.map(m => m.id));
+      return next;
     });
-  }, [dragDy, reorderMode]);
-
-  const makeHandleProps = useCallback((idx) => ({
-    onStartShouldSetResponder:        () => true,
-    onMoveShouldSetResponder:         () => true,
-    onStartShouldSetResponderCapture: () => true,
-    onMoveShouldSetResponderCapture:  () => true,
-    onResponderGrant:     (e) => startDrag(idx, e.nativeEvent.pageY),
-    onResponderMove:      (e) => moveDrag(e.nativeEvent.pageY),
-    onResponderRelease:   endDrag,
-    onResponderTerminate: endDrag,
-  }), [startDrag, moveDrag, endDrag]);
+  }, [reorderMode]);
 
   const menuMode = useMemo(
     () => menuModeId ? (modes.find(m => m.id === menuModeId) ?? null) : null,
@@ -163,6 +119,7 @@ export default function PaymentModeSettingsScreen() {
     return listItems.filter(m => m.name.toLowerCase().includes(q));
   }, [listItems, search]);
 
+  const isFiltering = search.trim().length > 0;
   const isEmpty = !isLoading && listItems.length === 0;
 
   // ── FAB animations ────────────────────────────────────────────────────────
@@ -272,36 +229,31 @@ export default function PaymentModeSettingsScreen() {
   const renderMode = (item, idx) => {
     const balance    = item.net_balance ?? 0;
     const isBankMode = ['cash', 'check', 'cheque'].includes(item.name?.toLowerCase().trim());
-    const isActive   = idx === dragIdx;
+    const isFirst    = idx === 0;
+    const isLast     = idx === listItems.length - 1;
 
-    const showLineBefore =
-      dragIdx >= 0 && insertAt === idx && insertAt !== dragIdx && !(dragIdx + 1 === insertAt);
-    const isLast       = idx === listItems.length - 1;
-    const showLineAfter =
-      isLast && dragIdx >= 0 && insertAt === listItems.length - 1 &&
-      dragIdx !== listItems.length - 1 && dragIdx < insertAt;
-
-    const card = (
-      <Animated.View
-        style={[
-          s.cardWrap,
-          isActive && {
-            transform:     [{ translateY: dragDy }],
-            zIndex:        100,
-            elevation:     10,
-            shadowColor:   C.primary,
-            shadowOffset:  { width: 0, height: 6 },
-            shadowOpacity: 0.22,
-            shadowRadius:  12,
-            opacity:       0.97,
-          },
-        ]}
-      >
-        <View style={[s.card, { backgroundColor: C.card, borderColor: isActive ? C.primary : C.border }]}>
-          {/* Drag handle — only shown when user is owner */}
-          {canEdit && (
-            <View {...makeHandleProps(idx)} style={s.handle}>
-              <DragHandleIcon color={isActive ? C.primary : C.textMuted} />
+    return (
+      <View key={item.id} style={s.cardWrap}>
+        <View style={[s.card, { backgroundColor: C.card, borderColor: C.border }]}>
+          {/* Up/Down arrows */}
+          {canEdit && !isFiltering && (
+            <View style={s.arrowCol}>
+              <TouchableOpacity
+                onPress={() => moveItem(idx, -1)}
+                disabled={isFirst}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                style={[s.arrowBtn, isFirst && s.arrowDisabled]}
+              >
+                <Feather name="chevron-up" size={18} color={isFirst ? C.border : C.textMuted} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => moveItem(idx, 1)}
+                disabled={isLast}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                style={[s.arrowBtn, isLast && s.arrowDisabled]}
+              >
+                <Feather name="chevron-down" size={18} color={isLast ? C.border : C.textMuted} />
+              </TouchableOpacity>
             </View>
           )}
 
@@ -338,21 +290,13 @@ export default function PaymentModeSettingsScreen() {
             <Feather name="chevron-right" size={11} color={balance >= 0 ? C.cashIn : C.danger} />
           </TouchableOpacity>
         </View>
-      </Animated.View>
-    );
-
-    return (
-      <Fragment key={item.id}>
-        {showLineBefore && <View style={[s.insertLine, { backgroundColor: C.primary }]} />}
-        {card}
-        {showLineAfter  && <View style={[s.insertLine, { backgroundColor: C.primary }]} />}
-      </Fragment>
+      </View>
     );
   };
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: C.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={[s.header, { backgroundColor: C.primary }]}>
@@ -389,7 +333,6 @@ export default function PaymentModeSettingsScreen() {
         </View>
       ) : (
         <ScrollView
-          scrollEnabled={dragIdx < 0}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={s.listContent}
         >
@@ -457,9 +400,11 @@ export default function PaymentModeSettingsScreen() {
       />
 
       {/* Add Modal */}
-      <Modal visible={addVisible} transparent animationType="none" onRequestClose={() => { setAddVisible(false); setNewName(''); }}>
+      <Modal visible={addVisible} transparent animationType="none" statusBarTranslucent onRequestClose={() => { setAddVisible(false); setNewName(''); }}>
         <View style={s.modalRoot}>
           <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => { setAddVisible(false); setNewName(''); }} />
+          <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }} pointerEvents="box-none">
+          <Animated.View style={{ marginBottom: kbOffset }}>
           <View style={[s.modalSheet, { backgroundColor: C.card }]}>
             <View style={[s.modalHandle, { backgroundColor: C.border }]} />
             <View style={s.modalHeader}>
@@ -499,6 +444,8 @@ export default function PaymentModeSettingsScreen() {
               </TouchableOpacity>
             </View>
           </View>
+          </Animated.View>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>
@@ -517,15 +464,16 @@ const makeStyles = () => StyleSheet.create({
   searchWrap: { paddingVertical: 10, borderBottomWidth: 1 },
   listContent: { paddingTop: 12, paddingBottom: 120 },
 
-  cardWrap:    { marginHorizontal: 16, marginBottom: 10 },
-  card:        { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingVertical: 6, paddingLeft: 6, paddingRight: 14, borderWidth: 1.5 },
-  handle:      { paddingHorizontal: 8, paddingVertical: 14, alignItems: 'center', justifyContent: 'center' },
-  avatar:      { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  cardBody:    { flex: 1 },
-  cardName:    { fontSize: 14, lineHeight: 20 },
-  insertLine:  { height: 3, borderRadius: 2, marginHorizontal: 16, marginVertical: 3 },
-  balancePill: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6 },
-  balanceText: { fontSize: 13, lineHeight: 18 },
+  cardWrap:     { marginHorizontal: 16, marginBottom: 10 },
+  card:         { flexDirection: 'row', alignItems: 'center', borderRadius: 50, paddingVertical: 6, paddingLeft: 4, paddingRight: 14, borderWidth: 1.5 },
+  arrowCol:     { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginRight: 2 },
+  arrowBtn:     { padding: 3, alignItems: 'center', justifyContent: 'center' },
+  arrowDisabled:{ opacity: 0.35 },
+  avatar:       { width: 46, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  cardBody:     { flex: 1 },
+  cardName:     { fontSize: 14, lineHeight: 20 },
+  balancePill:  { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6 },
+  balanceText:  { fontSize: 13, lineHeight: 18 },
 
   empty:      { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingBottom: 60 },
   emptyTitle: { fontSize: 17, lineHeight: 26 },
@@ -541,7 +489,7 @@ const makeStyles = () => StyleSheet.create({
   fab:     { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
   fabArrow:{ position: 'absolute', bottom: 38, right: 88, flexDirection: 'row', alignItems: 'center', gap: -6 },
 
-  modalRoot:    { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalRoot:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   modalSheet:   { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingTop: 12 },
   modalHandle:  { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },

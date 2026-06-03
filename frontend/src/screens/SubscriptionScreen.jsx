@@ -675,7 +675,7 @@ const pastDueS = StyleSheet.create({
 
 export default function SubscriptionScreen() {
   const router   = useRouter();
-  const { C }    = useTheme();
+  const { C, isDark }    = useTheme();
   const qc       = useQueryClient();
 
   const user    = useAuthStore(s => s.user);
@@ -792,7 +792,7 @@ export default function SubscriptionScreen() {
 
   return (
     <SafeAreaView applyTop style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={s.header}>

@@ -170,8 +170,9 @@ const SUPPORT_SECTION = {
 // ── Setting Row ───────────────────────────────────────────────────────────────
 
 function SettingRow({ Icon, label, sub, route, isLast, onPress, badgeCount, crown, iconAccent, C }) {
-  const iconBg    = iconAccent ? iconAccent + '1A' : C.primaryLight;
-  const iconColor = iconAccent ?? C.primary;
+  const frozen    = !route && !crown;
+  const iconBg    = frozen ? C.border : (iconAccent ? iconAccent + '1A' : C.primaryLight);
+  const iconColor = frozen ? C.textMuted : (iconAccent ?? C.primary);
   return (
     <>
       <TouchableOpacity
@@ -183,7 +184,7 @@ function SettingRow({ Icon, label, sub, route, isLast, onPress, badgeCount, crow
           <Icon color={iconColor} size={15} />
         </View>
         <View style={rowStyles.body}>
-          <Text style={[rowStyles.label, { color: C.text, fontFamily: Font.semiBold }]}>{label}</Text>
+          <Text style={[rowStyles.label, { color: frozen ? C.textMuted : C.text, fontFamily: Font.semiBold }]}>{label}</Text>
           {sub ? <Text style={[rowStyles.sub, { color: C.textMuted, fontFamily: Font.regular }]}>{sub}</Text> : null}
         </View>
         {badgeCount > 0 && (
@@ -192,7 +193,7 @@ function SettingRow({ Icon, label, sub, route, isLast, onPress, badgeCount, crow
           </View>
         )}
         {crown && <View style={{ marginRight: 6 }}><CrownBadge tier={crown} size={11} /></View>}
-        <ChevronRight color={C.textSubtle} />
+        {(route || crown) && <ChevronRight color={C.textSubtle} />}
       </TouchableOpacity>
       {!isLast && <View style={[rowStyles.divider, { backgroundColor: C.border }]} />}
     </>
@@ -215,7 +216,7 @@ const rowStyles = StyleSheet.create({
 export default function SettingsScreen({ applyTop = true, showBottomNav = false, profileRoute = '/(app)/settings/profile' }) {
   const router    = useRouter();
   const segments  = useSegments();
-  const { C }     = useTheme();
+  const { C, isDark }     = useTheme();
   // Tab-root screens have no back stack — hide the back button so it doesn't
   // mislead admins on the dashboard/settings tab into a wrong fallback route.
   const isTabRoot = segments[1] === 'dashboard' && segments.length <= 3;
@@ -299,7 +300,7 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
 
   return (
     <SafeAreaView applyTop={applyTop} style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={s.header}>

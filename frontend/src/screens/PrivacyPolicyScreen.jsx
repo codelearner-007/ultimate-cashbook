@@ -84,12 +84,12 @@ const sectionStyles = StyleSheet.create({
 
 export default function PrivacyPolicyScreen() {
   const router = useRouter();
-  const { C }  = useTheme();
+  const { C, isDark }  = useTheme();
   const s      = useMemo(() => makeStyles(C), [C]);
 
   return (
     <SafeAreaView applyTop style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={s.header}>

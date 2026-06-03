@@ -29,7 +29,7 @@ export default function ContactDetailScreen() {
   const router   = useRouter();
   const basePath = useBookBasePath();
   const { id: bookId, name: bookName, contactId, contactType, contactName } = useLocalSearchParams();
-  const { C, Font } = useTheme();
+  const { C, Font, isDark } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
 
   const cfg = TYPE_CONFIG[contactType] || TYPE_CONFIG.customer;
@@ -103,7 +103,7 @@ export default function ContactDetailScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={s.header}>

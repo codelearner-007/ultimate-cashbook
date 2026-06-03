@@ -69,7 +69,7 @@ function ProgressBar({ done, total, step, accentColor }) {
 
 export default function BackupSyncScreen() {
   const router  = useRouter();
-  const { C, Font } = useTheme();
+  const { C, Font, isDark } = useTheme();
   const qc      = useQueryClient();
   const s       = makeStyles(C);
 
@@ -190,7 +190,7 @@ export default function BackupSyncScreen() {
 
   return (
     <SafeAreaView applyTop style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={s.header}>

@@ -80,7 +80,7 @@ export default function ReportsScreen() {
     initialDate,
     initialType, initialContact, initialCategory, initialPayment,
   } = useLocalSearchParams();
-  const { C, Font } = useTheme();
+  const { C, Font, isDark } = useTheme();
   useRealtimeEntries(id);
 
   const user       = useAuthStore(s => s.user);
@@ -345,7 +345,7 @@ export default function ReportsScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* ── Export modal — single modal for generating + ready states ──
            iOS cannot dismiss one Modal and immediately present another in the
@@ -598,7 +598,7 @@ export default function ReportsScreen() {
       {/* ── Report Preview Modal ── */}
       <Modal visible={showPreview} animationType="slide" statusBarTranslucent onRequestClose={handleClosePreview}>
         <SafeAreaView style={[s.safe, { backgroundColor: C.background }]}>
-          <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+          <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
           {/* Preview header */}
           <View style={s.header}>

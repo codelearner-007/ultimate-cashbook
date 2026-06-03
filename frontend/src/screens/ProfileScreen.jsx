@@ -363,7 +363,7 @@ const iv = StyleSheet.create({
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { C }  = useTheme();
+  const { C, isDark }  = useTheme();
 
   const { data: profile, isLoading, isError } = useProfile();
   const updateProfile = useUpdateProfile();
@@ -441,7 +441,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={s.header}>

@@ -30,7 +30,7 @@ export default function BookSettingsScreen() {
   const router = useRouter();
   const basePath = useBookBasePath();
   const { id, name } = useLocalSearchParams();
-  const { C, Font } = useTheme();
+  const { C, Font, isDark } = useTheme();
   const s = makeStyles(C, Font);
 
   const [bookName, setBookName] = useState(name || 'Unnamed Book');
@@ -223,7 +223,7 @@ export default function BookSettingsScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={s.header}>

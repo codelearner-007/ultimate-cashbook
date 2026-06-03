@@ -166,7 +166,7 @@ export default function PaymentModeBalanceScreen() {
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: C.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={[s.header, { backgroundColor: C.primary }]}>

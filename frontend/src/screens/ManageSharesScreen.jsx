@@ -157,7 +157,7 @@ export default function ManageSharesScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: C.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={[styles.header, { backgroundColor: C.primary }]}>

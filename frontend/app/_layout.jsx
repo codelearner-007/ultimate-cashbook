@@ -90,10 +90,9 @@ function AutoSyncMonitor() {
 
     // Only act on the offline → online transition
     if (!prevOnline && isOnline && user && !isSyncing && !syncLock.current) {
-      const role = user?.role;
       const tier = user?.subscription_tier;
-      // Free-tier regular users always stay local — nothing to sync
-      if (role !== 'superadmin' && (!tier || tier === 'free')) return;
+      // Free-tier regular users always stay local — nothing to sync to cloud
+      if (user?.role !== 'superadmin' && (!tier || tier === 'free')) return;
 
       syncLock.current = true;
       getLocalStats()

@@ -45,7 +45,7 @@ Update the relevant section(s) only — do not rewrite unrelated sections.
 - **Platforms:** Android + iOS (via React Native + Expo)
 - **Backend:** FastAPI (Python)
 - **Database + Auth:** Supabase (PostgreSQL + Google OAuth / Email OTP)
-- **Deployment:** Railway (API), Expo EAS (mobile builds)
+- **Deployment:** Render (API), Expo EAS (mobile builds)
 
 ---
 

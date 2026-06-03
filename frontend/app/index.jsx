@@ -1,84 +1,144 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'expo-router';
-import { Platform } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
+import { View, Text, StyleSheet, Animated, Platform, Dimensions, Image } from 'react-native';
 import { useAuthStore } from '../src/store/authStore';
-import SplashScreen from '../src/screens/SplashScreen';
-import OnboardingScreen from '../src/screens/OnboardingScreen';
 
-const ONBOARDING_KEY = 'onboarding_seen_v1';
+const { width, height } = Dimensions.get('window');
 
-const storage = {
-  getItem: (key) =>
-    Platform.OS === 'web'
-      ? Promise.resolve(localStorage.getItem(key))
-      : SecureStore.getItemAsync(key),
-  setItem: (key, value) =>
-    Platform.OS === 'web'
-      ? Promise.resolve(localStorage.setItem(key, value))
-      : SecureStore.setItemAsync(key, value),
-};
+const TEAL = '#39AAAA';
+const TEAL_DARK = '#2B8080';
 
 export default function Index() {
   const router = useRouter();
   const user   = useAuthStore((s) => s.user);
 
-  // null = still reading storage
-  const [showOnboarding, setShowOnboarding] = useState(null);
-  const [splashDone,     setSplashDone]     = useState(false);
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.85)).current;
 
-  // Read storage immediately — runs in parallel with the splash animation
   useEffect(() => {
-    storage.getItem(ONBOARDING_KEY)
-      .then((val) => setShowOnboarding(val !== 'true'))
-      .catch(()  => setShowOnboarding(false));
-  }, []);
+    // Animate the card in
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }),
+    ]).start();
 
-  function navigateAway() {
-    if (!user) {
-      router.replace('/(auth)/login');
-    } else if (user.role === 'superadmin') {
-      router.replace('/(app)/dashboard/users');
-    } else {
-      router.replace('/(app)/books');
-    }
-  }
+    // Navigate after 1.8 s
+    const timer = setTimeout(() => {
+      if (!user) {
+        router.replace('/(auth)/login');
+      } else if (user.role === 'superadmin') {
+        router.replace('/(app)/dashboard/users');
+      } else {
+        router.replace('/(app)/books');
+      }
+    }, 1800);
 
-  async function handleOnboardingFinish() {
-    await storage.setItem(ONBOARDING_KEY, 'true').catch(() => {});
-    navigateAway();
-  }
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // When splash animation ends, decide what to show next
-  function handleSplashFinish() {
-    setSplashDone(true);
-  }
+  return (
+    <View style={s.root}>
+      <Animated.View style={[s.card, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+        {/* App icon */}
+        <View style={s.iconWrap}>
+          <Image
+            source={require('../assets/icon.png')}
+            style={s.icon}
+            resizeMode="contain"
+          />
+        </View>
 
-  // Once splash is done AND we know if onboarding is needed → act
-  useEffect(() => {
-    if (!splashDone || showOnboarding === null) return;
-    if (showOnboarding === false) {
-      // Onboarding already seen — go straight to login/books
-      navigateAway();
-    }
-    // showOnboarding === true → render OnboardingScreen below
-  }, [splashDone, showOnboarding]); // eslint-disable-line react-hooks/exhaustive-deps
+        {/* App name */}
+        <Text style={s.appName}>Ultimate CashBook</Text>
 
-  // Phase 1: always show animated splash first
-  if (!splashDone) {
-    return <SplashScreen onFinish={handleSplashFinish} />;
-  }
+        {/* Feature pills */}
+        <View style={s.pillsRow}>
+          {['Income', 'Expense', 'Reports'].map((label) => (
+            <View key={label} style={s.pill}>
+              <Text style={s.pillText}>{label}</Text>
+            </View>
+          ))}
+        </View>
+      </Animated.View>
 
-  // Phase 2a: storage still reading (extremely rare — splash takes 2.8 s)
-  if (showOnboarding === null) {
-    return null;
-  }
-
-  // Phase 2b: first install — show onboarding slides
-  if (showOnboarding) {
-    return <OnboardingScreen onFinish={handleOnboardingFinish} />;
-  }
-
-  // Phase 2c: navigateAway() already called above
-  return null;
+      {/* Footer */}
+      <View style={s.footer}>
+        <Text style={s.footerText}>Developed by Devautobot</Text>
+        <Text style={s.footerSub}>devautobot.com</Text>
+      </View>
+    </View>
+  );
 }
+
+const s = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: TEAL,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  card: {
+    width: width * 0.62,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 24,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
+  iconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
+    backgroundColor: TEAL_DARK,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+    overflow: 'hidden',
+  },
+  icon: {
+    width: 60,
+    height: 60,
+  },
+  appName: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 16,
+    letterSpacing: 0.2,
+  },
+  pillsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  pill: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.30)',
+  },
+  pillText: {
+    fontSize: 11,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  footer: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 40 : 28,
+    alignItems: 'center',
+  },
+  footerText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
+  },
+  footerSub: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 2,
+  },
+});

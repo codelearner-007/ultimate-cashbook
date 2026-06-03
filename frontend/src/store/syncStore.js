@@ -4,7 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 const LAST_SYNC_KEY = 'cashbook_last_synced_at';
 
 export const useSyncStore = create((set) => ({
-  isOnline:     true,
+  isOnline:     false,
   isSyncing:    false,
   lastSyncedAt: null,         // ISO string | null
   progress:     { done: 0, total: 0, step: '' },

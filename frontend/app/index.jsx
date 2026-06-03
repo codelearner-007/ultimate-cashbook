@@ -119,6 +119,7 @@ export default function Index() {
   const {
     isRestoring, restoreProgress,
     startRestore, setRestoreProgress, finishRestore, failRestore,
+    setHasRestored,
   } = useSyncStore();
 
   const fadeAnim  = useRef(new Animated.Value(0)).current;
@@ -182,6 +183,7 @@ export default function Index() {
         setRestoreProgress(done, total, step);
       });
       finishRestore();
+      setHasRestored(true);   // hide restore button in Backup & Sync — data is now local
       qc.invalidateQueries();
       const msg = result.synced > 0
         ? `${result.synced} item(s) restored to your device.`
@@ -193,7 +195,7 @@ export default function Index() {
     } finally {
       if (navigateTarget) router.replace(navigateTarget);
     }
-  }, [startRestore, setRestoreProgress, finishRestore, failRestore, qc, navigateTarget, router]);
+  }, [startRestore, setRestoreProgress, finishRestore, failRestore, setHasRestored, qc, navigateTarget, router]);
 
   const handleLater = useCallback(() => {
     setShowRestoreSheet(false);

@@ -20,7 +20,6 @@ import { apiGetBooks, apiDeleteBook } from '../lib/api';
 import { canAccess } from '../lib/canAccess';
 import Toast from '../lib/toast';
 import SyncConfirmSheet from '../components/ui/SyncConfirmSheet';
-import ClearLocalDataSheet from '../components/ui/ClearLocalDataSheet';
 import RestoreOrFreshSheet from '../components/ui/RestoreOrFreshSheet';
 import FreshStartSheet from '../components/ui/FreshStartSheet';
 
@@ -72,6 +71,17 @@ function ProgressBar({ done, total, step, accentColor }) {
 
 // ── Action button ─────────────────────────────────────────────────────────────
 
+const abStyles = StyleSheet.create({
+  btn:   {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14,
+  },
+  icon:  { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  label: { fontSize: 14, lineHeight: 20 },
+  sub:   { fontSize: 11, lineHeight: 16, marginTop: 1 },
+  chevron: { marginLeft: 'auto' },
+});
+
 function ActionBtn({ icon, label, sublabel, onPress, variant, disabled, C }) {
   const isDestructive = variant === 'danger';
   const isSecondary   = variant === 'secondary';
@@ -88,12 +98,12 @@ function ActionBtn({ icon, label, sublabel, onPress, variant, disabled, C }) {
 
   return (
     <TouchableOpacity
-      style={[s.actionBtn, { backgroundColor: bg, borderColor: border, borderWidth: 1.5, opacity: disabled ? 0.6 : 1 }]}
+      style={[abStyles.btn, { backgroundColor: bg, borderColor: border, borderWidth: 1.5, opacity: disabled ? 0.6 : 1 }]}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.82}
     >
-      <View style={[s.actionBtnIcon, {
+      <View style={[abStyles.icon, {
         backgroundColor: isDestructive
           ? C.danger + '22'
           : isSecondary ? C.primary + '22'
@@ -102,9 +112,9 @@ function ActionBtn({ icon, label, sublabel, onPress, variant, disabled, C }) {
         <Feather name={icon} size={17} color={iconColor} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[s.actionBtnLabel, { color: textColor, fontFamily: Font.bold }]}>{label}</Text>
+        <Text style={[abStyles.label, { color: textColor, fontFamily: Font.bold }]}>{label}</Text>
         {sublabel ? (
-          <Text style={[s.actionBtnSub, { color: textColor + 'AA', fontFamily: Font.regular }]}>{sublabel}</Text>
+          <Text style={[abStyles.sub, { color: textColor + 'AA', fontFamily: Font.regular }]}>{sublabel}</Text>
         ) : null}
       </View>
       {!disabled && (
@@ -124,11 +134,14 @@ export default function BackupSyncScreen() {
 
   const user    = useAuthStore(s => s.user);
   const {
-    isOnline, isSyncing, lastSyncedAt, progress, syncError,
+    isOnline, isSyncing, lastSyncedAt, syncError,
     startSync, setProgress, finishSync, failSync,
-    isRestoring, restoreProgress, restoreError,
+    isRestoring, restoreError,
     startRestore, setRestoreProgress, finishRestore, failRestore,
+    hasRestoredFromCloud, setHasRestored,
   } = useSyncStore();
+  const progress        = useSyncStore(s => s.progress)        ?? { done: 0, total: 0, step: '' };
+  const restoreProgress = useSyncStore(s => s.restoreProgress) ?? { done: 0, total: 0, step: '' };
   const canSync = canAccess(user, 'cloud_sync');
 
   const [stats,              setStats]              = useState(null);
@@ -139,10 +152,8 @@ export default function BackupSyncScreen() {
   const [cloudBookCount,     setCloudBookCount]     = useState(0);
 
   const [showSyncConfirm,    setShowSyncConfirm]    = useState(false);
-  const [showClearConfirm,   setShowClearConfirm]   = useState(false);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [showFreshStart,     setShowFreshStart]     = useState(false);
-  const [isClearing,         setIsClearing]         = useState(false);
   const [isFreshStarting,    setIsFreshStarting]    = useState(false);
   const [showEmptyAlert,     setShowEmptyAlert]     = useState(false);
 
@@ -249,6 +260,7 @@ export default function BackupSyncScreen() {
     try {
       const result = await syncCloudToLocal((done, total, step) => setRestoreProgress(done, total, step));
       finishRestore();
+      setHasRestored(true);   // hide restore button — data is now local
       setShowRestoreConfirm(false);
       qc.invalidateQueries();
       await loadData();
@@ -260,26 +272,7 @@ export default function BackupSyncScreen() {
       failRestore(err?.message ?? 'Restore failed. Please try again.');
       setShowRestoreConfirm(false);
     }
-  }, [startRestore, setRestoreProgress, finishRestore, failRestore, qc, loadData]);
-
-  // ── Clear local data ──────────────────────────────────────────────────────
-  const handleClearLocal = useCallback(() => {
-    if (!stats || stats.total === 0) return;
-    setShowClearConfirm(true);
-  }, [stats]);
-
-  const doClear = useCallback(async () => {
-    setIsClearing(true);
-    try {
-      await localClearAll();
-      const newStats = await getLocalStats();
-      setStats(newStats);
-      qc.invalidateQueries();
-      setShowClearConfirm(false);
-    } finally {
-      setIsClearing(false);
-    }
-  }, [qc]);
+  }, [startRestore, setRestoreProgress, finishRestore, failRestore, setHasRestored, qc, loadData]);
 
   // ── Start fresh (delete cloud + local) ───────────────────────────────────
   const doFreshStart = useCallback(async () => {
@@ -292,6 +285,7 @@ export default function BackupSyncScreen() {
       }
       // Clear local SQLite
       await localClearAll();
+      setHasRestored(true);   // cloud is now empty — nothing left to restore
       qc.invalidateQueries();
       await loadData();
       setShowFreshStart(false);
@@ -301,7 +295,7 @@ export default function BackupSyncScreen() {
     } finally {
       setIsFreshStarting(false);
     }
-  }, [qc, loadData]);
+  }, [setHasRestored, qc, loadData]);
 
   const lastSyncLabel = fmtDate(lastSyncedAt);
 
@@ -356,14 +350,14 @@ export default function BackupSyncScreen() {
           {/* Upload progress */}
           {isSyncing && (
             <View style={{ marginTop: 10 }}>
-              <ProgressBar done={progress.done} total={progress.total} step={progress.step} accentColor={C.primary} />
+              <ProgressBar done={progress?.done ?? 0} total={progress?.total ?? 0} step={progress?.step ?? ''} accentColor={C.primary} />
             </View>
           )}
 
           {/* Restore progress */}
           {isRestoring && (
             <View style={{ marginTop: 10 }}>
-              <ProgressBar done={restoreProgress.done} total={restoreProgress.total} step={restoreProgress.step} accentColor={C.cashIn} />
+              <ProgressBar done={restoreProgress?.done ?? 0} total={restoreProgress?.total ?? 0} step={restoreProgress?.step ?? ''} accentColor={C.cashIn} />
             </View>
           )}
 
@@ -438,34 +432,22 @@ export default function BackupSyncScreen() {
                 C={C}
               />
 
-              {/* Restore Cloud → Local */}
-              <ActionBtn
-                icon={isRestoring ? 'loader' : 'download-cloud'}
-                label={isRestoring ? 'Restoring…' : 'Restore from Cloud'}
-                sublabel={hasCloudData
-                  ? `${cloudBookCount} book${cloudBookCount !== 1 ? 's' : ''} available in cloud`
-                  : 'No cloud data found'
-                }
-                onPress={handleRestore}
-                variant="secondary"
-                disabled={isRestoring || isSyncing || !hasCloudData}
-                C={C}
-              />
-
-              {/* Clear local (only shown when there's local data) */}
-              {(stats?.total ?? 0) > 0 && (
-                <TouchableOpacity
-                  style={[st.clearBtn, { borderColor: C.border }]}
-                  onPress={handleClearLocal}
-                  disabled={isClearing || isSyncing || isRestoring}
-                  activeOpacity={0.8}
-                >
-                  <Feather name="trash-2" size={14} color={C.textMuted} />
-                  <Text style={[st.clearBtnText, { color: C.textMuted, fontFamily: Font.medium }]}>
-                    Clear local data only
-                  </Text>
-                </TouchableOpacity>
+              {/* Restore Cloud → Local — hidden once restore or fresh-start has completed */}
+              {!hasRestoredFromCloud && (
+                <ActionBtn
+                  icon={isRestoring ? 'loader' : 'download-cloud'}
+                  label={isRestoring ? 'Restoring…' : 'Restore from Cloud'}
+                  sublabel={hasCloudData
+                    ? `${cloudBookCount} book${cloudBookCount !== 1 ? 's' : ''} available in cloud`
+                    : 'No cloud data found'
+                  }
+                  onPress={handleRestore}
+                  variant="secondary"
+                  disabled={isRestoring || isSyncing || !hasCloudData}
+                  C={C}
+                />
               )}
+
             </View>
 
             {/* ── Danger zone ── */}
@@ -523,18 +505,9 @@ export default function BackupSyncScreen() {
         Font={Font}
       />
 
-      <ClearLocalDataSheet
-        visible={showClearConfirm}
-        onDismiss={() => setShowClearConfirm(false)}
-        onConfirm={doClear}
-        isLoading={isClearing}
-        stats={stats}
-        C={C}
-        Font={Font}
-      />
-
       <RestoreOrFreshSheet
         visible={showRestoreConfirm}
+        mode="confirm"
         onRestore={doRestore}
         onLater={() => setShowRestoreConfirm(false)}
         isLoading={isRestoring}
@@ -636,22 +609,6 @@ const makeStyles = (C) => StyleSheet.create({
 
   // Actions
   actionsCol: { gap: 10 },
-  actionBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14,
-  },
-  actionBtnIcon: {
-    width: 38, height: 38, borderRadius: 11,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  actionBtnLabel: { fontSize: 14, lineHeight: 20 },
-  actionBtnSub:   { fontSize: 11, lineHeight: 16, marginTop: 1 },
-
-  clearBtn: {
-    height: 42, borderRadius: 12, borderWidth: 1,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
-  },
-  clearBtnText: { fontSize: 13 },
 
   // Danger zone
   dangerCard: {

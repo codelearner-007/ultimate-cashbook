@@ -16,6 +16,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
   scopes: ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
+  forceCodeForRefreshToken: true,
 });
 
 const C = LightColors;
@@ -43,21 +44,13 @@ function EmailIcon({ size = 18, color = C.primary }) {
   );
 }
 
-function ShieldCheckIcon({ size = 13, color = '#15803D' }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <Path d="M9 12l2 2 4-4" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
 
 function BackgroundBlobs() {
   return (
     <Svg style={StyleSheet.absoluteFill} width={width} height={height} pointerEvents="none">
-      <Circle cx={width * 0.85} cy={height * 0.12} r={130} fill="rgba(57,170,170,0.12)" />
-      <Circle cx={width * 0.05} cy={height * 0.3}  r={90}  fill="rgba(57,170,170,0.07)" />
-      <Circle cx={width * 0.5}  cy={height * 0.82} r={160} fill="rgba(57,170,170,0.08)" />
+      <Circle cx={width * 0.85} cy={height * 0.08}  r={160} fill="rgba(255,255,255,0.08)" />
+      <Circle cx={width * 0.0}  cy={height * 0.35}  r={100} fill="rgba(255,255,255,0.06)" />
+      <Circle cx={width * 0.6}  cy={height * 0.88}  r={180} fill="rgba(255,255,255,0.06)" />
     </Svg>
   );
 }
@@ -290,6 +283,8 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await GoogleSignin.hasPlayServices();
+      // Always sign out first so Google presents the account picker every time.
+      await GoogleSignin.signOut().catch(() => {});
       const userInfo = await GoogleSignin.signIn();
       const idToken = userInfo.data?.idToken ?? userInfo.idToken;
       if (!idToken) throw new Error('No ID token returned from Google');
@@ -315,13 +310,14 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.background} />
+      <StatusBar barStyle="light-content" backgroundColor="#39AAAA" />
       <BackgroundBlobs />
 
       <View style={styles.container}>
 
-        {/* Logo block */}
-        <View style={styles.logoBlock}>
+        {/* Single centered card */}
+        <View style={styles.card}>
+          {/* Logo */}
           <View style={styles.logoCircle}>
             <Image
               source={require('../../assets/logo1.jpg')}
@@ -329,14 +325,11 @@ export default function LoginScreen() {
               resizeMode="cover"
             />
           </View>
+
           <Text style={styles.appName}>Ultimate CashBook</Text>
           <Text style={styles.tagline}>Smart money tracking for your business</Text>
-        </View>
 
-        {/* Main card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Welcome</Text>
-          <Text style={styles.cardSub}>Login or signup to backup your data securely</Text>
+          <View style={styles.divider} />
 
           {/* Google */}
           <TouchableOpacity
@@ -363,21 +356,18 @@ export default function LoginScreen() {
             <EmailIcon size={18} color={C.primary} />
             <Text style={styles.emailBtnText}>Continue with Email</Text>
           </TouchableOpacity>
+
+          {/* Terms */}
+          <Text style={styles.terms}>
+            By continuing, you agree to our{' '}
+            <Text style={styles.link}>Terms</Text>
+            {' '}&amp;{' '}
+            <Text style={styles.link}>Privacy Policy</Text>
+          </Text>
         </View>
 
-        {/* Terms */}
-        <Text style={styles.terms}>
-          By creating an account, you agree to our{' '}
-          <Text style={styles.link}>Terms of Service</Text>
-          {' '}&amp;{' '}
-          <Text style={styles.link}>Privacy Policy</Text>
-        </Text>
-
-        {/* Trust badge */}
-        <View style={styles.trustBadge}>
-          <ShieldCheckIcon size={13} color="#15803D" />
-          <Text style={styles.trustText}>Ultimate CashBook — your finances, safe and secure</Text>
-        </View>
+        {/* Developer credit */}
+        <Text style={styles.devCredit}>Developed by Devenslab</Text>
 
       </View>
 
@@ -388,60 +378,56 @@ export default function LoginScreen() {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.background },
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
-
-  logoBlock: { alignItems: 'center', marginBottom: 28 },
-  logoCircle: {
-    width: 110, height: 110, borderRadius: 55, marginBottom: 12,
-    overflow: 'hidden',
-    borderWidth: 3, borderColor: C.primary,
-    shadowColor: C.primary, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25, shadowRadius: 12, elevation: 8,
-  },
-  logoImage: { width: '100%', height: '100%' },
-  appName:    { fontSize: 24, fontWeight: '900', color: C.primary, letterSpacing: 0.5, marginBottom: 4 },
-  tagline:    { fontSize: 13, color: C.textMuted, letterSpacing: 0.1 },
+  safe: { flex: 1, backgroundColor: C.primary },
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
 
   card: {
-    width: '100%', backgroundColor: C.card, borderRadius: 24,
-    padding: 24, marginBottom: 18,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.09, shadowRadius: 24, elevation: 10,
-    borderWidth: 1, borderColor: C.border,
+    width: '100%', backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 24,
+    padding: 28, alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.30)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15, shadowRadius: 32, elevation: 12,
   },
-  cardTitle: { fontSize: 26, fontWeight: '800', color: C.text, textAlign: 'center', marginBottom: 6, letterSpacing: -0.3 },
-  cardSub:   { fontSize: 13, color: C.textMuted, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+
+  logoCircle: {
+    width: 88, height: 88, borderRadius: 22, marginBottom: 14,
+    overflow: 'hidden',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2, shadowRadius: 10, elevation: 6,
+  },
+  logoImage: { width: '100%', height: '100%' },
+
+  appName: { fontSize: 22, fontWeight: '800', color: '#fff', letterSpacing: 0.3, marginBottom: 4, textAlign: 'center' },
+  tagline:  { fontSize: 13, color: 'rgba(255,255,255,0.80)', textAlign: 'center', letterSpacing: 0.1 },
+
+  divider: { width: '100%', height: 1, backgroundColor: 'rgba(255,255,255,0.25)', marginVertical: 20 },
 
   googleBtn: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: C.card,
-    borderRadius: 14, paddingVertical: 13, paddingHorizontal: 18, marginBottom: 14,
-    borderWidth: 1.5, borderColor: C.border,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
+    flexDirection: 'row', alignItems: 'center', width: '100%',
+    backgroundColor: '#fff', borderRadius: 12,
+    paddingVertical: 12, paddingHorizontal: 16, marginBottom: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 2,
   },
   iconSlot:      { width: 24, height: 24, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   googleBtnText: { flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '700', color: C.text, marginRight: 34 },
 
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 10 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: C.border },
-  dividerText: { fontSize: 12, color: C.textSubtle, fontWeight: '500' },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 10, width: '100%' },
+  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.30)' },
+  dividerText: { fontSize: 12, color: 'rgba(255,255,255,0.70)', fontWeight: '500' },
 
   emailBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    borderRadius: 14, paddingVertical: 13, paddingHorizontal: 18, gap: 10,
-    borderWidth: 1.5, borderColor: C.primaryMid, backgroundColor: C.primaryLight,
+    width: '100%', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, gap: 10,
+    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.50)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
-  emailBtnText: { fontSize: 15, fontWeight: '700', color: C.primary },
+  emailBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
-  terms: { fontSize: 12, color: C.textSubtle, textAlign: 'center', lineHeight: 18, marginBottom: 14, paddingHorizontal: 8 },
-  link:  { color: C.primary, fontWeight: '600' },
+  terms: { fontSize: 11, color: 'rgba(255,255,255,0.65)', textAlign: 'center', lineHeight: 16, marginTop: 18, paddingHorizontal: 4 },
+  link:  { color: '#fff', fontWeight: '600' },
 
-  trustBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#F0FDF4', borderRadius: 20, paddingVertical: 7, paddingHorizontal: 14,
-    borderWidth: 1, borderColor: '#BBF7D0',
-  },
-  trustText: { fontSize: 12, fontWeight: '600', color: '#15803D' },
+  devCredit: { fontSize: 11, color: 'rgba(255,255,255,0.50)', marginTop: 24, textAlign: 'center' },
 
   // Email modal
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },

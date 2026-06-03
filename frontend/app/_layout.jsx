@@ -74,7 +74,6 @@ function NetworkMonitor() {
 
 function AutoSyncMonitor() {
   const user        = useAuthStore(s => s.user);
-  const tier        = useAuthStore(s => s.subscription_tier);
   const isOnline    = useSyncStore(s => s.isOnline);
   const isSyncing   = useSyncStore(s => s.isSyncing);
   const startSync   = useSyncStore(s => s.startSync);
@@ -91,8 +90,10 @@ function AutoSyncMonitor() {
 
     // Only act on the offline → online transition
     if (!prevOnline && isOnline && user && !isSyncing && !syncLock.current) {
-      // Free-tier users always stay local — nothing to sync
-      if (!tier || tier === 'free') return;
+      const role = user?.role;
+      const tier = user?.subscription_tier;
+      // Free-tier regular users always stay local — nothing to sync
+      if (role !== 'superadmin' && (!tier || tier === 'free')) return;
 
       syncLock.current = true;
       getLocalStats()

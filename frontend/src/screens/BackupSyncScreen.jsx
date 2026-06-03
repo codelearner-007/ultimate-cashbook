@@ -10,14 +10,19 @@ import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../hooks/useTheme';
 import { useAuthStore } from '../store/authStore';
-import { useSyncStore }  from '../store/syncStore';
+import { useSyncStore } from '../store/syncStore';
 import { Font } from '../constants/fonts';
-import { getLocalStats, syncLocalToCloud, getCloudDeltaStats } from '../lib/syncManager';
+import {
+  getLocalStats, syncLocalToCloud, syncCloudToLocal, getCloudDeltaStats,
+} from '../lib/syncManager';
 import { localClearAll } from '../lib/localDb';
+import { apiGetBooks, apiDeleteBook } from '../lib/api';
 import { canAccess } from '../lib/canAccess';
 import Toast from '../lib/toast';
 import SyncConfirmSheet from '../components/ui/SyncConfirmSheet';
 import ClearLocalDataSheet from '../components/ui/ClearLocalDataSheet';
+import RestoreOrFreshSheet from '../components/ui/RestoreOrFreshSheet';
+import FreshStartSheet from '../components/ui/FreshStartSheet';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -65,29 +70,81 @@ function ProgressBar({ done, total, step, accentColor }) {
   );
 }
 
+// ── Action button ─────────────────────────────────────────────────────────────
+
+function ActionBtn({ icon, label, sublabel, onPress, variant, disabled, C }) {
+  const isDestructive = variant === 'danger';
+  const isSecondary   = variant === 'secondary';
+
+  const bg = disabled
+    ? C.border
+    : isDestructive ? C.dangerLight : isSecondary ? C.primaryLight : C.primary;
+  const border = isDestructive
+    ? C.danger + '66' : isSecondary ? C.primary + '55' : 'transparent';
+  const textColor = disabled
+    ? C.textMuted
+    : isDestructive ? C.danger : isSecondary ? C.primary : '#fff';
+  const iconColor = textColor;
+
+  return (
+    <TouchableOpacity
+      style={[s.actionBtn, { backgroundColor: bg, borderColor: border, borderWidth: 1.5, opacity: disabled ? 0.6 : 1 }]}
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.82}
+    >
+      <View style={[s.actionBtnIcon, {
+        backgroundColor: isDestructive
+          ? C.danger + '22'
+          : isSecondary ? C.primary + '22'
+          : 'rgba(255,255,255,0.20)',
+      }]}>
+        <Feather name={icon} size={17} color={iconColor} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[s.actionBtnLabel, { color: textColor, fontFamily: Font.bold }]}>{label}</Text>
+        {sublabel ? (
+          <Text style={[s.actionBtnSub, { color: textColor + 'AA', fontFamily: Font.regular }]}>{sublabel}</Text>
+        ) : null}
+      </View>
+      {!disabled && (
+        <Feather name="chevron-right" size={16} color={iconColor + 'AA'} />
+      )}
+    </TouchableOpacity>
+  );
+}
+
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
 export default function BackupSyncScreen() {
   const router  = useRouter();
   const { C, Font, isDark } = useTheme();
   const qc      = useQueryClient();
-  const s       = makeStyles(C);
+  const st      = makeStyles(C);
 
-  const user          = useAuthStore(s => s.user);
-  const { isOnline, isSyncing, lastSyncedAt, progress, syncError,
-          startSync, setProgress, finishSync, failSync } = useSyncStore();
-  const canSync       = canAccess(user, 'cloud_sync');
+  const user    = useAuthStore(s => s.user);
+  const {
+    isOnline, isSyncing, lastSyncedAt, progress, syncError,
+    startSync, setProgress, finishSync, failSync,
+    isRestoring, restoreProgress, restoreError,
+    startRestore, setRestoreProgress, finishRestore, failRestore,
+  } = useSyncStore();
+  const canSync = canAccess(user, 'cloud_sync');
 
-  const [stats,        setStats]        = useState(null);
-  const [statsLoading, setStatsLoading] = useState(true);
-  const [netState,     setNetState]     = useState(null);
-  const [delta,        setDelta]        = useState(null);
-  const [deltaLoading, setDeltaLoading] = useState(true);
-  const [syncResult,      setSyncResult]      = useState({ synced: 0, skipped: 0, alreadySynced: 0 });
-  const [showSyncConfirm,  setShowSyncConfirm]  = useState(false);
-  const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [isClearing,       setIsClearing]       = useState(false);
-  const [showEmptyAlert,   setShowEmptyAlert]   = useState(false);
+  const [stats,              setStats]              = useState(null);
+  const [statsLoading,       setStatsLoading]       = useState(true);
+  const [netState,           setNetState]           = useState(null);
+  const [delta,              setDelta]              = useState(null);
+  const [deltaLoading,       setDeltaLoading]       = useState(true);
+  const [cloudBookCount,     setCloudBookCount]     = useState(0);
+
+  const [showSyncConfirm,    setShowSyncConfirm]    = useState(false);
+  const [showClearConfirm,   setShowClearConfirm]   = useState(false);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [showFreshStart,     setShowFreshStart]     = useState(false);
+  const [isClearing,         setIsClearing]         = useState(false);
+  const [isFreshStarting,    setIsFreshStarting]    = useState(false);
+  const [showEmptyAlert,     setShowEmptyAlert]     = useState(false);
 
   const dotOpacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -102,7 +159,27 @@ export default function BackupSyncScreen() {
     return () => anim.stop();
   }, [isOnline]);
 
-  // Load local stats + network state + cloud delta in parallel
+  const loadData = useCallback(async () => {
+    const [s, net, d] = await Promise.all([
+      getLocalStats(),
+      Network.getNetworkStateAsync().catch(() => null),
+      getCloudDeltaStats(),
+    ]);
+    setStats(s);
+    setNetState(net);
+    setStatsLoading(false);
+    setDelta(d);
+    setDeltaLoading(false);
+
+    // Count cloud books for the restore sheet
+    try {
+      const cloudBooks = await apiGetBooks();
+      setCloudBookCount(cloudBooks.length);
+    } catch {
+      setCloudBookCount(d.hasCloudData ? 1 : 0);
+    }
+  }, []);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -111,63 +188,81 @@ export default function BackupSyncScreen() {
         Network.getNetworkStateAsync().catch(() => null),
         getCloudDeltaStats(),
       ]);
-      if (mounted) {
-        setStats(s);
-        setNetState(net);
-        setStatsLoading(false);
-        setDelta(d);
-        setDeltaLoading(false);
+      if (!mounted) return;
+      setStats(s);
+      setNetState(net);
+      setStatsLoading(false);
+      setDelta(d);
+      setDeltaLoading(false);
+      try {
+        const cloudBooks = await apiGetBooks();
+        if (mounted) setCloudBookCount(cloudBooks.length);
+      } catch {
+        if (mounted) setCloudBookCount(d.hasCloudData ? 1 : 0);
       }
     })();
     return () => { mounted = false; };
   }, []);
 
   const isAlreadySynced = !deltaLoading && delta !== null && delta.toUpload === 0 && (stats?.total ?? 0) > 0;
+  const hasCloudData    = delta?.hasCloudData ?? false;
 
+  // ── Sync local → cloud ────────────────────────────────────────────────────
   const handleSync = useCallback(() => {
     if (isSyncing || isAlreadySynced) return;
-    if (!isOnline) {
-      Alert.alert('No connection', 'Please connect to the internet to sync your data.');
-      return;
-    }
-    if (!canSync) {
-      Alert.alert('Pro feature', 'Cloud backup & sync requires a Pro or Business plan.');
-      return;
-    }
-    if (!stats || stats.total === 0) {
-      setShowEmptyAlert(true);
-      return;
-    }
+    if (!isOnline) { Alert.alert('No connection', 'Please connect to the internet to sync your data.'); return; }
+    if (!canSync)  { Alert.alert('Pro feature', 'Cloud backup & sync requires a Pro or Business plan.'); return; }
+    if (!stats || stats.total === 0) { setShowEmptyAlert(true); return; }
     setShowSyncConfirm(true);
   }, [isSyncing, isAlreadySynced, isOnline, canSync, stats]);
 
   const doSync = useCallback(async () => {
     startSync();
     try {
-      const result = await syncLocalToCloud((done, total, step) => {
-        setProgress(done, total, step);
-      });
+      const result = await syncLocalToCloud((done, total, step) => setProgress(done, total, step));
       const ts = new Date().toISOString();
       finishSync(ts);
       setShowSyncConfirm(false);
       qc.invalidateQueries();
-      const [newStats, newDelta] = await Promise.all([getLocalStats(), getCloudDeltaStats()]);
-      setStats(newStats);
-      setDelta(newDelta);
-      const r = { synced: result.synced, skipped: result.skipped, alreadySynced: result.alreadySynced ?? 0 };
-      setSyncResult(r);
-      const msg = r.synced === 0 && r.alreadySynced > 0
+      await loadData();
+      const msg = result.synced === 0 && result.alreadySynced > 0
         ? 'Everything is already synced to cloud.'
-        : r.synced > 0 && r.alreadySynced > 0
-          ? `${r.synced} new item(s) uploaded. ${r.alreadySynced} already synced.`
-          : `${r.synced} item(s) uploaded to cloud.`;
+        : result.synced > 0 && result.alreadySynced > 0
+          ? `${result.synced} new item(s) uploaded. ${result.alreadySynced} already synced.`
+          : `${result.synced} item(s) uploaded to cloud.`;
       Toast.show({ type: 'success', text1: 'Data Synced', text2: msg });
     } catch (err) {
       setShowSyncConfirm(false);
       failSync(err?.message ?? 'Sync failed. Please try again.');
     }
-  }, [startSync, setProgress, finishSync, failSync, qc]);
+  }, [startSync, setProgress, finishSync, failSync, qc, loadData]);
 
+  // ── Restore cloud → local ─────────────────────────────────────────────────
+  const handleRestore = useCallback(() => {
+    if (!isOnline) { Alert.alert('No connection', 'Please connect to the internet to restore your data.'); return; }
+    if (!hasCloudData) { Alert.alert('No cloud data', 'No books found in your cloud account.'); return; }
+    setShowRestoreConfirm(true);
+  }, [isOnline, hasCloudData]);
+
+  const doRestore = useCallback(async () => {
+    startRestore();
+    try {
+      const result = await syncCloudToLocal((done, total, step) => setRestoreProgress(done, total, step));
+      finishRestore();
+      setShowRestoreConfirm(false);
+      qc.invalidateQueries();
+      await loadData();
+      const msg = result.synced > 0
+        ? `${result.synced} item(s) restored to your device.`
+        : 'All data is already up to date.';
+      Toast.show({ type: 'success', text1: 'Restore Complete', text2: msg });
+    } catch (err) {
+      failRestore(err?.message ?? 'Restore failed. Please try again.');
+      setShowRestoreConfirm(false);
+    }
+  }, [startRestore, setRestoreProgress, finishRestore, failRestore, qc, loadData]);
+
+  // ── Clear local data ──────────────────────────────────────────────────────
   const handleClearLocal = useCallback(() => {
     if (!stats || stats.total === 0) return;
     setShowClearConfirm(true);
@@ -186,69 +281,104 @@ export default function BackupSyncScreen() {
     }
   }, [qc]);
 
+  // ── Start fresh (delete cloud + local) ───────────────────────────────────
+  const doFreshStart = useCallback(async () => {
+    setIsFreshStarting(true);
+    try {
+      // Delete all cloud books (cascade deletes entries, categories, etc.)
+      const cloudBooks = await apiGetBooks().catch(() => []);
+      for (const book of cloudBooks) {
+        await apiDeleteBook(book.id).catch(() => {});
+      }
+      // Clear local SQLite
+      await localClearAll();
+      qc.invalidateQueries();
+      await loadData();
+      setShowFreshStart(false);
+      Toast.show({ type: 'success', text1: 'Fresh Start', text2: 'All data has been erased.' });
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Error', text2: err?.message ?? 'Could not complete fresh start.' });
+    } finally {
+      setIsFreshStarting(false);
+    }
+  }, [qc, loadData]);
+
   const lastSyncLabel = fmtDate(lastSyncedAt);
 
   return (
-    <SafeAreaView applyTop style={s.safe}>
+    <SafeAreaView applyTop style={st.safe}>
       <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
-      <View style={s.header}>
+      <View style={st.header}>
         <TouchableOpacity
           onPress={() => router.canGoBack() ? router.back() : router.replace('/(app)/settings')}
-          style={s.backBtn}
+          style={st.backBtn}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <BackIcon color="#fff" />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Backup & Sync</Text>
+        <Text style={st.headerTitle}>Backup & Sync</Text>
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView style={s.scroll} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+      <ScrollView style={st.scroll} contentContainerStyle={st.content} showsVerticalScrollIndicator={false}>
 
         {/* ── Status card ── */}
-        <View style={[s.card, { borderColor: isOnline ? C.cashIn + '66' : C.danger + '66' }]}>
-          <View style={s.statusRow}>
-            <Animated.View style={[s.statusDot, { backgroundColor: isOnline ? C.cashIn : C.danger, opacity: dotOpacity }]} />
-            <Text style={[s.statusText, { color: C.text, fontFamily: Font.semiBold }]}>
+        <View style={[st.card, { borderColor: isOnline ? C.cashIn + '66' : C.danger + '66' }]}>
+          <View style={st.statusRow}>
+            <Animated.View style={[st.statusDot, { backgroundColor: isOnline ? C.cashIn : C.danger, opacity: dotOpacity }]} />
+            <Text style={[st.statusText, { color: C.text, fontFamily: Font.semiBold }]}>
               {isOnline ? 'Online' : 'Offline'}
             </Text>
             {netState?.type && (
-              <Text style={[s.statusSub, { color: C.textMuted, fontFamily: Font.regular }]}>
+              <Text style={[st.statusSub, { color: C.textMuted, fontFamily: Font.regular }]}>
                 {'  ·  '}{netState.type}
               </Text>
             )}
           </View>
 
-          <View style={[s.statusDivider, { backgroundColor: C.border }]} />
+          <View style={[st.statusDivider, { backgroundColor: C.border }]} />
 
-          <View style={s.syncMeta}>
+          <View style={st.syncMeta}>
             <Feather name="clock" size={13} color={C.textMuted} />
-            <Text style={[s.syncMetaText, { color: C.textMuted, fontFamily: Font.regular }]}>
+            <Text style={[st.syncMetaText, { color: C.textMuted, fontFamily: Font.regular }]}>
               {lastSyncLabel ? `Last synced: ${lastSyncLabel}` : 'Never synced'}
             </Text>
           </View>
 
           {syncError && (
-            <Text style={[s.errorText, { color: C.danger, fontFamily: Font.regular }]}>
+            <Text style={[st.errorText, { color: C.danger, fontFamily: Font.regular }]}>
               ⚠ {syncError}
             </Text>
           )}
 
-          {/* Progress */}
+          {/* Upload progress */}
           {isSyncing && (
             <View style={{ marginTop: 10 }}>
               <ProgressBar done={progress.done} total={progress.total} step={progress.step} accentColor={C.primary} />
             </View>
           )}
+
+          {/* Restore progress */}
+          {isRestoring && (
+            <View style={{ marginTop: 10 }}>
+              <ProgressBar done={restoreProgress.done} total={restoreProgress.total} step={restoreProgress.step} accentColor={C.cashIn} />
+            </View>
+          )}
+
+          {restoreError && (
+            <Text style={[st.errorText, { color: C.danger, fontFamily: Font.regular }]}>
+              ⚠ {restoreError}
+            </Text>
+          )}
         </View>
 
         {/* ── Local data card ── */}
-        <Text style={[s.sectionLabel, { color: C.textMuted, fontFamily: Font.semiBold }]}>
+        <Text style={[st.sectionLabel, { color: C.textMuted, fontFamily: Font.semiBold }]}>
           LOCAL DATA
         </Text>
-        <View style={[s.card, { padding: 0, overflow: 'hidden' }]}>
+        <View style={[st.card, { padding: 0, overflow: 'hidden' }]}>
           {statsLoading ? (
             <View style={{ padding: 20, alignItems: 'center' }}>
               <Text style={{ color: C.textMuted, fontFamily: Font.regular, fontSize: 13 }}>Loading…</Text>
@@ -256,89 +386,125 @@ export default function BackupSyncScreen() {
           ) : (
             <>
               {[
-                { icon: 'book',       label: 'Cashbooks',    value: stats?.books         ?? 0 },
-                { icon: 'list',       label: 'Entries',      value: stats?.entries       ?? 0 },
-                { icon: 'tag',        label: 'Categories',   value: stats?.categories    ?? 0 },
-                { icon: 'users',      label: 'Customers',    value: stats?.customers     ?? 0 },
-                { icon: 'truck',      label: 'Suppliers',    value: stats?.suppliers     ?? 0 },
+                { icon: 'book',  label: 'Cashbooks',  value: stats?.books      ?? 0 },
+                { icon: 'list',  label: 'Entries',    value: stats?.entries    ?? 0 },
+                { icon: 'tag',   label: 'Categories', value: stats?.categories ?? 0 },
+                { icon: 'users', label: 'Customers',  value: stats?.customers  ?? 0 },
+                { icon: 'truck', label: 'Suppliers',  value: stats?.suppliers  ?? 0 },
               ].map((row, i, arr) => (
                 <View key={row.label}>
                   <StatRow icon={row.icon} label={row.label} value={row.value} C={C} />
-                  {i < arr.length - 1 && <View style={[s.rowDivider, { backgroundColor: C.border }]} />}
+                  {i < arr.length - 1 && <View style={[st.rowDivider, { backgroundColor: C.border }]} />}
                 </View>
               ))}
             </>
           )}
         </View>
 
-        {/* ── Pro gate or Sync button ── */}
+        {/* ── Pro gate ── */}
         {!canSync ? (
-          <View style={[s.gateCard, { backgroundColor: '#F59E0B14', borderColor: '#F59E0B44' }]}>
+          <View style={[st.gateCard, { backgroundColor: '#F59E0B14', borderColor: '#F59E0B44' }]}>
             <Text style={{ fontSize: 28, marginBottom: 10 }}>👑</Text>
-            <Text style={[s.gateTitle, { color: C.text, fontFamily: Font.bold }]}>
+            <Text style={[st.gateTitle, { color: C.text, fontFamily: Font.bold }]}>
               Pro Feature
             </Text>
-            <Text style={[s.gateSub, { color: C.textMuted, fontFamily: Font.regular }]}>
+            <Text style={[st.gateSub, { color: C.textMuted, fontFamily: Font.regular }]}>
               Cloud backup & sync requires a Pro or Business subscription. Your data is safe locally.
             </Text>
             <TouchableOpacity
-              style={[s.gateBtn, { backgroundColor: '#F59E0B' }]}
+              style={[st.gateBtn, { backgroundColor: '#F59E0B' }]}
               onPress={() => router.push('/(app)/settings/subscription')}
               activeOpacity={0.85}
             >
-              <Text style={[s.gateBtnText, { fontFamily: Font.bold }]}>View Plans 👑</Text>
+              <Text style={[st.gateBtnText, { fontFamily: Font.bold }]}>View Plans 👑</Text>
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={s.actionsCol}>
-            {/* Sync Now */}
-            <TouchableOpacity
-              style={[
-                s.syncBtn,
-                {
-                  backgroundColor: isSyncing
-                    ? C.primaryLight
-                    : isAlreadySynced
-                      ? C.cashInLight
-                      : C.primary,
-                },
-              ]}
-              onPress={handleSync}
-              disabled={isSyncing || isAlreadySynced}
-              activeOpacity={0.85}
-            >
-              <Feather
-                name={isSyncing ? 'loader' : isAlreadySynced ? 'check-circle' : 'upload-cloud'}
-                size={18}
-                color={isSyncing ? C.primary : isAlreadySynced ? C.cashIn : '#fff'}
-              />
-              <Text style={[s.syncBtnText, { color: isSyncing ? C.primary : isAlreadySynced ? C.cashIn : '#fff', fontFamily: Font.bold }]}>
-                {isSyncing ? 'Syncing…' : isAlreadySynced ? 'All Data Synced' : 'Sync Local Data to Cloud'}
-              </Text>
-            </TouchableOpacity>
+          <>
+            {/* ── Cloud actions ── */}
+            <Text style={[st.sectionLabel, { color: C.textMuted, fontFamily: Font.semiBold, marginTop: 24 }]}>
+              CLOUD ACTIONS
+            </Text>
+            <View style={st.actionsCol}>
 
-            {/* Clear local */}
-            {stats?.total > 0 && (
+              {/* Sync Local → Cloud */}
+              <ActionBtn
+                icon={isSyncing ? 'loader' : isAlreadySynced ? 'check-circle' : 'upload-cloud'}
+                label={isSyncing ? 'Syncing…' : isAlreadySynced ? 'All Data Synced' : 'Sync to Cloud'}
+                sublabel={isAlreadySynced ? 'Local and cloud are in sync' : 'Upload local data to your cloud account'}
+                onPress={handleSync}
+                variant="primary"
+                disabled={isSyncing || isAlreadySynced || isRestoring}
+                C={C}
+              />
+
+              {/* Restore Cloud → Local */}
+              <ActionBtn
+                icon={isRestoring ? 'loader' : 'download-cloud'}
+                label={isRestoring ? 'Restoring…' : 'Restore from Cloud'}
+                sublabel={hasCloudData
+                  ? `${cloudBookCount} book${cloudBookCount !== 1 ? 's' : ''} available in cloud`
+                  : 'No cloud data found'
+                }
+                onPress={handleRestore}
+                variant="secondary"
+                disabled={isRestoring || isSyncing || !hasCloudData}
+                C={C}
+              />
+
+              {/* Clear local (only shown when there's local data) */}
+              {(stats?.total ?? 0) > 0 && (
+                <TouchableOpacity
+                  style={[st.clearBtn, { borderColor: C.border }]}
+                  onPress={handleClearLocal}
+                  disabled={isClearing || isSyncing || isRestoring}
+                  activeOpacity={0.8}
+                >
+                  <Feather name="trash-2" size={14} color={C.textMuted} />
+                  <Text style={[st.clearBtnText, { color: C.textMuted, fontFamily: Font.medium }]}>
+                    Clear local data only
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* ── Danger zone ── */}
+            <Text style={[st.sectionLabel, { color: C.danger + 'AA', fontFamily: Font.semiBold, marginTop: 28 }]}>
+              DANGER ZONE
+            </Text>
+            <View style={[st.dangerCard, { backgroundColor: C.dangerLight, borderColor: C.danger + '44' }]}>
+              <View style={st.dangerHeader}>
+                <View style={[st.dangerIconWrap, { backgroundColor: C.danger + '22' }]}>
+                  <Feather name="alert-triangle" size={16} color={C.danger} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[st.dangerTitle, { color: C.danger, fontFamily: Font.bold }]}>
+                    Start Fresh
+                  </Text>
+                  <Text style={[st.dangerSub, { color: C.danger + 'BB', fontFamily: Font.regular }]}>
+                    Deletes all data from cloud and device permanently
+                  </Text>
+                </View>
+              </View>
               <TouchableOpacity
-                style={[s.clearBtn, { borderColor: C.danger + '66' }]}
-                onPress={handleClearLocal}
-                activeOpacity={0.8}
+                style={[st.dangerBtn, { backgroundColor: C.danger, opacity: (isFreshStarting || isSyncing || isRestoring) ? 0.6 : 1 }]}
+                onPress={() => setShowFreshStart(true)}
+                disabled={isFreshStarting || isSyncing || isRestoring}
+                activeOpacity={0.85}
               >
-                <Feather name="trash-2" size={15} color={C.danger} />
-                <Text style={[s.clearBtnText, { color: C.danger, fontFamily: Font.medium }]}>
-                  Clear local data
-                </Text>
+                <Feather name="trash-2" size={15} color="#fff" />
+                <Text style={[st.dangerBtnText, { fontFamily: Font.bold }]}>Start Fresh</Text>
               </TouchableOpacity>
-            )}
-          </View>
+            </View>
+          </>
         )}
 
         {/* ── Info note ── */}
-        <View style={[s.infoBox, { backgroundColor: C.primaryLight, borderColor: C.primary + '33' }]}>
+        <View style={[st.infoBox, { backgroundColor: C.primaryLight, borderColor: C.primary + '33' }]}>
           <Feather name="info" size={14} color={C.primary} />
-          <Text style={[s.infoText, { color: C.primary, fontFamily: Font.regular }]}>
+          <Text style={[st.infoText, { color: C.primary, fontFamily: Font.regular }]}>
             {canSync
-              ? 'Data is saved locally first. Use the Sync button above to upload your data to the cloud.'
+              ? 'Use Sync to upload local data. Use Restore to download cloud data to this device.'
               : 'Free plan stores data on this device only. Uninstalling the app will delete all data.'
             }
           </Text>
@@ -346,6 +512,7 @@ export default function BackupSyncScreen() {
 
       </ScrollView>
 
+      {/* ── Sheets ── */}
       <SyncConfirmSheet
         visible={showSyncConfirm}
         onDismiss={() => setShowSyncConfirm(false)}
@@ -366,7 +533,27 @@ export default function BackupSyncScreen() {
         Font={Font}
       />
 
-      {/* ── Nothing-to-sync themed alert ── */}
+      <RestoreOrFreshSheet
+        visible={showRestoreConfirm}
+        onRestore={doRestore}
+        onLater={() => setShowRestoreConfirm(false)}
+        isLoading={isRestoring}
+        progress={restoreProgress}
+        cloudBookCount={cloudBookCount}
+        C={C}
+        Font={Font}
+      />
+
+      <FreshStartSheet
+        visible={showFreshStart}
+        onDismiss={() => setShowFreshStart(false)}
+        onConfirm={doFreshStart}
+        isLoading={isFreshStarting}
+        C={C}
+        Font={Font}
+      />
+
+      {/* ── Nothing-to-sync alert ── */}
       <Modal
         transparent
         statusBarTranslucent
@@ -374,22 +561,22 @@ export default function BackupSyncScreen() {
         animationType="fade"
         onRequestClose={() => setShowEmptyAlert(false)}
       >
-        <View style={s.alertBackdrop}>
+        <View style={st.alertBackdrop}>
           <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowEmptyAlert(false)} />
-          <View style={[s.alertBox, { backgroundColor: C.card, borderColor: C.border }]}>
-            <View style={[s.alertIconWrap, { backgroundColor: C.primaryLight }]}>
+          <View style={[st.alertBox, { backgroundColor: C.card, borderColor: C.border }]}>
+            <View style={[st.alertIconWrap, { backgroundColor: C.primaryLight }]}>
               <Feather name="inbox" size={28} color={C.primary} />
             </View>
-            <Text style={[s.alertTitle, { color: C.text, fontFamily: Font.bold }]}>Nothing to sync</Text>
-            <Text style={[s.alertBody, { color: C.textMuted, fontFamily: Font.regular }]}>
+            <Text style={[st.alertTitle, { color: C.text, fontFamily: Font.bold }]}>Nothing to sync</Text>
+            <Text style={[st.alertBody, { color: C.textMuted, fontFamily: Font.regular }]}>
               Your local database is empty. Add some cashbooks or entries first.
             </Text>
             <TouchableOpacity
-              style={[s.alertBtn, { backgroundColor: C.primary }]}
+              style={[st.alertBtn, { backgroundColor: C.primary }]}
               onPress={() => setShowEmptyAlert(false)}
               activeOpacity={0.85}
             >
-              <Text style={[s.alertBtnText, { fontFamily: Font.bold }]}>Got it</Text>
+              <Text style={[st.alertBtnText, { fontFamily: Font.bold }]}>Got it</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -414,7 +601,7 @@ const makeStyles = (C) => StyleSheet.create({
   headerTitle: { fontSize: 17, fontFamily: Font.bold, color: '#fff' },
 
   sectionLabel: {
-    fontSize: 11, letterSpacing: 1, marginBottom: 8, marginTop: 24, marginLeft: 2,
+    fontSize: 11, letterSpacing: 1, marginBottom: 8, marginTop: 4, marginLeft: 2,
   },
 
   card: {
@@ -448,17 +635,40 @@ const makeStyles = (C) => StyleSheet.create({
   gateBtnText: { fontSize: 14, color: '#fff' },
 
   // Actions
-  actionsCol: { marginTop: 24, gap: 12 },
-  syncBtn: {
-    height: 52, borderRadius: 14, flexDirection: 'row',
-    alignItems: 'center', justifyContent: 'center', gap: 10,
+  actionsCol: { gap: 10 },
+  actionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14,
   },
-  syncBtnText: { fontSize: 15 },
+  actionBtnIcon: {
+    width: 38, height: 38, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  actionBtnLabel: { fontSize: 14, lineHeight: 20 },
+  actionBtnSub:   { fontSize: 11, lineHeight: 16, marginTop: 1 },
+
   clearBtn: {
-    height: 46, borderRadius: 14, borderWidth: 1.5,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    height: 42, borderRadius: 12, borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
   },
-  clearBtnText: { fontSize: 14 },
+  clearBtnText: { fontSize: 13 },
+
+  // Danger zone
+  dangerCard: {
+    borderRadius: 16, borderWidth: 1.5, padding: 14, gap: 12,
+  },
+  dangerHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  dangerIconWrap: {
+    width: 34, height: 34, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  dangerTitle: { fontSize: 14, lineHeight: 19 },
+  dangerSub:   { fontSize: 11, lineHeight: 16 },
+  dangerBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, borderRadius: 12, paddingVertical: 11,
+  },
+  dangerBtnText: { fontSize: 14, color: '#fff' },
 
   // Nothing-to-sync alert modal
   alertBackdrop: {

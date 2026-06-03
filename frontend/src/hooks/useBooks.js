@@ -69,18 +69,11 @@ export function useDeleteBook() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (bookId) => apiDeleteBook(bookId),
-    onMutate: async (bookId) => {
-      await qc.cancelQueries({ queryKey: BOOKS_KEY });
-      const snapshot = qc.getQueryData(BOOKS_KEY);
+    onSuccess: (_data, bookId) => {
       qc.setQueryData(BOOKS_KEY, (prev = []) => prev.filter(b => b.id !== bookId));
-      return { snapshot };
+      qc.invalidateQueries({ queryKey: BOOKS_KEY });
     },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.snapshot !== undefined) {
-        qc.setQueryData(BOOKS_KEY, ctx.snapshot);
-      }
-    },
-    onSuccess: () => {
+    onError: () => {
       qc.invalidateQueries({ queryKey: BOOKS_KEY });
     },
   });

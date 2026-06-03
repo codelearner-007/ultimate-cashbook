@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "cover",
-      "backgroundColor": "#33AEB3"
+      "backgroundColor": "#EEF7F7"
     },
     "android": {
       "package": "com.ultimatecashbook.app",

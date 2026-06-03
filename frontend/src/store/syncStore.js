@@ -9,22 +9,30 @@ export const useSyncStore = create((set) => ({
   lastSyncedAt:      null,   // ISO string | null
   progress:          { done: 0, total: 0, step: '' },
   syncError:         null,
-  showRestorePrompt: false,  // true = show "Restore cloud data?" modal
+  showRestorePrompt: false,  // true = show "Restore cloud data?" sheet at launch
+
+  // Restore (cloud → local) state
+  isRestoring:      false,
+  restoreProgress:  { done: 0, total: 0, step: '' },
+  restoreError:     null,
 
   setOnline:  (v) => set({ isOnline: v }),
 
   startSync:  ()  => set({ isSyncing: true, syncError: null, progress: { done: 0, total: 0, step: 'Starting…' } }),
-
   setProgress: (done, total, step) => set({ progress: { done, total, step } }),
-
   finishSync: (isoTimestamp) => {
     if (isoTimestamp) {
       SecureStore.setItemAsync(LAST_SYNC_KEY, isoTimestamp).catch(() => {});
     }
     set({ isSyncing: false, lastSyncedAt: isoTimestamp, progress: { done: 0, total: 0, step: '' } });
   },
-
   failSync: (msg) => set({ isSyncing: false, syncError: msg, progress: { done: 0, total: 0, step: '' } }),
+
+  // Restore actions
+  startRestore:      ()  => set({ isRestoring: true, restoreError: null, restoreProgress: { done: 0, total: 0, step: 'Connecting…' } }),
+  setRestoreProgress:(done, total, step) => set({ restoreProgress: { done, total, step } }),
+  finishRestore:     ()  => set({ isRestoring: false, restoreProgress: { done: 0, total: 0, step: '' } }),
+  failRestore:       (msg) => set({ isRestoring: false, restoreError: msg, restoreProgress: { done: 0, total: 0, step: '' } }),
 
   setRestorePrompt: (v) => set({ showRestorePrompt: v }),
 }));

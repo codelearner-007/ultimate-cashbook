@@ -90,6 +90,17 @@ function localBookForCloud(cloudBookId) {
   return L.localGetBookByCloudId(cloudBookId);
 }
 
+/**
+ * Given a local book ID, return the corresponding cloud UUID.
+ * Falls back to the input ID itself when the book has no cloud_id yet
+ * (e.g. the book was created but sync hasn't run, or the ID was already a cloud ID).
+ * Used by sharing hooks that must send the cloud UUID to the backend.
+ */
+export async function resolveCloudBookId(localId) {
+  const cloudId = await L.localGetCloudBookId(localId);
+  return cloudId ?? localId;
+}
+
 // ── Books ──────────────────────────────────────────────────────────────────────
 
 // Reads always come from local SQLite regardless of tier or connectivity.

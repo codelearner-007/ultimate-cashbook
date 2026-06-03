@@ -753,3 +753,9 @@ export async function localSetBookCloudId(localId, cloudId) {
   const db = await getDb();
   await db.runAsync(`UPDATE books SET cloud_id = ? WHERE id = ?`, [cloudId, localId]);
 }
+
+export async function localGetCloudBookId(localId) {
+  const db = await getDb();
+  const row = await db.getFirstAsync(`SELECT cloud_id FROM books WHERE id = ?`, [localId]);
+  return row?.cloud_id ?? null;
+}

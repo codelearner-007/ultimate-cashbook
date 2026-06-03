@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  StatusBar, ScrollView, Alert, Animated,
+  StatusBar, ScrollView, Alert, Animated, Modal,
 } from 'react-native';
 import * as Network from 'expo-network';
 import { Feather } from '@expo/vector-icons';
@@ -15,7 +15,7 @@ import { Font } from '../constants/fonts';
 import { getLocalStats, syncLocalToCloud, getCloudDeltaStats } from '../lib/syncManager';
 import { localClearAll } from '../lib/localDb';
 import { canAccess } from '../lib/canAccess';
-import SuccessDialog from '../components/ui/SuccessDialog';
+import Toast from '../lib/toast';
 import SyncConfirmSheet from '../components/ui/SyncConfirmSheet';
 import ClearLocalDataSheet from '../components/ui/ClearLocalDataSheet';
 
@@ -83,11 +83,11 @@ export default function BackupSyncScreen() {
   const [netState,     setNetState]     = useState(null);
   const [delta,        setDelta]        = useState(null);
   const [deltaLoading, setDeltaLoading] = useState(true);
-  const [showSuccess,     setShowSuccess]     = useState(false);
   const [syncResult,      setSyncResult]      = useState({ synced: 0, skipped: 0, alreadySynced: 0 });
   const [showSyncConfirm,  setShowSyncConfirm]  = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing,       setIsClearing]       = useState(false);
+  const [showEmptyAlert,   setShowEmptyAlert]   = useState(false);
 
   const dotOpacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -135,7 +135,7 @@ export default function BackupSyncScreen() {
       return;
     }
     if (!stats || stats.total === 0) {
-      Alert.alert('Nothing to sync', 'Your local database is empty.');
+      setShowEmptyAlert(true);
       return;
     }
     setShowSyncConfirm(true);
@@ -154,8 +154,14 @@ export default function BackupSyncScreen() {
       const [newStats, newDelta] = await Promise.all([getLocalStats(), getCloudDeltaStats()]);
       setStats(newStats);
       setDelta(newDelta);
-      setSyncResult({ synced: result.synced, skipped: result.skipped, alreadySynced: result.alreadySynced ?? 0 });
-      setShowSuccess(true);
+      const r = { synced: result.synced, skipped: result.skipped, alreadySynced: result.alreadySynced ?? 0 };
+      setSyncResult(r);
+      const msg = r.synced === 0 && r.alreadySynced > 0
+        ? 'Everything is already synced to cloud.'
+        : r.synced > 0 && r.alreadySynced > 0
+          ? `${r.synced} new item(s) uploaded. ${r.alreadySynced} already synced.`
+          : `${r.synced} item(s) uploaded to cloud.`;
+      Toast.show({ type: 'success', text1: 'Data Synced', text2: msg });
     } catch (err) {
       setShowSyncConfirm(false);
       failSync(err?.message ?? 'Sync failed. Please try again.');
@@ -360,18 +366,35 @@ export default function BackupSyncScreen() {
         Font={Font}
       />
 
-      <SuccessDialog
-        visible={showSuccess}
-        onDismiss={() => setShowSuccess(false)}
-        title="Sync Complete"
-        subtitle={
-          syncResult.synced === 0 && syncResult.alreadySynced > 0
-            ? 'Everything is already synced to cloud. No new data to upload.'
-            : syncResult.synced > 0 && syncResult.alreadySynced > 0
-              ? `${syncResult.synced} new item(s) uploaded. ${syncResult.alreadySynced} item(s) were already synced.${syncResult.skipped > 0 ? ` ${syncResult.skipped} skipped.` : ''}`
-              : `${syncResult.synced} item(s) uploaded to cloud.${syncResult.skipped > 0 ? ` ${syncResult.skipped} skipped.` : ''}`
-        }
-      />
+      {/* ── Nothing-to-sync themed alert ── */}
+      <Modal
+        transparent
+        statusBarTranslucent
+        visible={showEmptyAlert}
+        animationType="fade"
+        onRequestClose={() => setShowEmptyAlert(false)}
+      >
+        <View style={s.alertBackdrop}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowEmptyAlert(false)} />
+          <View style={[s.alertBox, { backgroundColor: C.card, borderColor: C.border }]}>
+            <View style={[s.alertIconWrap, { backgroundColor: C.primaryLight }]}>
+              <Feather name="inbox" size={28} color={C.primary} />
+            </View>
+            <Text style={[s.alertTitle, { color: C.text, fontFamily: Font.bold }]}>Nothing to sync</Text>
+            <Text style={[s.alertBody, { color: C.textMuted, fontFamily: Font.regular }]}>
+              Your local database is empty. Add some cashbooks or entries first.
+            </Text>
+            <TouchableOpacity
+              style={[s.alertBtn, { backgroundColor: C.primary }]}
+              onPress={() => setShowEmptyAlert(false)}
+              activeOpacity={0.85}
+            >
+              <Text style={[s.alertBtnText, { fontFamily: Font.bold }]}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -436,6 +459,29 @@ const makeStyles = (C) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
   },
   clearBtnText: { fontSize: 14 },
+
+  // Nothing-to-sync alert modal
+  alertBackdrop: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
+  },
+  alertBox: {
+    width: '100%', borderRadius: 20, borderWidth: 1.5,
+    padding: 24, alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15, shadowRadius: 24, elevation: 10,
+  },
+  alertIconWrap: {
+    width: 64, height: 64, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 16,
+  },
+  alertTitle:   { fontSize: 18, marginBottom: 8 },
+  alertBody:    { fontSize: 13, lineHeight: 20, textAlign: 'center', marginBottom: 24 },
+  alertBtn: {
+    width: '100%', height: 48, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  alertBtnText: { fontSize: 15, color: '#fff' },
 
   // Info note
   infoBox: {

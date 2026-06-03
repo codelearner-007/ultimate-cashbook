@@ -10,13 +10,17 @@ import {
   apiGetReceivedInvitations,
   apiGetGivenInvitations,
 } from '../lib/api';
+import { resolveCloudBookId } from '../lib/dataSource';
 
 // Remove a collaborator or cancel a pending invitation from the "Given" tab.
 // Accepts { bookId, shareId } so it works across multiple books on one screen.
 export const useRemoveShareByOwner = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ bookId, shareId }) => apiRemoveCollaborator(bookId, shareId),
+    mutationFn: async ({ bookId, shareId }) => {
+      const cloudId = await resolveCloudBookId(bookId);
+      return apiRemoveCollaborator(cloudId, shareId);
+    },
     onSuccess:  (_, { bookId }) => {
       qc.invalidateQueries({ queryKey: ['book-shares', bookId] });
       qc.invalidateQueries({ queryKey: ['invitations', 'given'] });
@@ -35,7 +39,10 @@ export const useSharedBooks = () =>
 export const useBookShares = (bookId) =>
   useQuery({
     queryKey:        ['book-shares', bookId],
-    queryFn:         () => apiGetBookShares(bookId),
+    queryFn:         async () => {
+      const cloudId = await resolveCloudBookId(bookId);
+      return apiGetBookShares(cloudId);
+    },
     staleTime:       0,
     refetchOnFocus:  true,
     refetchInterval: 5000,  // fallback poll — realtime handles it instantly when available
@@ -79,7 +86,10 @@ export const useRespondToInvitation = () => {
 export const useAddCollaborator = (bookId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload) => apiAddCollaborator(bookId, payload),
+    mutationFn: async (payload) => {
+      const cloudId = await resolveCloudBookId(bookId);
+      return apiAddCollaborator(cloudId, payload);
+    },
     onSuccess:  () => {
       qc.invalidateQueries({ queryKey: ['book-shares', bookId] });
       qc.invalidateQueries({ queryKey: ['invitations', 'given'] });
@@ -90,7 +100,10 @@ export const useAddCollaborator = (bookId) => {
 export const useUpdateShare = (bookId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ shareId, payload }) => apiUpdateShare(bookId, shareId, payload),
+    mutationFn: async ({ shareId, payload }) => {
+      const cloudId = await resolveCloudBookId(bookId);
+      return apiUpdateShare(cloudId, shareId, payload);
+    },
     onSuccess:  () => {
       qc.invalidateQueries({ queryKey: ['book-shares', bookId] });
       qc.invalidateQueries({ queryKey: ['invitations', 'given'] });
@@ -101,7 +114,10 @@ export const useUpdateShare = (bookId) => {
 export const useRemoveCollaborator = (bookId) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (shareId) => apiRemoveCollaborator(bookId, shareId),
+    mutationFn: async (shareId) => {
+      const cloudId = await resolveCloudBookId(bookId);
+      return apiRemoveCollaborator(cloudId, shareId);
+    },
     onSuccess:  () => {
       qc.invalidateQueries({ queryKey: ['book-shares', bookId] });
       qc.invalidateQueries({ queryKey: ['invitations', 'given'] });

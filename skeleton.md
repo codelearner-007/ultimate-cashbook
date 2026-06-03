@@ -102,38 +102,41 @@ App Start
 
 ---
 
-## 1b. RestoreCloudModal — global overlay (paid/superadmin only, once per install)
+## 1b. Restore-or-Later — splash-screen sheet (paid/superadmin only)
 
-**Trigger:** `InitialPullMonitor` in `_layout.jsx` fires once after login when:
-- User is paid tier or superadmin
+**Trigger:** `app/index.jsx` checks after the 1.8 s splash delay when:
+- User is paid tier or superadmin (`canAccess(user, 'cloud_sync')`)
 - Device is online
-- Local SQLite has 0 books
-- Cloud API returns ≥ 1 book
-- SecureStore flag `cashbook_initial_pull_done_<userId>` is NOT set
+- `getLocalStats().books === 0` AND `getCloudDeltaStats().hasCloudData === true`
 
-**Rendered in:** `RootLayout` (above `<NotificationPopup />`, below `<Slot />`)
+**Rendered in:** `app/index.jsx` (above the splash content, as a bottom sheet)
 
 ### Layout
-- Full-screen dark overlay (modal)
-- Centered card with cloud icon, title, body, hint, two buttons
+- `RestoreOrFreshSheet` — bottom sheet with handle bar, cloud icon, title, two option cards
 
 ### UI Elements
 
-| Element                      | Action | Result                                                                               |
-|------------------------------|--------|--------------------------------------------------------------------------------------|
-| "Restore Cloud Data" button  | Tap    | Runs `syncCloudToLocal()` with progress → sets flag → success/error toast            |
-| "Start Fresh" button         | Tap    | Sets flag (skips restore) → info toast "Your cloud data is safe and can be restored anytime from Settings" |
+| Element               | Action | Result                                                                        |
+|-----------------------|--------|-------------------------------------------------------------------------------|
+| **Restore** card      | Tap    | Sheet dismisses → full-screen `RestoreOverlay` shown → `syncCloudToLocal()` runs with animated progress bar → success/error toast → navigate to books |
+| **Later** card        | Tap    | Sheet dismisses → navigate to books (no sync); user can restore from Backup & Sync later |
+
+### RestoreOverlay (full-screen animated overlay during download)
+- Shown immediately after tapping **Restore**, stays until download is 100% complete
+- Animated pulsing ☁️ icon, progress bar, step label, item count, "Please keep the app open" note
+- Cannot be dismissed by the user — disappears only when `finishRestore()` is called
 
 ### States
-| State     | Display                                                            |
-|-----------|--------------------------------------------------------------------|
-| Default   | "Restore Cloud Data" button enabled; "Start Fresh" outline button  |
-| Restoring | Both buttons disabled; button text changes to "Restoring…"         |
+| State        | Display                                                                       |
+|--------------|-------------------------------------------------------------------------------|
+| Default      | Two option cards: Restore (teal) / Later (neutral)                             |
+| Restoring    | Full-screen overlay with animated progress bar; sheet is hidden                |
+| Done         | Overlay fades out; navigate to books                                           |
 
 ### Notes
-- Flag `cashbook_initial_pull_done_<userId>` is written on BOTH choices — modal never re-appears
-- If restore fails → error toast + user can retry from Settings → Backup & Sync
-- After restore, new local data continues to sync to cloud as normal (paid/admin behaviour unchanged)
+- Sheet only appears once per session (no SecureStore flag — re-checked every cold launch)
+- If restore fails → error toast + navigate to books; user can retry from Settings → Backup & Sync
+- `isRestoring` / `restoreProgress` stored in `syncStore.js`
 
 ---
 
@@ -803,7 +806,7 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 | **Manage Access**     | 👑 Pro (if free)  | Tap    | Navigate to manage-access (if Pro+) OR subscription screen (if free) |
 | **Notifications**     | —                  | Tap    | Navigate to notifications                                            |
 | **Privacy & Security** | —                 | Tap    | Navigate to `/(app)/settings/privacy-policy` (PrivacyPolicyScreen)  |
-| **Backup & Sync**     | 👑 Pro (if free)  | Tap    | Navigate to subscription (if free), TODO otherwise                   |
+| **Backup & Sync**     | 👑 Pro (if free)  | Tap    | Navigate to subscription (if free), navigate to `/(app)/settings/backup-sync` (BackupSyncScreen) otherwise |
 | Language              | —                  | TODO   | —                                                                    |
 
 ### Support Section (all TODO)
@@ -863,6 +866,62 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 
 ### Loading State
 - Skeleton loader while profile is fetching
+
+---
+
+## 13b. BackupSyncScreen — `/(app)/settings/backup-sync`
+
+**Component:** `BackupSyncScreen.jsx`
+**Access:** Paid tier / superadmin only (free tier sees upgrade gate)
+
+### Header
+- Primary-color bg, "Backup & Sync" title, back button
+
+### Status Card
+- Animated dot: green (online) / red (offline), connection type label
+- Last synced timestamp (or "Never synced")
+- Upload progress bar (while syncing)
+- Restore progress bar (while restoring) in green
+- Error message if last sync/restore failed
+
+### Local Data Card
+- Counts: Cashbooks / Entries / Categories / Customers / Suppliers
+
+### Cloud Actions Section (paid/superadmin only)
+| Button                  | State                      | Action                                                                               |
+|-------------------------|----------------------------|--------------------------------------------------------------------------------------|
+| **Sync to Cloud**       | Default                    | Tap → `SyncConfirmSheet` → `syncLocalToCloud()` with progress                       |
+| **Sync to Cloud**       | Already synced             | Disabled, shows "All Data Synced" + green check icon                                 |
+| **Sync to Cloud**       | Syncing                    | Disabled, shows "Syncing…"                                                           |
+| **Restore from Cloud**  | Has cloud data             | Tap → `RestoreOrFreshSheet` → `syncCloudToLocal()` with progress                    |
+| **Restore from Cloud**  | No cloud data / offline    | Disabled, shows "No cloud data found" sub-label                                      |
+| **Clear local data only** | Has local data           | Tap → `ClearLocalDataSheet` → `localClearAll()` (cloud unaffected)                  |
+
+### Danger Zone Card
+| Element                   | Action | Result                                                               |
+|---------------------------|--------|----------------------------------------------------------------------|
+| **Start Fresh** button    | Tap    | Opens `FreshStartSheet` (2-step confirm)                             |
+
+#### FreshStartSheet — step 1 (warning)
+- Lists what will be deleted: cloud books, local data, contacts/categories
+- Warning box: "This action is permanent and cannot be recovered"
+- Buttons: Cancel / Continue (→ step 2)
+
+#### FreshStartSheet — step 2 (final confirm)
+- Red box: "Last chance — confirm deletion"
+- Buttons: Go Back / Delete Everything (red)
+- On confirm: deletes all cloud books via `apiDeleteBook()` for each, then `localClearAll()`
+
+### Free-Tier Gate
+- Shows upgrade card with crown emoji, description, "View Plans 👑" button → subscription screen
+
+### Sheets used
+| Sheet                | Purpose                                      |
+|----------------------|----------------------------------------------|
+| `SyncConfirmSheet`   | Confirm upload local → cloud                 |
+| `ClearLocalDataSheet`| Confirm clear local only (cloud safe)        |
+| `RestoreOrFreshSheet`| Confirm restore cloud → local (from screen)  |
+| `FreshStartSheet`    | 2-step confirm delete cloud + local          |
 
 ---
 
@@ -1025,7 +1084,7 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 | Invite collaborator               | BookDetailScreen user-plus icon           | Not implemented           |
 | Notifications settings            | SettingsScreen                            | Not implemented           |
 | Privacy & Security (Privacy Policy) | PrivacyPolicyScreen                     | ✅ Complete               |
-| Backup & Sync                     | SettingsScreen                            | Not implemented           |
+| Backup & Sync                     | BackupSyncScreen (`/(app)/settings/backup-sync`) | ✅ Complete (👑 Pro gate) |
 | Language picker                   | SettingsScreen                            | Not implemented           |
 | Help & FAQ                        | SettingsScreen                            | Not implemented           |
 | Rate the App                      | SettingsScreen                            | Not implemented           |

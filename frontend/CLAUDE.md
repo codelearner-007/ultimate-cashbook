@@ -84,9 +84,13 @@ frontend/
 │   │   └── ui/
 │   │       ├── Input.jsx
 │   │       ├── Icons.jsx
-│   │       ├── CrownBadge.jsx    # Inline tier badge (👑 Pro / Enterprise) for locked features
+│   │       ├── CrownBadge.jsx         # Inline tier badge (👑 Pro / Enterprise) for locked features
 │   │       ├── DatePickerModal.jsx
-│   │       └── TimePickerModal.jsx
+│   │       ├── TimePickerModal.jsx
+│   │       ├── SyncConfirmSheet.jsx   # Confirm upload local → cloud
+│   │       ├── ClearLocalDataSheet.jsx # Confirm clear local data (cloud unaffected)
+│   │       ├── RestoreOrFreshSheet.jsx # Restore-or-Later sheet (launch + BackupSyncScreen)
+│   │       └── FreshStartSheet.jsx    # 2-step confirm: delete all cloud + local data
 │   ├── hooks/
 │   │   ├── useBooks.js           # useBooks, useCreateBook, useDeleteBook (React Query)
 │   │   ├── useBookSort.js        # Sort state + sorted list derivation
@@ -105,7 +109,8 @@ frontend/
 │   ├── store/
 │   │   ├── authStore.js          # Zustand: user, session, setUser, clearUser
 │   │   ├── themeStore.js         # Zustand: isDark, toggle
-│   │   └── bookFieldsStore.js    # Zustand: per-book field visibility toggles
+│   │   ├── bookFieldsStore.js    # Zustand: per-book field visibility toggles
+│   │   └── syncStore.js          # Zustand: isOnline, isSyncing, isRestoring, progress, restoreProgress, lastSyncedAt
 │   └── constants/
 │       ├── colors.js             # LightColors, DarkColors, CARD_ACCENTS
 │       ├── currencies.js         # CURRENCIES list (160+ ISO 4217), getCurrency(code) helper
@@ -257,6 +262,19 @@ frontend/
 
 ---
 
+### `BackupSyncScreen` → `/(app)/settings/backup-sync`
+- Gated: paid / superadmin only (`canAccess(user, 'cloud_sync')`); free users see upgrade card
+- Status card: online dot (animated pulse), last-sync time, upload + restore progress bars
+- Local data card: counts for books / entries / categories / customers / suppliers
+- **Cloud Actions** (paid only):
+  - "Sync to Cloud" → `SyncConfirmSheet` → `syncLocalToCloud(onProgress)` → toast
+  - "Restore from Cloud" → `RestoreOrFreshSheet` → `syncCloudToLocal(onProgress)` → toast
+  - "Clear local data only" → `ClearLocalDataSheet` → `localClearAll()`
+- **Danger Zone**: "Start Fresh" → `FreshStartSheet` (2-step confirm) → `apiDeleteBook()` for each cloud book → `localClearAll()` → toast
+- All sync/restore state in `useSyncStore`: `isSyncing`, `isRestoring`, `progress`, `restoreProgress`
+
+---
+
 ### `SettingsScreen` → `/(app)/settings` (and `/(app)/dashboard/settings`)
 - Sections: Account | App | Support
 - Logout → `supabase.auth.signOut()` → `clearUser()` → AuthGuard redirects to login
@@ -393,6 +411,7 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `authStore` | Zustand | `user`, `session`, `setUser(user, session)`, `clearUser()` |
 | `themeStore` | Zustand | `isDark`, `toggle()` |
 | `bookFieldsStore` | Zustand | Empty store (stub); field visibility is persisted as individual boolean columns on `books` (DB) and read from `['books']` React Query cache as `show_customer`, `show_supplier`, `show_category`, `show_attachment` |
+| `syncStore` | Zustand | `isOnline`, `isSyncing`, `isRestoring`, `progress { done, total, step }`, `restoreProgress { done, total, step }`, `lastSyncedAt`, `syncError`, `restoreError`, `showRestorePrompt`; actions: `startSync`, `finishSync`, `failSync`, `startRestore`, `finishRestore`, `failRestore`, `setProgress`, `setRestoreProgress` |
 | `['books']` | React Query | All books for current user; staleTime 2 min |
 | `['admin-users']` | React Query | All non-admin users; refetchInterval 10 s |
 | `['entries', bookId]` | React Query | Entries for a specific book; staleTime 2 min |

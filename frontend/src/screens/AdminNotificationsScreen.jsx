@@ -678,7 +678,9 @@ export default function AdminNotificationsScreen() {
 
       {/* Header */}
       <View style={s.header}>
+        <View style={{ width: 40, height: 40 }} />
         <Text style={s.headerTitle}>Send Notification</Text>
+        <View style={{ width: 40 }} />
       </View>
 
       <FlatList
@@ -710,7 +712,7 @@ export default function AdminNotificationsScreen() {
 
 const makeStyles = (C) => StyleSheet.create({
   safe:        { flex: 1, backgroundColor: C.background },
-  header:      { backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, paddingVertical: 14 },
+  header:      { backgroundColor: C.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
   headerTitle: { fontSize: 17, fontFamily: Font.bold, color: '#fff' },
   scroll:      { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 40 },
 

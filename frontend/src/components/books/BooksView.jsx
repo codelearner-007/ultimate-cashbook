@@ -15,6 +15,7 @@ import { useProfile, useUpdateProfile } from '../../hooks/useProfile';
 import { useSharedBooks, useLeaveSharedBook, useReceivedInvitations } from '../../hooks/useSharing';
 import { useRealtimeInvitations, useRealtimeBooks } from '../../hooks/useRealtimeSync';
 import { useWorkspaceStore } from '../../store/workspaceStore';
+import { useSyncStore } from '../../store/syncStore';
 import Toast from '../../lib/toast';
 import { getLimit } from '../../lib/canAccess';
 import { shadow } from '../../constants/shadows';
@@ -438,6 +439,7 @@ export default function BooksView({
   );
   const activeWorkspace    = useWorkspaceStore((s) => s.activeWorkspace);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
+  const isSyncing          = useSyncStore((s) => s.isSyncing);
   const [showWorkspaceSwitcher, setShowWorkspaceSwitcher] = useState(false);
 
   const {
@@ -644,31 +646,41 @@ export default function BooksView({
     </View>
   ), [s, sortMode, sortLabel, hasArranged, setShowSort]);
 
-  const ListEmpty = useMemo(() => (
-    <View style={s.empty}>
-      <View style={s.emptyIconBox}>
-        {activeWorkspace === 'shared'
-          ? <SharedIcon color={C.primary} size={36} />
-          : <BookIcon   color={C.primary} size={36} />}
+  const isCloudUser = isSuperAdmin || (tier && tier !== 'free');
+
+  const ListEmpty = useMemo(() => {
+    const icon = activeWorkspace === 'shared'
+      ? <SharedIcon color={C.primary} size={36} />
+      : isSyncing
+        ? <Feather name="cloud-lightning" size={36} color={C.primary} />
+        : <BookIcon color={C.primary} size={36} />;
+
+    let title, sub;
+    if (searchQuery.trim()) {
+      title = 'No results found';
+      sub   = `No books match "${searchQuery.trim()}"`;
+    } else if (activeWorkspace === 'shared') {
+      title = 'No shared books';
+      sub   = 'When someone shares a book\nwith you, it\'ll appear here';
+    } else if (isSyncing) {
+      title = 'Restoring your data…';
+      sub   = 'Downloading books & entries from cloud.\nThis may take a moment.';
+    } else if (isCloudUser) {
+      title = 'No books yet';
+      sub   = 'Your cloud data can be restored\nfrom Backup & Sync in Settings.';
+    } else {
+      title = 'No books yet';
+      sub   = 'Tap "Add New Book" to start\ntracking your cash flow';
+    }
+
+    return (
+      <View style={s.empty}>
+        <View style={s.emptyIconBox}>{icon}</View>
+        <Text style={s.emptyTitle}>{title}</Text>
+        <Text style={s.emptySub}>{sub}</Text>
       </View>
-      {searchQuery.trim() ? (
-        <>
-          <Text style={s.emptyTitle}>No results found</Text>
-          <Text style={s.emptySub}>No books match "{searchQuery.trim()}"</Text>
-        </>
-      ) : activeWorkspace === 'shared' ? (
-        <>
-          <Text style={s.emptyTitle}>No shared books</Text>
-          <Text style={s.emptySub}>When someone shares a book{'\n'}with you, it'll appear here</Text>
-        </>
-      ) : (
-        <>
-          <Text style={s.emptyTitle}>No books yet</Text>
-          <Text style={s.emptySub}>Tap "Add New Book" to start{'\n'}tracking your cash flow</Text>
-        </>
-      )}
-    </View>
-  ), [s, C, searchQuery, activeWorkspace]);
+    );
+  }, [s, C, searchQuery, activeWorkspace, isSyncing, isCloudUser]);
 
   return (
     <SafeAreaView applyTop={applyTopSafeArea} style={s.safe}>

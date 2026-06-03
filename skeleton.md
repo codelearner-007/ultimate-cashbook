@@ -102,6 +102,41 @@ App Start
 
 ---
 
+## 1b. RestoreCloudModal — global overlay (paid/superadmin only, once per install)
+
+**Trigger:** `InitialPullMonitor` in `_layout.jsx` fires once after login when:
+- User is paid tier or superadmin
+- Device is online
+- Local SQLite has 0 books
+- Cloud API returns ≥ 1 book
+- SecureStore flag `cashbook_initial_pull_done_<userId>` is NOT set
+
+**Rendered in:** `RootLayout` (above `<NotificationPopup />`, below `<Slot />`)
+
+### Layout
+- Full-screen dark overlay (modal)
+- Centered card with cloud icon, title, body, hint, two buttons
+
+### UI Elements
+
+| Element                      | Action | Result                                                                               |
+|------------------------------|--------|--------------------------------------------------------------------------------------|
+| "Restore Cloud Data" button  | Tap    | Runs `syncCloudToLocal()` with progress → sets flag → success/error toast            |
+| "Start Fresh" button         | Tap    | Sets flag (skips restore) → info toast "Your cloud data is safe and can be restored anytime from Settings" |
+
+### States
+| State     | Display                                                            |
+|-----------|--------------------------------------------------------------------|
+| Default   | "Restore Cloud Data" button enabled; "Start Fresh" outline button  |
+| Restoring | Both buttons disabled; button text changes to "Restoring…"         |
+
+### Notes
+- Flag `cashbook_initial_pull_done_<userId>` is written on BOTH choices — modal never re-appears
+- If restore fails → error toast + user can retry from Settings → Backup & Sync
+- After restore, new local data continues to sync to cloud as normal (paid/admin behaviour unchanged)
+
+---
+
 ## 2. BooksScreen — `/(app)/books` (role: user)
 
 **Component:** `BooksScreen.jsx` → delegates entirely to `BooksView.jsx`
@@ -183,12 +218,14 @@ App Start
 | **Settings**            | Tap    | Navigate to `/(app)/settings`  |
 
 ### Loading / Error / Empty States
-| State                | Display                                                    |
-|----------------------|------------------------------------------------------------|
-| Loading              | Skeleton cards (animated placeholders)                     |
-| Error                | Error message + "Retry" button → re-triggers `useBooks()`  |
-| Empty (no books)     | Empty state illustration + "Create your first book"        |
-| Empty search results | "No books match your search"                               |
+| State                        | Display                                                                                   |
+|------------------------------|-------------------------------------------------------------------------------------------|
+| Loading                      | Skeleton cards (animated placeholders)                                                    |
+| Error                        | Error message + "Retry" button → re-triggers `useBooks()`                                 |
+| Empty (no books, free tier)  | Empty icon box + "No books yet" + "Tap Add New Book to start tracking your cash flow"     |
+| Empty (no books, paid/admin) | Empty icon box + "No books yet" + "Your cloud data can be restored from Backup & Sync in Settings" |
+| Syncing / restore in progress| Cloud-lightning icon box + "Restoring your data…" + "Downloading books & entries from cloud" |
+| Empty search results         | "No results found" + "No books match '[query]'"                                           |
 
 ---
 

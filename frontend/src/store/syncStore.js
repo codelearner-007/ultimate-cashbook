@@ -4,11 +4,12 @@ import * as SecureStore from 'expo-secure-store';
 const LAST_SYNC_KEY = 'cashbook_last_synced_at';
 
 export const useSyncStore = create((set) => ({
-  isOnline:     false,
-  isSyncing:    false,
-  lastSyncedAt: null,         // ISO string | null
-  progress:     { done: 0, total: 0, step: '' },
-  syncError:    null,
+  isOnline:          false,
+  isSyncing:         false,
+  lastSyncedAt:      null,   // ISO string | null
+  progress:          { done: 0, total: 0, step: '' },
+  syncError:         null,
+  showRestorePrompt: false,  // true = show "Restore cloud data?" modal
 
   setOnline:  (v) => set({ isOnline: v }),
 
@@ -24,6 +25,8 @@ export const useSyncStore = create((set) => ({
   },
 
   failSync: (msg) => set({ isSyncing: false, syncError: msg, progress: { done: 0, total: 0, step: '' } }),
+
+  setRestorePrompt: (v) => set({ showRestorePrompt: v }),
 }));
 
 // Hydrate last-sync timestamp from SecureStore so it's visible before any API call

@@ -42,7 +42,7 @@ export default function ContactSettingsScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>

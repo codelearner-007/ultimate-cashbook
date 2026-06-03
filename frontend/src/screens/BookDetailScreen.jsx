@@ -553,7 +553,7 @@ export default function BookDetailScreen() {
     <SafeAreaView style={s.safe}>
       <StatusBar
         barStyle="light-content"
-        backgroundColor={C.primary}
+        backgroundColor={isDark ? C.background : C.primary}
       />
 
       {/* Header */}

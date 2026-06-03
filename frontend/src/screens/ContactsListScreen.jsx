@@ -54,7 +54,7 @@ export default function ContactsListScreen() {
   const router   = useRouter();
   const basePath = useBookBasePath();
   const { id: bookId, name: bookName, type } = useLocalSearchParams();
-  const { C, Font } = useTheme();
+  const { C, Font, isDark } = useTheme();
   const s = useMemo(() => makeStyles(), []);
 
   const cfg = TYPE_CONFIG[type] || TYPE_CONFIG.customer;
@@ -379,7 +379,7 @@ export default function ContactsListScreen() {
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: C.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={[s.header, { backgroundColor: C.primary }]}>

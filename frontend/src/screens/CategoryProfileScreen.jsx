@@ -19,7 +19,7 @@ export default function CategoryProfileScreen() {
   const router   = useRouter();
   const basePath = useBookBasePath();
   const { id: bookId, categoryId, categoryName: paramName } = useLocalSearchParams();
-  const { C, Font } = useTheme();
+  const { C, Font, isDark } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
 
   // Permissions
@@ -94,7 +94,7 @@ export default function CategoryProfileScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={s.header}>

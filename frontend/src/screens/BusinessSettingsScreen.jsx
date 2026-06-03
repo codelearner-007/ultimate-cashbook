@@ -52,12 +52,12 @@ const ITEMS = [
 
 export default function BusinessSettingsScreen() {
   const router = useRouter();
-  const { C }  = useTheme();
+  const { C, isDark }  = useTheme();
   const s = makeStyles(C);
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>

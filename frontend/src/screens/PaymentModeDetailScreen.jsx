@@ -21,7 +21,7 @@ export default function PaymentModeDetailScreen() {
   const router   = useRouter();
   const basePath = useBookBasePath();
   const { id: bookId, name: bookName, modeId, modeName } = useLocalSearchParams();
-  const { C, Font } = useTheme();
+  const { C, Font, isDark } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
 
   const { data: ownBooks = [] }    = useBooks();
@@ -86,7 +86,7 @@ export default function PaymentModeDetailScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={s.header}>

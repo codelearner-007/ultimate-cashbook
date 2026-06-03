@@ -50,7 +50,7 @@ export default function CategoriesSettingsScreen() {
   const router   = useRouter();
   const basePath = useBookBasePath();
   const { id: bookId, name: bookName } = useLocalSearchParams();
-  const { C, Font } = useTheme();
+  const { C, Font, isDark } = useTheme();
   const s = useMemo(() => makeStyles(), []);
 
   const [search,     setSearch]     = useState('');
@@ -325,7 +325,7 @@ export default function CategoriesSettingsScreen() {
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: C.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.primary} />
+      <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
 
       {/* Header */}
       <View style={[s.header, { backgroundColor: C.primary }]}>

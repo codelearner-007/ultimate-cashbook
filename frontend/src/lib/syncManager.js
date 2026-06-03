@@ -1,20 +1,15 @@
 /**
- * Sync engine — uploads local SQLite data to the cloud API.
+ * Sync engine — bidirectional sync between local SQLite and cloud API.
  *
- * Used when a free user upgrades to Pro/Business, or when a paid user
- * reconnects after working offline.
+ * syncLocalToCloud — uploads local data to cloud (upgrade / reconnect)
+ * syncCloudToLocal — downloads cloud data into local SQLite (new device / reinstall)
  *
- * Duplicate-safe: before uploading anything, the engine fetches the current
- * cloud state and skips items that are already there:
- *   - Books matched by name → reuse existing cloud book ID (no duplicate books)
+ * Both directions are duplicate-safe:
+ *   - Books matched by name (case-insensitive)
  *   - Categories / customers / suppliers matched by name within their book
  *   - Entries matched by fingerprint: date + time + type + amount + remark
  *
- * Return value: { synced, skipped, alreadySynced, total }
- *   synced        — items actually uploaded this run
- *   skipped       — items that failed (error during upload)
- *   alreadySynced — items already present in cloud (not re-uploaded)
- *   total         — total local items processed
+ * Return value for both: { synced, skipped, alreadySynced, total }
  */
 
 import * as L from './localDb';
@@ -31,6 +26,7 @@ import {
   apiCreateCustomer,
   apiGetSuppliers,
   apiCreateSupplier,
+  apiGetPaymentModes,
   apiCreatePaymentMode,
   apiUploadAttachment,
 } from './api';
@@ -365,6 +361,219 @@ export async function syncLocalToCloud(onProgress) {
       tick('Uploading entry…');
     } catch {
       skip('Skipped entry');
+    }
+  }
+
+  return { synced: done - skipped - alreadySynced, skipped, alreadySynced, total };
+}
+
+// ── Cloud → Local pull ────────────────────────────────────────────────────────
+
+/**
+ * Downloads all cloud data into local SQLite.
+ * Used when a paid/superadmin user logs in on a new device with no local data.
+ *
+ * Duplicate-safe: records that already exist locally (matched by name/fingerprint)
+ * are skipped — safe to re-run without creating duplicates.
+ *
+ * @param {(done: number, total: number, step: string) => void} onProgress
+ * @returns {{ synced: number, skipped: number, alreadySynced: number, total: number }}
+ */
+export async function syncCloudToLocal(onProgress) {
+  let done          = 0;
+  let skipped       = 0;
+  let alreadySynced = 0;
+  let total         = 0;
+
+  const tick    = (step) => { done++;                       onProgress?.(done, total, step); };
+  const skip    = (step) => { skipped++;       done++;      onProgress?.(done, total, step); };
+  const already = (step) => { alreadySynced++; done++;      onProgress?.(done, total, step); };
+
+  // ── Fetch all cloud books ────────────────────────────────────────────────────
+  let cloudBooks = [];
+  try { cloudBooks = await apiGetBooks(); } catch { return { synced: 0, skipped: 0, alreadySynced: 0, total: 0 }; }
+
+  if (cloudBooks.length === 0) return { synced: 0, skipped: 0, alreadySynced: 0, total: 0 };
+
+  // Compute rough total for progress (books + entries per book estimated after first fetch)
+  total = cloudBooks.length;
+  onProgress?.(0, total, 'Fetching cloud data…');
+
+  // Fetch all sub-data in parallel across books
+  const bookData = await Promise.all(
+    cloudBooks.map(async (book) => {
+      const [cats, custs, supps, pms, entries] = await Promise.all([
+        apiGetCategories(book.id).catch(() => []),
+        apiGetCustomers(book.id).catch(() => []),
+        apiGetSuppliers(book.id).catch(() => []),
+        apiGetPaymentModes(book.id).catch(() => []),
+        apiGetEntries(book.id).catch(() => []),
+      ]);
+      return { book, cats, custs, supps, pms, entries };
+    })
+  );
+
+  // Recompute total with actual entry counts
+  total = bookData.reduce((sum, d) =>
+    sum + 1 + d.cats.length + d.custs.length + d.supps.length + d.pms.length + d.entries.length, 0);
+  onProgress?.(done, total, 'Starting…');
+
+  // ── Fetch existing local state for dedup ─────────────────────────────────────
+  const localData = await L.localGetAllDataForMigration().catch(() => ({
+    books: [], categories: [], customers: [], suppliers: [], payment_modes: [], entries: [],
+  }));
+
+  const localBookByName    = {};
+  for (const b of localData.books) localBookByName[key(b.name)] = b;
+
+  const localEntryFPByBook = {};  // localBookId → Set<fingerprint>
+  for (const e of localData.entries) {
+    if (!localEntryFPByBook[e.book_id]) localEntryFPByBook[e.book_id] = new Set();
+    localEntryFPByBook[e.book_id].add(entryFingerprint(e));
+  }
+
+  // ── Process each cloud book ──────────────────────────────────────────────────
+  for (const { book: cloudBook, cats, custs, supps, pms, entries } of bookData) {
+
+    // ── Book ──────────────────────────────────────────────────────────────────
+    let localBook = localBookByName[key(cloudBook.name)];
+    if (localBook) {
+      // Already exists locally — just ensure cloud_id is linked
+      await L.localSetBookCloudId(localBook.id, cloudBook.id).catch(() => {});
+      already(`Book already local: ${cloudBook.name}`);
+    } else {
+      try {
+        localBook = await L.localCreateBook(cloudBook.name, cloudBook.currency ?? 'PKR');
+        await L.localSetBookCloudId(localBook.id, cloudBook.id).catch(() => {});
+        tick(`Downloaded book: ${cloudBook.name}`);
+      } catch {
+        skip(`Skipped book: ${cloudBook.name}`);
+        // Skip all sub-data for this book too
+        const sub = cats.length + custs.length + supps.length + pms.length + entries.length;
+        skipped  += sub;
+        done     += sub;
+        onProgress?.(done, total, 'Skipping book sub-data…');
+        continue;
+      }
+    }
+
+    const localBookId = localBook.id;
+
+    // ── Categories ────────────────────────────────────────────────────────────
+    const localCatByName = {};
+    for (const c of (localData.categories ?? []).filter(c => c.book_id === localBookId)) {
+      localCatByName[key(c.name)] = c;
+    }
+
+    for (const cat of cats) {
+      if (localCatByName[key(cat.name)]) {
+        already(`Category already local: ${cat.name}`);
+      } else {
+        try {
+          await L.localCreateCategory(localBookId, cat.name);
+          tick(`Downloaded category: ${cat.name}`);
+        } catch {
+          skip(`Skipped category: ${cat.name}`);
+        }
+      }
+    }
+
+    // ── Customers ─────────────────────────────────────────────────────────────
+    const localCustByName = {};
+    for (const c of (localData.customers ?? []).filter(c => c.book_id === localBookId)) {
+      localCustByName[key(c.name)] = c;
+    }
+
+    for (const cust of custs) {
+      if (localCustByName[key(cust.name)]) {
+        already(`Customer already local: ${cust.name}`);
+      } else {
+        try {
+          await L.localCreateCustomer(localBookId, {
+            name: cust.name, phone: cust.phone ?? null,
+            email: cust.email ?? null, address: cust.address ?? null,
+          });
+          tick(`Downloaded customer: ${cust.name}`);
+        } catch {
+          skip(`Skipped customer: ${cust.name}`);
+        }
+      }
+    }
+
+    // ── Suppliers ─────────────────────────────────────────────────────────────
+    const localSuppByName = {};
+    for (const s of (localData.suppliers ?? []).filter(s => s.book_id === localBookId)) {
+      localSuppByName[key(s.name)] = s;
+    }
+
+    for (const supp of supps) {
+      if (localSuppByName[key(supp.name)]) {
+        already(`Supplier already local: ${supp.name}`);
+      } else {
+        try {
+          await L.localCreateSupplier(localBookId, {
+            name: supp.name, phone: supp.phone ?? null,
+            email: supp.email ?? null, address: supp.address ?? null,
+          });
+          tick(`Downloaded supplier: ${supp.name}`);
+        } catch {
+          skip(`Skipped supplier: ${supp.name}`);
+        }
+      }
+    }
+
+    // ── Payment modes ─────────────────────────────────────────────────────────
+    const localPmByName = {};
+    for (const p of (localData.payment_modes ?? []).filter(p => p.book_id === localBookId)) {
+      localPmByName[key(p.name)] = p;
+    }
+
+    for (const pm of pms) {
+      if (localPmByName[key(pm.name)]) {
+        already(`Payment mode already local: ${pm.name}`);
+      } else {
+        try {
+          await L.localCreatePaymentMode(localBookId, pm.name);
+          tick(`Downloaded payment mode: ${pm.name}`);
+        } catch {
+          skip(`Skipped payment mode: ${pm.name}`);
+        }
+      }
+    }
+
+    // ── Entries ───────────────────────────────────────────────────────────────
+    const localFPs = localEntryFPByBook[localBookId] ?? new Set();
+
+    for (const entry of entries) {
+      const fp = entryFingerprint(entry);
+      if (localFPs.has(fp)) {
+        already('Entry already local');
+        continue;
+      }
+
+      try {
+        await L.localCreateEntry(localBookId, {
+          type:            entry.type,
+          amount:          entry.amount,
+          remark:          entry.remark       ?? null,
+          category:        entry.category     ?? null,
+          category_id:     null,   // local IDs differ from cloud IDs
+          payment_mode:    entry.payment_mode ?? 'cash',
+          payment_mode_id: null,
+          contact_name:    entry.contact_name ?? null,
+          customer_id:     null,
+          supplier_id:     null,
+          entry_date:      entry.entry_date,
+          entry_time:      entry.entry_time   ?? '00:00',
+          attachment_url:  entry.attachment_url  ?? null,
+          attachment_path: entry.attachment_path ?? null,
+          attachment_provider: entry.attachment_url ? 'supabase' : null,
+        });
+        localFPs.add(fp);
+        tick('Downloaded entry…');
+      } catch {
+        skip('Skipped entry');
+      }
     }
   }
 

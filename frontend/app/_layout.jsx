@@ -28,7 +28,9 @@ import {
   addNotificationTapListener,
   scheduleLocalNotification,
 } from '../src/lib/pushNotifications';
-import { getLocalStats, syncLocalToCloud } from '../src/lib/syncManager';
+import { getLocalStats, syncLocalToCloud, syncCloudToLocal } from '../src/lib/syncManager';
+import { localGetBooks } from '../src/lib/localDb';
+import * as SecureStore from 'expo-secure-store';
 import { useNotificationPopupStore } from '../src/store/notificationPopupStore';
 import { useNotifications } from '../src/hooks/useNotifications';
 
@@ -72,10 +74,13 @@ function NetworkMonitor() {
   return null;
 }
 
+const SYNC_INTERVAL_MS = 5 * 60 * 1000; // re-sync on foreground if >5 min since last sync
+
 function AutoSyncMonitor() {
   const user        = useAuthStore(s => s.user);
   const isOnline    = useSyncStore(s => s.isOnline);
   const isSyncing   = useSyncStore(s => s.isSyncing);
+  const lastSyncedAt = useSyncStore(s => s.lastSyncedAt);
   const startSync   = useSyncStore(s => s.startSync);
   const setProgress = useSyncStore(s => s.setProgress);
   const finishSync  = useSyncStore(s => s.finishSync);
@@ -84,63 +89,163 @@ function AutoSyncMonitor() {
   const wasOnline = useRef(isOnline);
   const syncLock  = useRef(false);
 
+  // Returns true when this user should sync to cloud (paid/superadmin)
+  const shouldSync = (u) => {
+    if (!u) return false;
+    if (u.role === 'superadmin') return true;
+    const tier = u?.subscription_tier;
+    return tier && tier !== 'free';
+  };
+
+  const runUpload = () => {
+    if (syncLock.current || isSyncing) return;
+    syncLock.current = true;
+
+    getLocalStats()
+      .then(stats => {
+        if (stats.total === 0) { syncLock.current = false; return; }
+
+        startSync();
+        Toast.show({
+          type: 'info',
+          text1: 'Syncing to cloud…',
+          text2: 'Uploading your local data',
+          visibilityTime: 3000,
+        });
+
+        return syncLocalToCloud((done, total, step) => setProgress(done, total, step))
+          .then(result => {
+            finishSync(new Date().toISOString());
+            const alreadySynced = result.alreadySynced ?? 0;
+            const allAlready = result.synced === 0 && alreadySynced > 0;
+            scheduleLocalNotification(
+              allAlready ? 'Already synced ✓' : 'All data synced ✓',
+              allAlready
+                ? 'Everything is already synced to cloud'
+                : `${result.synced} item${result.synced !== 1 ? 's' : ''} uploaded to cloud successfully`,
+            );
+            Toast.show({
+              type: 'success',
+              text1: allAlready ? 'Already synced!' : 'All data synced!',
+              text2: allAlready
+                ? 'Everything is already in the cloud'
+                : `${result.synced} item${result.synced !== 1 ? 's' : ''} uploaded to cloud`,
+              visibilityTime: 4000,
+            });
+          })
+          .catch(err => {
+            failSync(err?.message ?? 'Sync failed');
+            Toast.show({
+              type: 'error',
+              text1: 'Sync failed',
+              text2: 'You can retry from Backup & Sync in Settings',
+              visibilityTime: 4000,
+            });
+          });
+      })
+      .catch(() => {})
+      .finally(() => { syncLock.current = false; });
+  };
+
+  // Trigger on offline → online transition
   useEffect(() => {
     const prevOnline = wasOnline.current;
     wasOnline.current = isOnline;
 
-    // Only act on the offline → online transition
-    if (!prevOnline && isOnline && user && !isSyncing && !syncLock.current) {
-      const tier = user?.subscription_tier;
-      // Free-tier regular users always stay local — nothing to sync to cloud
-      if (user?.role !== 'superadmin' && (!tier || tier === 'free')) return;
-
-      syncLock.current = true;
-      getLocalStats()
-        .then(stats => {
-          if (stats.total === 0) { syncLock.current = false; return; }
-
-          startSync();
-          Toast.show({
-            type: 'info',
-            text1: 'Back online — syncing...',
-            text2: 'Uploading offline data to cloud',
-            visibilityTime: 3000,
-          });
-
-          return syncLocalToCloud((done, total, step) => setProgress(done, total, step))
-            .then(result => {
-              finishSync(new Date().toISOString());
-              const alreadySynced = result.alreadySynced ?? 0;
-              const allAlready = result.synced === 0 && alreadySynced > 0;
-              scheduleLocalNotification(
-                allAlready ? 'Already synced ✓' : 'All data synced ✓',
-                allAlready
-                  ? 'Everything is already synced to cloud'
-                  : `${result.synced} item${result.synced !== 1 ? 's' : ''} uploaded to cloud successfully`,
-              );
-              Toast.show({
-                type: 'success',
-                text1: allAlready ? 'Already synced!' : 'All data synced!',
-                text2: allAlready
-                  ? 'Everything is already in the cloud'
-                  : `${result.synced} item${result.synced !== 1 ? 's' : ''} uploaded to cloud`,
-                visibilityTime: 4000,
-              });
-            })
-            .catch(err => {
-              failSync(err?.message ?? 'Sync failed');
-              Toast.show({
-                type: 'error',
-                text1: 'Sync failed',
-                text2: 'You can retry from Backup & Sync in Settings',
-                visibilityTime: 4000,
-              });
-            });
-        })
-        .catch(() => {})
-        .finally(() => { syncLock.current = false; });
+    if (!prevOnline && isOnline && shouldSync(user)) {
+      runUpload();
     }
   }, [isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Trigger on app foreground if >5 min since last sync
+  useEffect(() => {
+    if (!shouldSync(user)) return;
+    const appSub = AppState.addEventListener('change', (next) => {
+      if (next !== 'active') return;
+      if (!useSyncStore.getState().isOnline) return;
+      const last = useSyncStore.getState().lastSyncedAt;
+      const stale = !last || (Date.now() - new Date(last).getTime()) > SYNC_INTERVAL_MS;
+      if (stale) runUpload();
+    });
+    return () => appSub.remove();
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return null;
+}
+
+/**
+ * On first login on a new device (no local books), pulls all cloud data down
+ * into local SQLite so the user sees their data immediately.
+ * Gated by SecureStore flag so it only runs once per device install.
+ */
+function InitialPullMonitor() {
+  const user      = useAuthStore(s => s.user);
+  const isOnline  = useSyncStore(s => s.isOnline);
+  const isSyncing = useSyncStore(s => s.isSyncing);
+  const startSync  = useSyncStore(s => s.startSync);
+  const setProgress = useSyncStore(s => s.setProgress);
+  const finishSync = useSyncStore(s => s.finishSync);
+  const failSync   = useSyncStore(s => s.failSync);
+  const pullLock   = useRef(false);
+
+  const shouldPull = (u) => {
+    if (!u) return false;
+    if (u.role === 'superadmin') return true;
+    const tier = u?.subscription_tier;
+    return tier && tier !== 'free';
+  };
+
+  useEffect(() => {
+    if (!user || !isOnline || isSyncing || pullLock.current) return;
+    if (!shouldPull(user)) return;
+
+    const PULL_FLAG = `cashbook_initial_pull_done_${user.id}`;
+
+    SecureStore.getItemAsync(PULL_FLAG)
+      .then(async (done) => {
+        if (done) return; // already pulled on this device
+
+        const localBooks = await localGetBooks().catch(() => []);
+        if (localBooks.length > 0) {
+          // Local data already exists — mark as done, skip pull
+          SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
+          return;
+        }
+
+        // No local data — pull from cloud
+        pullLock.current = true;
+        startSync();
+        Toast.show({
+          type: 'info',
+          text1: 'Restoring your data…',
+          text2: 'Downloading books & entries from cloud',
+          visibilityTime: 4000,
+        });
+
+        syncCloudToLocal((done, total, step) => setProgress(done, total, step))
+          .then(result => {
+            finishSync(new Date().toISOString());
+            SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
+            Toast.show({
+              type: 'success',
+              text1: 'Data restored!',
+              text2: `${result.synced} item${result.synced !== 1 ? 's' : ''} downloaded from cloud`,
+              visibilityTime: 4000,
+            });
+          })
+          .catch(err => {
+            failSync(err?.message ?? 'Restore failed');
+            Toast.show({
+              type: 'error',
+              text1: 'Restore failed',
+              text2: 'You can retry from Backup & Sync in Settings',
+              visibilityTime: 4000,
+            });
+          })
+          .finally(() => { pullLock.current = false; });
+      })
+      .catch(() => {});
+  }, [user, isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
 }
@@ -399,6 +504,7 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <NetworkMonitor />
       <AutoSyncMonitor />
+      <InitialPullMonitor />
       <SupabaseAuthListener />
       <AuthGuard />
       <Slot />

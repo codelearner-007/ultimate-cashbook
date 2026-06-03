@@ -462,10 +462,10 @@ Swagger UI: `http://localhost:8000/docs`
 
 ---
 
-## Deployment (Railway)
+## Deployment (Render)
 
 - `Procfile`: `web: uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-- Set all 3 env vars in Railway dashboard
+- Set all env vars in Render dashboard (Environment → Environment Variables)
 - Health check endpoint: `GET /health` → `{"status": "ok"}`
 
 ---

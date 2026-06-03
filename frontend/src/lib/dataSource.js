@@ -85,6 +85,19 @@ function useLocalDb() {
 }
 
 /**
+ * Wrap a cloud read with a local SQLite fallback.
+ * If the cloud call throws (e.g. no network), silently return local data instead.
+ * This handles cases where isOnline is stale-true but the network is actually down.
+ */
+async function withLocalFallback(cloudFn, localFn) {
+  try {
+    return await cloudFn();
+  } catch {
+    return localFn();
+  }
+}
+
+/**
  * Resolve the local book record that corresponds to a cloud book ID.
  * Returns null if the mapping has not been established yet (no sync has run).
  */
@@ -95,7 +108,7 @@ function localBookForCloud(cloudBookId) {
 // ── Books ──────────────────────────────────────────────────────────────────────
 
 export const apiGetBooks = () =>
-  useLocalDb() ? L.localGetBooks() : _apiGetBooks();
+  useLocalDb() ? L.localGetBooks() : withLocalFallback(_apiGetBooks, L.localGetBooks);
 
 export const apiCreateBook = async (name, cur) => {
   if (useLocalDb()) return L.localCreateBook(name, cur);
@@ -138,10 +151,14 @@ export const apiUpdateBookFieldSettings = async (id, s) => {
 // ── Entries ────────────────────────────────────────────────────────────────────
 
 export const apiGetEntries = (bookId, params) =>
-  useLocalDb() ? L.localGetEntries(bookId, params) : _apiGetEntries(bookId, params);
+  useLocalDb()
+    ? L.localGetEntries(bookId, params)
+    : withLocalFallback(() => _apiGetEntries(bookId, params), () => L.localGetEntries(bookId, params));
 
 export const apiGetSummary = (bookId) =>
-  useLocalDb() ? L.localGetSummary(bookId) : _apiGetSummary(bookId);
+  useLocalDb()
+    ? L.localGetSummary(bookId)
+    : withLocalFallback(() => _apiGetSummary(bookId), () => L.localGetSummary(bookId));
 
 export const apiCreateEntry = async (bookId, p) => {
   if (useLocalDb()) return L.localCreateEntry(bookId, p);
@@ -179,7 +196,9 @@ export const apiDeleteAllEntries = async (bookId) => {
 // ── Categories ─────────────────────────────────────────────────────────────────
 
 export const apiGetCategories = (bookId) =>
-  useLocalDb() ? L.localGetCategories(bookId) : _apiGetCategories(bookId);
+  useLocalDb()
+    ? L.localGetCategories(bookId)
+    : withLocalFallback(() => _apiGetCategories(bookId), () => L.localGetCategories(bookId));
 
 export const apiCreateCategory = async (bookId, payload) => {
   const name = typeof payload === 'object' ? payload.name : payload;
@@ -198,7 +217,9 @@ export const apiDeleteCategory = (bookId, id) =>
   useLocalDb() ? L.localDeleteCategory(bookId, id) : _apiDeleteCategory(bookId, id);
 
 export const apiGetCategoryEntries = (bookId, id) =>
-  useLocalDb() ? L.localGetCategoryEntries(bookId, id) : _apiGetCategoryEntries(bookId, id);
+  useLocalDb()
+    ? L.localGetCategoryEntries(bookId, id)
+    : withLocalFallback(() => _apiGetCategoryEntries(bookId, id), () => L.localGetCategoryEntries(bookId, id));
 
 export const apiReorderCategories = (bookId, orderedIds) =>
   useLocalDb() ? L.localReorderCategories(bookId, orderedIds) : _apiReorderCategories(bookId, orderedIds);
@@ -206,7 +227,9 @@ export const apiReorderCategories = (bookId, orderedIds) =>
 // ── Customers ──────────────────────────────────────────────────────────────────
 
 export const apiGetCustomers = (bookId) =>
-  useLocalDb() ? L.localGetCustomers(bookId) : _apiGetCustomers(bookId);
+  useLocalDb()
+    ? L.localGetCustomers(bookId)
+    : withLocalFallback(() => _apiGetCustomers(bookId), () => L.localGetCustomers(bookId));
 
 export const apiCreateCustomer = async (bookId, p) => {
   if (useLocalDb()) return L.localCreateCustomer(bookId, p);
@@ -218,7 +241,9 @@ export const apiCreateCustomer = async (bookId, p) => {
 };
 
 export const apiGetCustomer = (bookId, id) =>
-  useLocalDb() ? L.localGetCustomer(bookId, id) : _apiGetCustomer(bookId, id);
+  useLocalDb()
+    ? L.localGetCustomer(bookId, id)
+    : withLocalFallback(() => _apiGetCustomer(bookId, id), () => L.localGetCustomer(bookId, id));
 
 export const apiUpdateCustomer = (bookId, id, p) =>
   useLocalDb() ? L.localUpdateCustomer(bookId, id, p) : _apiUpdateCustomer(bookId, id, p);
@@ -227,7 +252,9 @@ export const apiDeleteCustomer = (bookId, id) =>
   useLocalDb() ? L.localDeleteCustomer(bookId, id) : _apiDeleteCustomer(bookId, id);
 
 export const apiGetCustomerEntries = (bookId, id) =>
-  useLocalDb() ? L.localGetCustomerEntries(bookId, id) : _apiGetCustomerEntries(bookId, id);
+  useLocalDb()
+    ? L.localGetCustomerEntries(bookId, id)
+    : withLocalFallback(() => _apiGetCustomerEntries(bookId, id), () => L.localGetCustomerEntries(bookId, id));
 
 export const apiReorderCustomers = (bookId, orderedIds) =>
   useLocalDb() ? L.localReorderCustomers(bookId, orderedIds) : _apiReorderCustomers(bookId, orderedIds);
@@ -235,7 +262,9 @@ export const apiReorderCustomers = (bookId, orderedIds) =>
 // ── Suppliers ──────────────────────────────────────────────────────────────────
 
 export const apiGetSuppliers = (bookId) =>
-  useLocalDb() ? L.localGetSuppliers(bookId) : _apiGetSuppliers(bookId);
+  useLocalDb()
+    ? L.localGetSuppliers(bookId)
+    : withLocalFallback(() => _apiGetSuppliers(bookId), () => L.localGetSuppliers(bookId));
 
 export const apiCreateSupplier = async (bookId, p) => {
   if (useLocalDb()) return L.localCreateSupplier(bookId, p);
@@ -247,7 +276,9 @@ export const apiCreateSupplier = async (bookId, p) => {
 };
 
 export const apiGetSupplier = (bookId, id) =>
-  useLocalDb() ? L.localGetSupplier(bookId, id) : _apiGetSupplier(bookId, id);
+  useLocalDb()
+    ? L.localGetSupplier(bookId, id)
+    : withLocalFallback(() => _apiGetSupplier(bookId, id), () => L.localGetSupplier(bookId, id));
 
 export const apiUpdateSupplier = (bookId, id, p) =>
   useLocalDb() ? L.localUpdateSupplier(bookId, id, p) : _apiUpdateSupplier(bookId, id, p);
@@ -256,7 +287,9 @@ export const apiDeleteSupplier = (bookId, id) =>
   useLocalDb() ? L.localDeleteSupplier(bookId, id) : _apiDeleteSupplier(bookId, id);
 
 export const apiGetSupplierEntries = (bookId, id) =>
-  useLocalDb() ? L.localGetSupplierEntries(bookId, id) : _apiGetSupplierEntries(bookId, id);
+  useLocalDb()
+    ? L.localGetSupplierEntries(bookId, id)
+    : withLocalFallback(() => _apiGetSupplierEntries(bookId, id), () => L.localGetSupplierEntries(bookId, id));
 
 export const apiReorderSuppliers = (bookId, orderedIds) =>
   useLocalDb() ? L.localReorderSuppliers(bookId, orderedIds) : _apiReorderSuppliers(bookId, orderedIds);
@@ -264,7 +297,9 @@ export const apiReorderSuppliers = (bookId, orderedIds) =>
 // ── Payment Modes ──────────────────────────────────────────────────────────────
 
 export const apiGetPaymentModes = (bookId) =>
-  useLocalDb() ? L.localGetPaymentModes(bookId) : _apiGetPaymentModes(bookId);
+  useLocalDb()
+    ? L.localGetPaymentModes(bookId)
+    : withLocalFallback(() => _apiGetPaymentModes(bookId), () => L.localGetPaymentModes(bookId));
 
 export const apiCreatePaymentMode = async (bookId, p) => {
   const name = typeof p === 'object' ? p.name : p;
@@ -286,4 +321,6 @@ export const apiReorderPaymentModes = (bookId, orderedIds) =>
   useLocalDb() ? L.localReorderPaymentModes(bookId, orderedIds) : _apiReorderPaymentModes(bookId, orderedIds);
 
 export const apiGetPaymentModeEntries = (bookId, id) =>
-  useLocalDb() ? L.localGetPaymentModeEntries(bookId, id) : _apiGetPaymentModeEntries(bookId, id);
+  useLocalDb()
+    ? L.localGetPaymentModeEntries(bookId, id)
+    : withLocalFallback(() => _apiGetPaymentModeEntries(bookId, id), () => L.localGetPaymentModeEntries(bookId, id));

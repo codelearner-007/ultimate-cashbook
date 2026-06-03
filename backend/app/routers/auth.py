@@ -12,6 +12,7 @@ the frontend knows to fall back to the native Supabase OTP flow.
 
 import random
 import smtplib
+import socket
 import logging
 from datetime import datetime, timezone, timedelta
 from email.mime.multipart import MIMEMultipart
@@ -153,9 +154,13 @@ async def send_otp(body: SendOtpRequest):
     except smtplib.SMTPRecipientsRefused as exc:
         logger.error("SMTP recipient refused for %s: %s", email, exc)
         raise HTTPException(status_code=400, detail="Could not deliver to that email address.")
+    except (OSError, socket.error, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected) as exc:
+        # Network unreachable / SMTP port blocked — fall back to Supabase native OTP
+        logger.warning("SMTP network error for %s (%s) — returning 503 for client fallback", email, exc)
+        raise HTTPException(status_code=503, detail="SMTP not reachable — use Supabase native OTP")
     except Exception as exc:
         logger.error("SMTP send failed for %s: %s", email, exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to send OTP email: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to send sign-in code. Please try again.")
 
     return {"message": "OTP sent"}
 

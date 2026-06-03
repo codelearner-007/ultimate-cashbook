@@ -2,14 +2,15 @@ import { useState, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   StatusBar, Dimensions, Modal, ActivityIndicator, Alert, TextInput,
-  Keyboard, Animated, Platform, Image,
+  Keyboard, Animated, Platform, Image, ScrollView,
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Path, Ellipse } from 'react-native-svg';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { LightColors } from '../constants/colors';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
+import { apiGetProfile } from '../lib/api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -44,13 +45,18 @@ function EmailIcon({ size = 18, color = C.primary }) {
   );
 }
 
-
+// Decorative teal blobs matching the screenshot
 function BackgroundBlobs() {
   return (
     <Svg style={StyleSheet.absoluteFill} width={width} height={height} pointerEvents="none">
-      <Circle cx={width * 0.85} cy={height * 0.08}  r={160} fill="rgba(255,255,255,0.08)" />
-      <Circle cx={width * 0.0}  cy={height * 0.35}  r={100} fill="rgba(255,255,255,0.06)" />
-      <Circle cx={width * 0.6}  cy={height * 0.88}  r={180} fill="rgba(255,255,255,0.06)" />
+      {/* Top-right large blob */}
+      <Ellipse cx={width * 0.92} cy={height * 0.06} rx={140} ry={130} fill="rgba(57,170,170,0.14)" />
+      {/* Left-middle smaller blob */}
+      <Ellipse cx={0} cy={height * 0.36} rx={100} ry={95} fill="rgba(57,170,170,0.10)" />
+      {/* Bottom-left large solid teal circle */}
+      <Ellipse cx={-30} cy={height + 30} rx={160} ry={150} fill="rgba(57,170,170,0.55)" />
+      {/* Bottom-right medium circle */}
+      <Ellipse cx={width + 20} cy={height - 20} rx={120} ry={115} fill="rgba(57,170,170,0.35)" />
     </Svg>
   );
 }
@@ -60,7 +66,7 @@ function BackgroundBlobs() {
 function EmailModal({ visible, onClose }) {
   const [email,   setEmail]   = useState('');
   const [otp,     setOtp]     = useState('');
-  const [step,    setStep]    = useState('email'); // 'email' | 'otp'
+  const [step,    setStep]    = useState('email');
   const [loading, setLoading] = useState(false);
 
   const kbOffset = useRef(new Animated.Value(0)).current;
@@ -95,28 +101,21 @@ function EmailModal({ visible, onClose }) {
     }
     setLoading(true);
     try {
-      // Production path: custom backend sends OTP via Gmail SMTP.
-      // Backend returns 503 when GMAIL_SMTP_USER is not set (local dev),
-      // in which case we fall back to Supabase native OTP → Inbucket.
       const res = await fetch(`${API_BASE_URL}/api/v1/auth/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: trimmed }),
       });
-
       if (res.status === 503) {
-        // Dev fallback — Supabase native OTP (goes to Inbucket on port 54324)
         const { error } = await supabase.auth.signInWithOtp({ email: trimmed });
         if (error) throw new Error(error.message);
         setStep('otp');
         return;
       }
-
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail || 'Failed to send OTP. Try again.');
       }
-
       setStep('otp');
     } catch (err) {
       Alert.alert('Error', err.message || 'Could not send OTP. Check your connection.');
@@ -138,9 +137,7 @@ function EmailModal({ visible, onClose }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), code }),
       });
-
       if (res.status === 503) {
-        // Dev fallback — verify via Supabase native OTP
         const { error } = await supabase.auth.verifyOtp({
           email: email.trim().toLowerCase(),
           token: code,
@@ -151,25 +148,16 @@ function EmailModal({ visible, onClose }) {
         onClose();
         return;
       }
-
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail || 'Invalid or expired code.');
       }
-
       const { access_token, refresh_token } = await res.json();
-
-      // Hydrate the Supabase client with the new session so all subsequent
-      // API calls (via api.js interceptor) carry the correct JWT.
       await supabase.auth.setSession({ access_token, refresh_token });
-
-      // Fetch full profile from backend (role, subscription_tier, etc.)
       const profile = await apiGetProfile();
       useAuthStore.getState().setUser(profile, { access_token, refresh_token });
-
       reset();
       onClose();
-      // AuthGuard in _layout.jsx will redirect based on profile.role
     } catch (err) {
       Alert.alert('Verification Failed', err.message || 'Invalid or expired code.');
     } finally {
@@ -185,12 +173,9 @@ function EmailModal({ visible, onClose }) {
       statusBarTranslucent
       onRequestClose={() => { reset(); onClose(); }}
     >
-      {/* Dim backdrop */}
       <View style={[StyleSheet.absoluteFill, styles.pickerOverlay]} pointerEvents="box-none">
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => { Keyboard.dismiss(); reset(); onClose(); }} />
       </View>
-
-      {/* Sheet anchored to bottom; lifts above keyboard via marginBottom */}
       <View style={styles.sheetAnchor} pointerEvents="box-none">
         <Animated.View style={{ marginBottom: kbOffset }}>
           <View style={styles.pickerBox}>
@@ -198,13 +183,21 @@ function EmailModal({ visible, onClose }) {
             <Text style={styles.pickerTitle}>
               {step === 'email' ? 'Continue with Email' : 'Enter OTP Code'}
             </Text>
-
             {step === 'email' ? (
               <>
                 <Text style={styles.pickerSub}>Enter your email to receive a sign-in code</Text>
                 <View style={styles.inputBox}>
                   <Text style={styles.inputLabel}>Email</Text>
-                  <EmailTextInput value={email} onChangeText={setEmail} />
+                  <TextInput
+                    style={styles.textInput}
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder="you@example.com"
+                    placeholderTextColor={C.textMuted}
+                  />
                 </View>
                 <TouchableOpacity
                   style={[styles.sendBtn, loading && { opacity: 0.6 }]}
@@ -258,45 +251,25 @@ function EmailModal({ visible, onClose }) {
   );
 }
 
-function EmailTextInput({ value, onChangeText }) {
-  return (
-    <TextInput
-      style={styles.textInput}
-      value={value}
-      onChangeText={onChangeText}
-      keyboardType="email-address"
-      autoCapitalize="none"
-      autoCorrect={false}
-      placeholder="you@example.com"
-      placeholderTextColor={C.textMuted}
-    />
-  );
-}
-
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function LoginScreen() {
-  const [loading,    setLoading]    = useState(false);
-  const [showEmail,  setShowEmail]  = useState(false);
+  const [loading,   setLoading]   = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
     try {
       await GoogleSignin.hasPlayServices();
-      // Always sign out first so Google presents the account picker every time.
       await GoogleSignin.signOut().catch(() => {});
       const userInfo = await GoogleSignin.signIn();
       const idToken = userInfo.data?.idToken ?? userInfo.idToken;
       if (!idToken) throw new Error('No ID token returned from Google');
-
-      // Pass the Google ID token to Supabase — this fires onAuthStateChange(SIGNED_IN)
-      // in _layout.jsx which fetches the profile and calls setUser automatically.
       const { error } = await supabase.auth.signInWithIdToken({
         provider: 'google',
         token: idToken,
       });
       if (error) throw error;
-      // AuthGuard in _layout.jsx redirects based on role after setUser runs.
     } catch (err) {
       if (
         err.code === statusCodes.SIGN_IN_CANCELLED ||
@@ -310,26 +283,33 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" backgroundColor="#39AAAA" />
+      <StatusBar barStyle="dark-content" backgroundColor="#EEF7F7" />
       <BackgroundBlobs />
 
-      <View style={styles.container}>
-
-        {/* Single centered card */}
-        <View style={styles.card}>
-          {/* Logo */}
-          <View style={styles.logoCircle}>
-            <Image
-              source={require('../../assets/logo1.jpg')}
-              style={styles.logoImage}
-              resizeMode="cover"
-            />
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Logo + branding above card */}
+        <View style={styles.brandRow}>
+          <View style={styles.logoBorder}>
+            <View style={styles.logoCircle}>
+              <Image
+                source={require('../../assets/logo1.jpg')}
+                style={styles.logoImage}
+                resizeMode="cover"
+              />
+            </View>
           </View>
-
           <Text style={styles.appName}>Ultimate CashBook</Text>
           <Text style={styles.tagline}>Smart money tracking for your business</Text>
+        </View>
 
-          <View style={styles.divider} />
+        {/* White login card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Welcome</Text>
+          <Text style={styles.cardSub}>Login or signup to backup your data securely</Text>
 
           {/* Google */}
           <TouchableOpacity
@@ -339,7 +319,9 @@ export default function LoginScreen() {
             activeOpacity={0.82}
           >
             <View style={styles.iconSlot}>
-              {loading ? <ActivityIndicator size="small" color={C.primary} /> : <GoogleIcon size={20} />}
+              {loading
+                ? <ActivityIndicator size="small" color={C.primary} />
+                : <GoogleIcon size={20} />}
             </View>
             <Text style={styles.googleBtnText}>Continue with Google</Text>
           </TouchableOpacity>
@@ -352,24 +334,30 @@ export default function LoginScreen() {
           </View>
 
           {/* Email */}
-          <TouchableOpacity style={styles.emailBtn} onPress={() => setShowEmail(true)} activeOpacity={0.82}>
+          <TouchableOpacity
+            style={styles.emailBtn}
+            onPress={() => setShowEmail(true)}
+            activeOpacity={0.82}
+          >
             <EmailIcon size={18} color={C.primary} />
             <Text style={styles.emailBtnText}>Continue with Email</Text>
           </TouchableOpacity>
-
-          {/* Terms */}
-          <Text style={styles.terms}>
-            By continuing, you agree to our{' '}
-            <Text style={styles.link}>Terms</Text>
-            {' '}&amp;{' '}
-            <Text style={styles.link}>Privacy Policy</Text>
-          </Text>
         </View>
 
-        {/* Developer credit */}
-        <Text style={styles.devCredit}>Developed by Devenslab</Text>
+        {/* Terms — two lines matching screenshot */}
+        <Text style={styles.terms}>
+          {'By creating an account, you agree to our '}
+          <Text style={styles.link}>Terms of Service</Text>
+          {'\n'}
+          <Text style={styles.link}>Privacy Policy</Text>
+        </Text>
 
-      </View>
+
+        {/* Developer credit */}
+        <View style={styles.devPill}>
+          <Text style={styles.devCredit}>Developed by <Text style={styles.devName}>DevAutoBot</Text></Text>
+        </View>
+      </ScrollView>
 
       <EmailModal visible={showEmail} onClose={() => setShowEmail(false)} />
     </SafeAreaView>
@@ -378,56 +366,105 @@ export default function LoginScreen() {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.primary },
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 },
+  safe: { flex: 1, backgroundColor: '#EEF7F7' },
 
-  card: {
-    width: '100%', backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 24,
-    padding: 28, alignItems: 'center',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.30)',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.15, shadowRadius: 32, elevation: 12,
+  scroll: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 40,
   },
 
+  // Branding
+  brandRow: { alignItems: 'center', marginBottom: 24 },
+  logoBorder: {
+    width: 122, height: 122, borderRadius: 61,
+    borderWidth: 3, borderColor: 'rgba(57,170,170,0.30)',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 14,
+  },
   logoCircle: {
-    width: 88, height: 88, borderRadius: 22, marginBottom: 14,
+    width: 110, height: 110, borderRadius: 55,
     overflow: 'hidden',
-    borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)',
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2, shadowRadius: 10, elevation: 6,
+    shadowOpacity: 0.20, shadowRadius: 12, elevation: 8,
   },
   logoImage: { width: '100%', height: '100%' },
-
-  appName: { fontSize: 22, fontWeight: '800', color: '#fff', letterSpacing: 0.3, marginBottom: 4, textAlign: 'center' },
-  tagline:  { fontSize: 13, color: 'rgba(255,255,255,0.80)', textAlign: 'center', letterSpacing: 0.1 },
-
-  divider: { width: '100%', height: 1, backgroundColor: 'rgba(255,255,255,0.25)', marginVertical: 20 },
-
-  googleBtn: {
-    flexDirection: 'row', alignItems: 'center', width: '100%',
-    backgroundColor: '#fff', borderRadius: 12,
-    paddingVertical: 12, paddingHorizontal: 16, marginBottom: 12,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 2,
+  appName: {
+    fontSize: 22, fontWeight: '800', color: C.primary,
+    letterSpacing: 0.3, marginBottom: 4, textAlign: 'center',
   },
-  iconSlot:      { width: 24, height: 24, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
-  googleBtnText: { flex: 1, textAlign: 'center', fontSize: 15, fontWeight: '700', color: C.text, marginRight: 34 },
+  tagline: {
+    fontSize: 13, color: C.textMuted,
+    textAlign: 'center', letterSpacing: 0.1,
+  },
 
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 10, width: '100%' },
-  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.30)' },
-  dividerText: { fontSize: 12, color: 'rgba(255,255,255,0.70)', fontWeight: '500' },
+  // Card
+  card: {
+    width: '100%', backgroundColor: '#fff', borderRadius: 20,
+    paddingHorizontal: 24, paddingTop: 28, paddingBottom: 28,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08, shadowRadius: 16, elevation: 5,
+  },
+  cardTitle: {
+    fontSize: 24, fontWeight: '800', color: C.text,
+    textAlign: 'center', marginBottom: 6,
+  },
+  cardSub: {
+    fontSize: 13, color: C.textMuted,
+    textAlign: 'center', marginBottom: 28, lineHeight: 20,
+  },
 
+  // Google button — white with border
+  googleBtn: {
+    flexDirection: 'row', alignItems: 'center',
+    width: '100%', backgroundColor: '#fff',
+    borderRadius: 12, paddingVertical: 13, paddingHorizontal: 16,
+    marginBottom: 14,
+    borderWidth: 1.5, borderColor: C.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
+  },
+  iconSlot: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  googleBtnText: {
+    flex: 1, textAlign: 'center',
+    fontSize: 15, fontWeight: '600', color: C.text, marginRight: 34,
+  },
+
+  // Divider
+  dividerRow: {
+    flexDirection: 'row', alignItems: 'center',
+    marginBottom: 14, gap: 10, width: '100%',
+  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: C.border },
+  dividerText: { fontSize: 12, color: C.textMuted, fontWeight: '500' },
+
+  // Email button — outlined teal
   emailBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    width: '100%', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, gap: 10,
-    borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.50)',
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    width: '100%', borderRadius: 12,
+    paddingVertical: 13, paddingHorizontal: 16, gap: 10,
+    borderWidth: 1.5, borderColor: C.primary,
+    backgroundColor: '#fff',
   },
-  emailBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  emailBtnText: { fontSize: 15, fontWeight: '600', color: C.primary },
 
-  terms: { fontSize: 11, color: 'rgba(255,255,255,0.65)', textAlign: 'center', lineHeight: 16, marginTop: 18, paddingHorizontal: 4 },
-  link:  { color: '#fff', fontWeight: '600' },
+  // Terms
+  terms: {
+    fontSize: 11, color: C.textMuted,
+    textAlign: 'center', lineHeight: 18,
+    marginTop: 16, paddingHorizontal: 8,
+  },
+  link: { color: C.primary, fontWeight: '600' },
 
-  devCredit: { fontSize: 11, color: 'rgba(255,255,255,0.50)', marginTop: 24, textAlign: 'center' },
+
+  devPill: {
+    marginTop: 28,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+  },
+  devCredit: { fontSize: 12, color: C.textSubtle, fontWeight: '400' },
+  devName: { fontSize: 12, color: C.primary, fontWeight: '700', letterSpacing: 0.2 },
 
   // Email modal
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
@@ -436,19 +473,27 @@ const styles = StyleSheet.create({
     backgroundColor: C.card, borderTopLeftRadius: 28, borderTopRightRadius: 28,
     padding: 24, paddingTop: 12, paddingBottom: 36,
   },
-  pickerHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginBottom: 20 },
-  pickerTitle:  { fontSize: 20, fontWeight: '800', color: C.text, marginBottom: 4 },
-  pickerSub:    { fontSize: 13, color: C.textMuted, marginBottom: 20, lineHeight: 20 },
-  pickerCancel: { marginTop: 12, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, borderColor: C.border, alignItems: 'center' },
+  pickerHandle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: C.border, alignSelf: 'center', marginBottom: 20,
+  },
+  pickerTitle: { fontSize: 20, fontWeight: '800', color: C.text, marginBottom: 4 },
+  pickerSub: { fontSize: 13, color: C.textMuted, marginBottom: 20, lineHeight: 20 },
+  pickerCancel: {
+    marginTop: 12, paddingVertical: 14, borderRadius: 14,
+    borderWidth: 1.5, borderColor: C.border, alignItems: 'center',
+  },
   pickerCancelText: { fontSize: 15, fontWeight: '600', color: C.textMuted },
-
   inputBox: { marginBottom: 16 },
   inputLabel: { fontSize: 13, fontWeight: '600', color: C.text, marginBottom: 6 },
   textInput: {
     height: 48, borderWidth: 1.5, borderColor: C.border, borderRadius: 12,
     paddingHorizontal: 14, fontSize: 15, color: C.text, backgroundColor: C.background,
   },
-  sendBtn: { backgroundColor: C.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginBottom: 10 },
+  sendBtn: {
+    backgroundColor: C.primary, borderRadius: 14,
+    paddingVertical: 14, alignItems: 'center', marginBottom: 10,
+  },
   sendBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   otpInput: { fontSize: 24, fontWeight: '700', letterSpacing: 8 },
 });

@@ -58,6 +58,19 @@ export default function PaymentModeSettingsScreen() {
   const [addVisible, setAddVisible] = useState(false);
   const [newName,    setNewName]    = useState('');
 
+  const kbOffset = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const showEv = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEv = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const up   = Keyboard.addListener(showEv, (e) =>
+      Animated.timing(kbOffset, { toValue: e.endCoordinates.height, duration: Platform.OS === 'ios' ? e.duration : 150, useNativeDriver: false }).start()
+    );
+    const down = Keyboard.addListener(hideEv, () =>
+      Animated.timing(kbOffset, { toValue: 0, duration: 150, useNativeDriver: false }).start()
+    );
+    return () => { up.remove(); down.remove(); };
+  }, [kbOffset]);
+
   const [menuModeId,    setMenuModeId]    = useState(null);
   const [deletingMode,  setDeletingMode]  = useState(null);
   const [showDeleteSheet, setShowDeleteSheet] = useState(false);
@@ -457,9 +470,11 @@ export default function PaymentModeSettingsScreen() {
       />
 
       {/* Add Modal */}
-      <Modal visible={addVisible} transparent animationType="none" onRequestClose={() => { setAddVisible(false); setNewName(''); }}>
+      <Modal visible={addVisible} transparent animationType="none" statusBarTranslucent onRequestClose={() => { setAddVisible(false); setNewName(''); }}>
         <View style={s.modalRoot}>
           <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => { setAddVisible(false); setNewName(''); }} />
+          <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }} pointerEvents="box-none">
+          <Animated.View style={{ marginBottom: kbOffset }}>
           <View style={[s.modalSheet, { backgroundColor: C.card }]}>
             <View style={[s.modalHandle, { backgroundColor: C.border }]} />
             <View style={s.modalHeader}>
@@ -498,6 +513,8 @@ export default function PaymentModeSettingsScreen() {
                 }
               </TouchableOpacity>
             </View>
+          </View>
+          </Animated.View>
           </View>
         </View>
       </Modal>
@@ -541,7 +558,7 @@ const makeStyles = () => StyleSheet.create({
   fab:     { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
   fabArrow:{ position: 'absolute', bottom: 38, right: 88, flexDirection: 'row', alignItems: 'center', gap: -6 },
 
-  modalRoot:    { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
+  modalRoot:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   modalSheet:   { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingTop: 12 },
   modalHandle:  { width: 40, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
   modalHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },

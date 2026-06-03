@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import Svg, { Path, Ellipse } from 'react-native-svg';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import Constants from 'expo-constants';
 import { LightColors } from '../constants/colors';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
@@ -14,11 +14,21 @@ import { apiGetProfile } from '../lib/api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
-GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-  scopes: ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
-  forceCodeForRefreshToken: true,
-});
+// Google Sign-In is a native module — unavailable in Expo Go
+const IS_EXPO_GO = Constants.appOwnership === 'expo';
+
+let GoogleSignin = null;
+let statusCodes = {};
+if (!IS_EXPO_GO) {
+  const gs = require('@react-native-google-signin/google-signin');
+  GoogleSignin = gs.GoogleSignin;
+  statusCodes = gs.statusCodes;
+  GoogleSignin.configure({
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    scopes: ['https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile'],
+    forceCodeForRefreshToken: true,
+  });
+}
 
 const C = LightColors;
 const { width, height } = Dimensions.get('window');
@@ -260,6 +270,7 @@ export default function LoginScreen() {
   const [showEmail, setShowEmail] = useState(false);
 
   const handleGoogleSignIn = async () => {
+    if (!GoogleSignin) return;
     setLoading(true);
     try {
       await GoogleSignin.hasPlayServices();
@@ -313,27 +324,31 @@ export default function LoginScreen() {
           <Text style={styles.cardTitle}>Welcome</Text>
           <Text style={styles.cardSub}>Login or signup to backup your data securely</Text>
 
-          {/* Google */}
-          <TouchableOpacity
-            style={[styles.googleBtn, loading && { opacity: 0.6 }]}
-            onPress={handleGoogleSignIn}
-            disabled={loading}
-            activeOpacity={0.82}
-          >
-            <View style={styles.iconSlot}>
-              {loading
-                ? <ActivityIndicator size="small" color={C.primary} />
-                : <GoogleIcon size={20} />}
-            </View>
-            <Text style={styles.googleBtnText}>Continue with Google</Text>
-          </TouchableOpacity>
+          {/* Google — hidden in Expo Go (native module not available) */}
+          {!IS_EXPO_GO && (
+            <>
+              <TouchableOpacity
+                style={[styles.googleBtn, loading && { opacity: 0.6 }]}
+                onPress={handleGoogleSignIn}
+                disabled={loading}
+                activeOpacity={0.82}
+              >
+                <View style={styles.iconSlot}>
+                  {loading
+                    ? <ActivityIndicator size="small" color={C.primary} />
+                    : <GoogleIcon size={20} />}
+                </View>
+                <Text style={styles.googleBtnText}>Continue with Google</Text>
+              </TouchableOpacity>
 
-          {/* Divider */}
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>or</Text>
-            <View style={styles.dividerLine} />
-          </View>
+              {/* Divider */}
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+            </>
+          )}
 
           {/* Email */}
           <TouchableOpacity

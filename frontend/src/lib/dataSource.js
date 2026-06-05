@@ -140,8 +140,7 @@ export const apiUpdateBook = async (id, p) => {
 
 export const apiDeleteBook = async (id) => {
   // Capture cloud_id BEFORE deleting — the row won't exist after localDeleteBook
-  const local = await localBookForCloud(id).catch(() => null);
-  const cloudId = local?.cloud_id ?? null;
+  const cloudId = await L.localGetCloudBookId(id).catch(() => null);
 
   await L.localDeleteBook(id);
 

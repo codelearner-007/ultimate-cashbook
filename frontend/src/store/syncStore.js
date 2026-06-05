@@ -31,11 +31,15 @@ export const useSyncStore = create((set) => ({
   },
   failSync: (msg) => set({ isSyncing: false, syncError: msg, progress: { done: 0, total: 0, step: '' } }),
 
+  // Set to true when restore finishes; cleared by BooksView once books have loaded
+  restoreJustCompleted: false,
+
   // Restore actions
-  startRestore:       () => set({ isRestoring: true, restoreError: null, restoreProgress: { done: 0, total: 0, step: 'Connecting…' } }),
-  setRestoreProgress: (done, total, step) => set({ restoreProgress: { done, total, step } }),
-  finishRestore:      () => set({ isRestoring: false, restoreProgress: { done: 0, total: 0, step: '' } }),
-  failRestore:        (msg) => set({ isRestoring: false, restoreError: msg, restoreProgress: { done: 0, total: 0, step: '' } }),
+  startRestore:           () => set({ isRestoring: true, restoreError: null, restoreProgress: { done: 0, total: 0, step: 'Connecting…' } }),
+  setRestoreProgress:     (done, total, step) => set({ restoreProgress: { done, total, step } }),
+  finishRestore:          () => set({ isRestoring: false, restoreProgress: { done: 0, total: 0, step: '' } }),
+  failRestore:            (msg) => set({ isRestoring: false, restoreError: msg, restoreProgress: { done: 0, total: 0, step: '' } }),
+  setRestoreJustCompleted:(v) => set({ restoreJustCompleted: v }),
 
   // Call after a successful restore OR after Start Fresh — hides the restore button
   setHasRestored: (v) => {

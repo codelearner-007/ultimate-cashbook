@@ -73,7 +73,7 @@ App Start
 | Element                           | Action | Result                                                                              |
 |-----------------------------------|--------|-------------------------------------------------------------------------------------|
 | "Continue with Google" button     | Tap    | `supabase.auth.signInWithOAuth({ provider: 'google' })` — opens browser OAuth flow |
-| "Continue with Email" button      | Tap    | Opens EmailModal (Step 1)                                                           |
+| "Continue with Email" button      | Tap    | Opens EmailModal (Step 1) — **dev-only**, hidden in production builds (`__DEV__ === false`); the "or" divider is hidden with it |
 
 ### EmailModal — Step 1 (Email input)
 | Element                           | Action | Result                                                           |
@@ -118,25 +118,30 @@ App Start
 
 | Element               | Action | Result                                                                        |
 |-----------------------|--------|-------------------------------------------------------------------------------|
-| **Restore** card      | Tap    | Sheet dismisses → full-screen `RestoreOverlay` shown → `syncCloudToLocal()` runs with animated progress bar → success/error toast → navigate to books |
+| **Restore** card      | Tap    | Sheet dismisses → global `RestoreCompletionOverlay` shown → `syncCloudToLocal()` runs with animated progress bar → success/error toast → navigate to books → overlay persists until books load → overlay fades out |
 | **Later** card        | Tap    | Sheet dismisses → navigate to books (no sync); user can restore from Backup & Sync later |
 
-### RestoreOverlay (full-screen animated overlay during download)
-- Shown immediately after tapping **Restore**, stays until download is 100% complete
-- Animated pulsing ☁️ icon, progress bar, step label, item count, "Please keep the app open" note
-- Cannot be dismissed by the user — disappears only when `finishRestore()` is called
+### RestoreCompletionOverlay (global full-screen animated overlay — `app/_layout.jsx`)
+- Shown immediately after tapping **Restore** and stays visible across navigation (survives `router.replace()`)
+- **Phase 1 — Downloading:** animated pulsing ☁️ icon, progress bar (0–100%), step label, item count, "Please keep the app open" note
+- **Phase 2 — Loading books:** title changes to "Restore complete!", sub changes to "Loading your books…", progress bar stays at 100%
+- Fades out with a 350 ms animation once `BooksView` signals books have finished loading (`restoreJustCompleted` cleared)
+- Cannot be dismissed by the user
+- Implemented in `app/_layout.jsx` as `<RestoreCompletionOverlay />` rendered above everything; `zIndex: 9999`
+- State: `syncStore.restoreJustCompleted` (bool) — set `true` by `finishRestore()` callers, cleared `false` by `BooksView.useEffect` when `!isLoading`
 
 ### States
 | State        | Display                                                                       |
 |--------------|-------------------------------------------------------------------------------|
 | Default      | Two option cards: Restore (teal) / Later (neutral)                             |
 | Restoring    | Full-screen overlay with animated progress bar; sheet is hidden                |
-| Done         | Overlay fades out; navigate to books                                           |
+| Restore done, books loading | Overlay shows "Restore complete! / Loading your books…", progress at 100% |
+| Books loaded | Overlay fades out (350 ms); books list becomes visible                         |
 
 ### Notes
 - Sheet only appears once per session (no SecureStore flag — re-checked every cold launch)
 - If restore fails → error toast + navigate to books; user can retry from Settings → Backup & Sync
-- `isRestoring` / `restoreProgress` stored in `syncStore.js`
+- `isRestoring` / `restoreProgress` / `restoreJustCompleted` stored in `syncStore.js`
 
 ---
 

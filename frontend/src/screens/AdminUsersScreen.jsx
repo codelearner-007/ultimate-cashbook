@@ -344,7 +344,7 @@ export default function AdminUsersScreen() {
     isAdmin:            true,
     book_count:         books.length,
     storage_mb:         adminProfile?.storage_mb ?? 0,
-    entry_count:        0,
+    entry_count:        adminProfile?.entry_count ?? 0,
     shared_books_count: 0,
     created_at:         null,
   }), [user, adminProfile, books.length]);
@@ -367,11 +367,13 @@ export default function AdminUsersScreen() {
 
   const stats = useMemo(() => {
     const isAll        = dateFilter === 'all' && planFilter === 'all' && !searchQuery.trim();
-    const totalUsers   = filteredUsers.length;
-    const totalBooks   = filteredUsers.reduce((acc, u) => acc + (u.book_count ?? 0), 0) + (isAll ? books.length : 0);
-    const totalStorage = filteredUsers.reduce((acc, u) => acc + (u.storage_mb ?? 0), 0);
+    const adminBooks   = isAll ? books.length : 0;
+    const adminStorage = isAll ? (adminProfile?.storage_mb ?? 0) : 0;
+    const totalUsers   = filteredUsers.length + (isAll ? 1 : 0); // include super admin
+    const totalBooks   = filteredUsers.reduce((acc, u) => acc + (u.book_count ?? 0), 0) + adminBooks;
+    const totalStorage = filteredUsers.reduce((acc, u) => acc + (u.storage_mb ?? 0), 0) + adminStorage;
     return { totalUsers, totalBooks, totalStorage, isAll };
-  }, [filteredUsers, books, dateFilter, planFilter, searchQuery]);
+  }, [filteredUsers, books, adminProfile, dateFilter, planFilter, searchQuery]);
 
   const adminInitials = useMemo(() => getInitials(user?.full_name ?? 'AD'), [user]);
 
@@ -584,7 +586,11 @@ export default function AdminUsersScreen() {
                 </View>
                 <View style={s.modalStatDivider} />
                 <View style={s.modalStatItem}>
-                  <Text style={s.modalStatValue}>{fmtStorage(selectedUser.storage_mb)}</Text>
+                  <Text style={s.modalStatValue}>
+                    {(selectedUser.subscription_tier ?? 'free') === 'free'
+                      ? '0 KB'
+                      : fmtStorage(selectedUser.storage_mb)}
+                  </Text>
                   <Text style={s.modalStatLabel}>Storage</Text>
                 </View>
                 {!selectedUser.isAdmin && (

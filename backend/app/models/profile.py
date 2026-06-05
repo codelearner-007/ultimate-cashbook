@@ -21,6 +21,7 @@ class ProfileResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
     storage_mb: float = 0.0
+    entry_count: int = 0
 
 
 class ProfileUpdate(BaseModel):

@@ -27,6 +27,11 @@ async def get_profile(user_id: str = Depends(get_current_user)):
     except Exception:
         storage_bytes = 0
     profile["storage_mb"] = round((db_bytes + storage_bytes) / (1024 * 1024), 3)
+    try:
+        entries_res = sb.table("entries").select("id").eq("user_id", user_id).execute()
+        profile["entry_count"] = len(entries_res.data or [])
+    except Exception:
+        profile["entry_count"] = 0
     return profile
 
 

@@ -21,6 +21,7 @@ import { useRealtimeEntries } from '../hooks/useRealtimeSync';
 import { useCustomers, useSuppliers } from '../hooks/useContacts';
 import SuccessDialog from '../components/ui/SuccessDialog';
 import DeleteAllEntriesSheet from '../components/ui/DeleteAllEntriesSheet';
+import { BalanceCardSkeleton, EntryGroupSkeleton } from '../components/ui/Shimmer';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -185,31 +186,6 @@ const BalanceCard = memo(({ summary, onViewReports, canViewReports, C, Font, s }
   );
 });
 
-// ── Skeleton Loader ───────────────────────────────────────────────────────────
-
-const SkeletonLine = memo(({ width, height = 14, C }) => (
-  <View style={{ width, height, borderRadius: 6, backgroundColor: C.border, marginBottom: 4 }} />
-));
-
-const LoadingSkeleton = ({ C, s }) => (
-  <View style={s.listContent}>
-    {[1, 2, 3].map(g => (
-      <View key={g}>
-        <SkeletonLine width={100} height={11} C={C} />
-        {[1, 2].map(i => (
-          <View key={i} style={[s.entryCard, { marginBottom: 8 }]}>
-            <View style={[s.entryBadge, { backgroundColor: C.border }]} />
-            <View style={{ flex: 1, gap: 6 }}>
-              <SkeletonLine width="70%" C={C} />
-              <SkeletonLine width="40%" height={11} C={C} />
-            </View>
-            <SkeletonLine width={60} C={C} />
-          </View>
-        ))}
-      </View>
-    ))}
-  </View>
-);
 
 // ── Empty State ───────────────────────────────────────────────────────────────
 
@@ -899,13 +875,10 @@ export default function BookDetailScreen() {
 
       {isLoading ? (
         <>
-          {/* Skeleton balance card */}
-          <View style={[s.balanceCard, { gap: 10 }]}>
-            <SkeletonLine width="50%" height={16} C={C} />
-            <SkeletonLine width="100%" height={1} C={C} />
-            <SkeletonLine width="70%" C={C} />
+          <BalanceCardSkeleton />
+          <View style={s.listContent}>
+            {[0, 1, 2].map(i => <EntryGroupSkeleton key={i} />)}
           </View>
-          <LoadingSkeleton C={C} s={s} />
         </>
       ) : isError ? (
         <View style={s.errorBox}>

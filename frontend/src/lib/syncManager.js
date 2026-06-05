@@ -17,6 +17,7 @@ import { localSetBookCloudId } from './localDb';
 import {
   apiGetBooks,
   apiCreateBook,
+  apiDeleteBook as apiDeleteCloudBook,
   apiGetEntries,
   apiCreateEntry,
   apiUpdateEntry,
@@ -207,6 +208,27 @@ export async function syncLocalToCloud(onProgress) {
         tick(`Uploading book: ${book.name}`);
       } catch {
         skip(`Skipped book: ${book.name}`);
+      }
+    }
+  }
+
+  // ── Delete from cloud any books removed locally ──────────────────────────────
+  // Only runs if this device has previously synced (has cloud_id links).
+  // A cloud book with no local cloud_id match was deleted locally — remove it.
+  const allLocalBooks = await L.localGetBooks();
+  const localCloudIds = new Set(allLocalBooks.map(b => b.cloud_id).filter(Boolean));
+
+  if (localCloudIds.size > 0) {
+    for (const cloudBook of cloudBooks) {
+      if (!localCloudIds.has(cloudBook.id)) {
+        try {
+          await apiDeleteCloudBook(cloudBook.id);
+          tick(`Deleted from cloud: ${cloudBook.name}`);
+        } catch (err) {
+          if (err?.response?.status !== 404) {
+            skip(`Could not delete cloud book: ${cloudBook.name}`);
+          }
+        }
       }
     }
   }

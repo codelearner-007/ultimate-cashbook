@@ -15,6 +15,7 @@ import Toast from '../lib/toast';
 import { apiGetAllUsers, apiGetBooks } from '../lib/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PLAN_META, planColor, planLabel } from '../constants/plans';
+import { UserRowSkeleton } from '../components/ui/Shimmer';
 
 // ── Super Admin header badge ──────────────────────────────────────────────────
 
@@ -505,15 +506,21 @@ export default function AdminUsersScreen() {
       </View>
 
       {/* ── Users list ───────────────────────────────────────────────────── */}
-      <FlatList
-        data={listData}
-        keyExtractor={item => item.id}
-        renderItem={renderUser}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.listContent}
-        ListHeaderComponent={ListHeader}
-        ListEmptyComponent={ListEmpty}
-      />
+      {usersLoading ? (
+        <View style={{ paddingTop: 8 }}>
+          {[0, 1, 2, 3, 4].map(i => <UserRowSkeleton key={i} />)}
+        </View>
+      ) : (
+        <FlatList
+          data={listData}
+          keyExtractor={item => item.id}
+          renderItem={renderUser}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={s.listContent}
+          ListHeaderComponent={ListHeader}
+          ListEmptyComponent={ListEmpty}
+        />
+      )}
 
       {/* ── User Detail Modal ────────────────────────────────────────────── */}
       {selectedUserId != null && selectedUser && (

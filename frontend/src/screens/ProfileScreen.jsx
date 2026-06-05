@@ -4,6 +4,7 @@ import {
   StatusBar, ScrollView, Alert, Modal, Animated,
   ActivityIndicator,
 } from 'react-native';
+import { ProfileCardSkeleton } from '../components/ui/Shimmer';
 import { Image as ExpoImage } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
@@ -33,49 +34,6 @@ const CameraIcon = ({ size = 13 }) => (
   </View>
 );
 
-// ── Skeleton block ────────────────────────────────────────────────────────────
-
-function Skeleton({ width, height, radius = 6, style }) {
-  return (
-    <View style={[{ width, height, borderRadius: radius, backgroundColor: '#E2E8F0', opacity: 0.7 }, style]} />
-  );
-}
-
-function ProfileSkeleton({ C }) {
-  return (
-    <>
-      <View style={[skeletonStyles.avatarCard, { backgroundColor: C.card, borderColor: C.border }]}>
-        <View style={[skeletonStyles.avatarCircle, { backgroundColor: '#E2E8F0' }]} />
-        <Skeleton width={140} height={18} radius={6} style={{ marginBottom: 8 }} />
-        <Skeleton width={180} height={13} radius={6} />
-      </View>
-
-      <View style={[skeletonStyles.section, { marginTop: 24 }]}>
-        <Skeleton width={110} height={10} radius={4} style={{ marginBottom: 10, marginLeft: 2 }} />
-        <View style={[skeletonStyles.card, { backgroundColor: C.card, borderColor: C.border }]}>
-          {[0, 1, 2].map((i) => (
-            <View key={i}>
-              <View style={skeletonStyles.fieldRow}>
-                <Skeleton width={70}  height={10} radius={4} style={{ marginBottom: 8 }} />
-                <Skeleton width={160} height={15} radius={5} />
-              </View>
-              {i < 2 && <View style={[skeletonStyles.divider, { backgroundColor: C.border }]} />}
-            </View>
-          ))}
-        </View>
-      </View>
-    </>
-  );
-}
-
-const skeletonStyles = StyleSheet.create({
-  avatarCard:   { alignItems: 'center', marginHorizontal: 16, borderRadius: 20, paddingVertical: 24, marginTop: -36, borderWidth: 1 },
-  avatarCircle: { width: 80, height: 80, borderRadius: 40, marginBottom: 12 },
-  section:      { marginHorizontal: 16 },
-  card:         { borderRadius: 16, borderWidth: 1, overflow: 'hidden' },
-  fieldRow:     { paddingHorizontal: 18, paddingVertical: 16 },
-  divider:      { height: 1, marginHorizontal: 18 },
-});
 
 
 // ── Photo Picker Sheet ────────────────────────────────────────────────────────
@@ -455,7 +413,7 @@ export default function ProfileScreen() {
       <ScrollView style={s.scroll} showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
 
         {isLoading ? (
-          <ProfileSkeleton C={C} />
+          <ProfileCardSkeleton />
         ) : isError ? (
           <View style={s.errorBox}>
             <Text style={[s.errorText, { color: C.textMuted }]}>Could not load profile. Pull down to retry.</Text>

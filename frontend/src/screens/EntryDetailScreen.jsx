@@ -14,6 +14,7 @@ import { Feather } from '@expo/vector-icons';
 import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
 import DeleteEntrySheet from '../components/ui/DeleteEntrySheet';
+import { EntryDetailSkeleton } from '../components/ui/Shimmer';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -115,9 +116,11 @@ export default function EntryDetailScreen() {
         )}
       </View>
 
-      {isLoading || !entry ? (
+      {isLoading ? (
+        <EntryDetailSkeleton />
+      ) : !entry ? (
         <View style={s.loadingBox}>
-          <Text style={s.loadingText}>{isLoading ? 'Loading…' : 'Entry not found.'}</Text>
+          <Text style={s.loadingText}>Entry not found.</Text>
         </View>
       ) : (
         <>

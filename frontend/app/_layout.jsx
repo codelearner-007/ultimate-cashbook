@@ -351,12 +351,13 @@ function NotificationPopup() {
 function RestoreCloudModal() {
   const user             = useAuthStore(s => s.user);
   const { C }            = useTheme();
-  const visible          = useSyncStore(s => s.showRestorePrompt);
-  const setRestorePrompt = useSyncStore(s => s.setRestorePrompt);
-  const startSync        = useSyncStore(s => s.startSync);
-  const setProgress      = useSyncStore(s => s.setProgress);
-  const finishSync       = useSyncStore(s => s.finishSync);
-  const failSync         = useSyncStore(s => s.failSync);
+  const visible              = useSyncStore(s => s.showRestorePrompt);
+  const setRestorePrompt     = useSyncStore(s => s.setRestorePrompt);
+  const startRestore         = useSyncStore(s => s.startRestore);
+  const setRestoreProgress   = useSyncStore(s => s.setRestoreProgress);
+  const finishRestore        = useSyncStore(s => s.finishRestore);
+  const failRestore          = useSyncStore(s => s.failRestore);
+  const setHasRestored       = useSyncStore(s => s.setHasRestored);
   const [loading, setLoading] = useState(false);
 
   if (!visible) return null;
@@ -370,12 +371,13 @@ function RestoreCloudModal() {
 
   const handleRestore = async () => {
     setLoading(true);
-    startSync();
+    startRestore();
     setRestorePrompt(false);
 
     try {
-      const result = await syncCloudToLocal((done, total, step) => setProgress(done, total, step));
-      finishSync(new Date().toISOString());
+      const result = await syncCloudToLocal((done, total, step) => setRestoreProgress(done, total, step));
+      finishRestore();
+      setHasRestored(true);
       SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
       Toast.show({
         type: 'success',
@@ -384,7 +386,8 @@ function RestoreCloudModal() {
         visibilityTime: 4000,
       });
     } catch (err) {
-      failSync(err?.message ?? 'Restore failed');
+      failRestore(err?.message ?? 'Restore failed');
+      SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
       Toast.show({
         type: 'error',
         text1: 'Restore failed',

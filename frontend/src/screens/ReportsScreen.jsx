@@ -10,6 +10,7 @@ import * as Sharing from 'expo-sharing';
 import { Feather } from '@expo/vector-icons';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import SuccessDialog from '../components/ui/SuccessDialog';
+import { ReportsSkeleton } from '../components/ui/Shimmer';
 import { useTheme } from '../hooks/useTheme';
 import { apiGetEntries } from '../lib/dataSource';
 import { useRealtimeEntries } from '../hooks/useRealtimeSync';
@@ -850,78 +851,81 @@ export default function ReportsScreen() {
           {additionalFilterCount > 0 && (
             <Text style={[s.rangeFilterNote, { color: C.primary }]}> · {filtered.length} of {entries.length}</Text>
           )}
-          {isLoading && <ActivityIndicator size="small" color={C.primary} style={{ marginLeft: 8 }} />}
         </View>
 
-        {/* ── Combined summary + chart ── */}
-        <View style={s.chartCard}>
-          <View style={s.chartHeader}>
-            <Text style={s.chartTitle}>Financial Summary</Text>
-            <Text style={s.chartSub}>{filtered.length} transactions</Text>
-          </View>
-
-          <View style={s.chartBars}>
-            {[
-              { label: 'Income',   value: summary.total_in,  color: C.cashIn  },
-              { label: 'Expenses', value: summary.total_out, color: C.cashOut },
-              { label: 'Net',      value: Math.abs(summary.net_balance),
-                color: summary.net_balance >= 0 ? C.cashIn : C.cashOut },
-            ].map(({ label, value, color }, i) => (
-              <React.Fragment key={label}>
-                {i > 0 && <View style={s.barSep} />}
-                <View style={s.barGroup}>
-                  <Text style={[s.barAmount, { color }]}>
-                    {value > 0 ? value.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'}
-                  </Text>
-                  <Text style={s.barLabel}>{label}</Text>
-                  <View style={s.barTrack}>
-                    <View style={[s.barFill, { height: (value / maxBar) * BAR_H, backgroundColor: color }]} />
-                  </View>
-                </View>
-              </React.Fragment>
-            ))}
-          </View>
-        </View>
-
-        {/* ── Recent entries ── */}
-        <View style={s.section}>
-          <Text style={s.sectionTitle}>Recent Entries</Text>
-
-          {!isLoading && entries.length === 0 && (
-            <Text style={s.emptyText}>No entries for this period</Text>
-          )}
-
-          {filtered.slice(0, 8).map((e) => {
-            const isIn = e.type === 'in';
-            return (
-              <View key={e.id} style={s.entryRow}>
-                <View style={[s.entryDot, {
-                  backgroundColor: isIn ? C.cashInLight : C.cashOutLight,
-                }]}>
-                  <Text style={{ fontSize: 11, color: isIn ? C.cashIn : C.cashOut, fontFamily: Font.bold }}>
-                    {isIn ? '↑' : '↓'}
-                  </Text>
-                </View>
-                <View style={s.entryInfo}>
-                  <Text style={s.entryRemark} numberOfLines={1}>{e.remark || 'No remark'}</Text>
-                  <Text style={s.entryMeta} numberOfLines={1}>
-                    {e.entry_date}
-                    {e.category      ? `  ·  ${e.category}`      : ''}
-                    {e.payment_mode  ? `  ·  ${e.payment_mode}`  : ''}
-                    {e.contact_name  ? `  ·  ${e.contact_name}`  : ''}
-                  </Text>
-                </View>
-                <Text style={[s.entryAmt, { color: isIn ? C.cashIn : C.cashOut }]}>
-                  {isIn ? '+' : '-'}{parseFloat(e.amount).toLocaleString('en-US', { maximumFractionDigits: 2 })}
-                </Text>
+        {isLoading ? <ReportsSkeleton /> : (
+          <>
+            {/* ── Combined summary + chart ── */}
+            <View style={s.chartCard}>
+              <View style={s.chartHeader}>
+                <Text style={s.chartTitle}>Financial Summary</Text>
+                <Text style={s.chartSub}>{filtered.length} transactions</Text>
               </View>
-            );
-          })}
 
-          {filtered.length > 8 && (
-            <Text style={s.moreText}>+{filtered.length - 8} more entries included in export</Text>
-          )}
-        </View>
+              <View style={s.chartBars}>
+                {[
+                  { label: 'Income',   value: summary.total_in,  color: C.cashIn  },
+                  { label: 'Expenses', value: summary.total_out, color: C.cashOut },
+                  { label: 'Net',      value: Math.abs(summary.net_balance),
+                    color: summary.net_balance >= 0 ? C.cashIn : C.cashOut },
+                ].map(({ label, value, color }, i) => (
+                  <React.Fragment key={label}>
+                    {i > 0 && <View style={s.barSep} />}
+                    <View style={s.barGroup}>
+                      <Text style={[s.barAmount, { color }]}>
+                        {value > 0 ? value.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'}
+                      </Text>
+                      <Text style={s.barLabel}>{label}</Text>
+                      <View style={s.barTrack}>
+                        <View style={[s.barFill, { height: (value / maxBar) * BAR_H, backgroundColor: color }]} />
+                      </View>
+                    </View>
+                  </React.Fragment>
+                ))}
+              </View>
+            </View>
+
+            {/* ── Recent entries ── */}
+            <View style={s.section}>
+              <Text style={s.sectionTitle}>Recent Entries</Text>
+
+              {entries.length === 0 && (
+                <Text style={s.emptyText}>No entries for this period</Text>
+              )}
+
+              {filtered.slice(0, 8).map((e) => {
+                const isIn = e.type === 'in';
+                return (
+                  <View key={e.id} style={s.entryRow}>
+                    <View style={[s.entryDot, {
+                      backgroundColor: isIn ? C.cashInLight : C.cashOutLight,
+                    }]}>
+                      <Text style={{ fontSize: 11, color: isIn ? C.cashIn : C.cashOut, fontFamily: Font.bold }}>
+                        {isIn ? '↑' : '↓'}
+                      </Text>
+                    </View>
+                    <View style={s.entryInfo}>
+                      <Text style={s.entryRemark} numberOfLines={1}>{e.remark || 'No remark'}</Text>
+                      <Text style={s.entryMeta} numberOfLines={1}>
+                        {e.entry_date}
+                        {e.category      ? `  ·  ${e.category}`      : ''}
+                        {e.payment_mode  ? `  ·  ${e.payment_mode}`  : ''}
+                        {e.contact_name  ? `  ·  ${e.contact_name}`  : ''}
+                      </Text>
+                    </View>
+                    <Text style={[s.entryAmt, { color: isIn ? C.cashIn : C.cashOut }]}>
+                      {isIn ? '+' : '-'}{parseFloat(e.amount).toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                    </Text>
+                  </View>
+                );
+              })}
+
+              {filtered.length > 8 && (
+                <Text style={s.moreText}>+{filtered.length - 8} more entries included in export</Text>
+              )}
+            </View>
+          </>
+        )}
 
         {/* ── Export section — hidden for collaborators ── */}
         {isOwner && <View style={s.exportSection}>

@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import SearchBar from '../components/ui/SearchBar';
+import { CategoryDetailSkeleton } from '../components/ui/Shimmer';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
@@ -214,7 +215,7 @@ export default function CategoryDetailScreen() {
 
       {/* List */}
       {isLoading ? (
-        <ActivityIndicator style={{ marginTop: 40 }} color={C.primary} />
+        <CategoryDetailSkeleton />
       ) : entries.length === 0 ? (
         <View style={s.empty}>
           <View style={[s.emptyIconBox, { backgroundColor: C.primaryLight }]}>

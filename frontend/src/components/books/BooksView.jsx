@@ -26,6 +26,7 @@ import BookMenu from './BookMenu';
 import SearchBar from '../ui/SearchBar';
 import DeleteBookSheet from '../ui/DeleteBookSheet';
 import LeaveBookSheet from '../ui/LeaveBookSheet';
+import { BookCardSkeleton } from '../ui/Shimmer';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -550,13 +551,12 @@ export default function BooksView({
   const handleCreate = useCallback(() => {
     if (!newBookName.trim()) return;
     const currency = profile?.currency ?? 'PKR';
+    const name = newBookName.trim();
+    setNewBookName('');
+    setShowModal(false);
     createBook.mutate(
-      { name: newBookName.trim(), currency },
+      { name, currency },
       {
-        onSuccess: () => {
-          setNewBookName('');
-          setShowModal(false);
-        },
         onError: (err) => {
           const detail = err?.response?.data?.detail ?? err?.message ?? 'Network error';
           Alert.alert('Could not create book', detail);
@@ -802,9 +802,8 @@ export default function BooksView({
       {/* ── Book list ───────────────────────────────────────────────────── */}
       {activeWorkspace === 'shared' ? (
         sharedLoading ? (
-          <View style={s.loadingBox}>
-            <ActivityIndicator size="large" color={C.primary} />
-            <Text style={s.loadingText}>Loading shared books…</Text>
+          <View style={{ paddingTop: 8 }}>
+            {[0, 1, 2, 3].map(i => <BookCardSkeleton key={i} />)}
           </View>
         ) : (
           <FlatList
@@ -823,9 +822,8 @@ export default function BooksView({
           />
         )
       ) : isLoading ? (
-        <View style={s.loadingBox}>
-          <ActivityIndicator size="large" color={C.primary} />
-          <Text style={s.loadingText}>Loading your books…</Text>
+        <View style={{ paddingTop: 8 }}>
+          {[0, 1, 2, 3].map(i => <BookCardSkeleton key={i} />)}
         </View>
       ) : isError ? (
         <View style={s.errorBox}>

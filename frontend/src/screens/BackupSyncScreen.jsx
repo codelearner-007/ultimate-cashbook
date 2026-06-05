@@ -114,11 +114,11 @@ function ActionBtn({ icon, label, sublabel, onPress, variant, disabled, C }) {
       <View style={{ flex: 1 }}>
         <Text style={[abStyles.label, { color: textColor, fontFamily: Font.bold }]}>{label}</Text>
         {sublabel ? (
-          <Text style={[abStyles.sub, { color: textColor + 'AA', fontFamily: Font.regular }]}>{sublabel}</Text>
+          <Text style={[abStyles.sub, { color: isDestructive || isSecondary ? textColor + 'AA' : '#fff', fontFamily: Font.regular }]}>{sublabel}</Text>
         ) : null}
       </View>
       {!disabled && (
-        <Feather name="chevron-right" size={16} color={iconColor + 'AA'} />
+        <Feather name="chevron-right" size={16} color={iconColor} />
       )}
     </TouchableOpacity>
   );

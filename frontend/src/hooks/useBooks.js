@@ -38,7 +38,13 @@ export function useCreateBook() {
         qc.setQueryData(BOOKS_KEY, ctx.snapshot);
       }
     },
-    onSuccess: () => {
+    onSuccess: (newBook) => {
+      // Replace the optimistic placeholder with the real book immediately —
+      // avoids a visible delay for superadmin (cloud backup fires async, but
+      // the local SQLite result is already in `newBook`).
+      qc.setQueryData(BOOKS_KEY, (prev = []) =>
+        prev.map(b => b.id === '__optimistic__' ? newBook : b)
+      );
       qc.invalidateQueries({ queryKey: BOOKS_KEY });
     },
   });

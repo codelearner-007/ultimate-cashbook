@@ -440,8 +440,17 @@ export default function BooksView({
   );
   const activeWorkspace    = useWorkspaceStore((s) => s.activeWorkspace);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
-  const isSyncing          = useSyncStore((s) => s.isSyncing);
+  const isSyncing                = useSyncStore((s) => s.isSyncing);
+  const restoreJustCompleted     = useSyncStore((s) => s.restoreJustCompleted);
+  const setRestoreJustCompleted  = useSyncStore((s) => s.setRestoreJustCompleted);
   const [showWorkspaceSwitcher, setShowWorkspaceSwitcher] = useState(false);
+
+  // Dismiss the restore-completion overlay once books have finished loading
+  useEffect(() => {
+    if (restoreJustCompleted && !isLoading) {
+      setRestoreJustCompleted(false);
+    }
+  }, [restoreJustCompleted, isLoading, setRestoreJustCompleted]);
 
   const {
     sortMode, sortedBooks, showSort, setShowSort,

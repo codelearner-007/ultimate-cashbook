@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Platform, Modal, View, Text, TouchableOpacity, StyleSheet, AppState } from 'react-native';
+import { Platform, Modal, View, Text, TouchableOpacity, StyleSheet, AppState, Animated, ActivityIndicator, Dimensions } from 'react-native';
 import Toast from '../src/lib/toast';
 import { toastConfig } from '../src/components/ui/AppToast';
 import { Slot, useRouter, useSegments } from 'expo-router';
@@ -29,7 +29,7 @@ import {
 } from '../src/lib/pushNotifications';
 import { syncCloudToLocal } from '../src/lib/syncManager';
 import { localGetBooks } from '../src/lib/localDb';
-import { apiGetBooks as apiGetCloudBooks } from '../src/lib/api';
+import { apiGetBooks as apiGetCloudBooks, apiDeleteBook as apiDeleteCloudBook } from '../src/lib/api';
 import * as SecureStore from 'expo-secure-store';
 import { useNotificationPopupStore } from '../src/store/notificationPopupStore';
 import { useNotifications } from '../src/hooks/useNotifications';
@@ -131,6 +131,63 @@ function InitialPullMonitor() {
       })
       .catch(() => {});
   }, [user, isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return null;
+}
+
+/**
+ * When WiFi comes back, delete any cloud books that were removed locally while offline.
+ * Only runs for paid/superadmin users (free tier has no cloud data).
+ * Fires once per reconnect event; skips if a sync is already running.
+ */
+function AutoDeleteMonitor() {
+  const user     = useAuthStore(s => s.user);
+  const isOnline = useSyncStore(s => s.isOnline);
+  const isSyncing = useSyncStore(s => s.isSyncing);
+  const wasOnline = useRef(isOnline);
+  const running   = useRef(false);
+
+  const isEligible = (u) => {
+    if (!u) return false;
+    if (u.role === 'superadmin') return true;
+    const tier = u?.subscription_tier;
+    return tier && tier !== 'free';
+  };
+
+  useEffect(() => {
+    const justReconnected = !wasOnline.current && isOnline;
+    wasOnline.current = isOnline;
+
+    if (!justReconnected) return;
+    if (!isEligible(user) || isSyncing || running.current) return;
+
+    running.current = true;
+    (async () => {
+      try {
+        const [localBooks, cloudBooks] = await Promise.all([
+          localGetBooks().catch(() => []),
+          apiGetCloudBooks().catch(() => []),
+        ]);
+
+        // Set of cloud IDs that still exist locally
+        const localCloudIds = new Set(localBooks.map(b => b.cloud_id).filter(Boolean));
+
+        // Only bother if this device has ever synced (otherwise localCloudIds is empty
+        // and we'd wrongly delete everything in the cloud)
+        if (localCloudIds.size === 0) return;
+
+        for (const cloudBook of cloudBooks) {
+          if (!localCloudIds.has(cloudBook.id)) {
+            apiDeleteCloudBook(cloudBook.id).catch(() => {});
+          }
+        }
+      } catch {
+        // Silent — will retry on next reconnect
+      } finally {
+        running.current = false;
+      }
+    })();
+  }, [isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
 }
@@ -355,9 +412,10 @@ function RestoreCloudModal() {
   const setRestorePrompt     = useSyncStore(s => s.setRestorePrompt);
   const startRestore         = useSyncStore(s => s.startRestore);
   const setRestoreProgress   = useSyncStore(s => s.setRestoreProgress);
-  const finishRestore        = useSyncStore(s => s.finishRestore);
-  const failRestore          = useSyncStore(s => s.failRestore);
-  const setHasRestored       = useSyncStore(s => s.setHasRestored);
+  const finishRestore             = useSyncStore(s => s.finishRestore);
+  const failRestore               = useSyncStore(s => s.failRestore);
+  const setHasRestored            = useSyncStore(s => s.setHasRestored);
+  const setRestoreJustCompleted   = useSyncStore(s => s.setRestoreJustCompleted);
   const [loading, setLoading] = useState(false);
 
   if (!visible) return null;
@@ -378,6 +436,7 @@ function RestoreCloudModal() {
       const result = await syncCloudToLocal((done, total, step) => setRestoreProgress(done, total, step));
       finishRestore();
       setHasRestored(true);
+      setRestoreJustCompleted(true);  // keep overlay until BooksView signals data is ready
       SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
       Toast.show({
         type: 'success',
@@ -502,6 +561,137 @@ const popupStyles = StyleSheet.create({
   dateTime:  { fontSize: 12, marginBottom: 20, textAlign: 'center' },
 });
 
+// ── Restore Completion Overlay ────────────────────────────────────────────────
+//
+// Full-screen animated overlay shown after restore finishes, covering the screen
+// until BooksView confirms books have loaded. Clears restoreJustCompleted then
+// fades itself out so the user never sees an empty books list flash.
+
+const { height: SCREEN_H } = Dimensions.get('window');
+const PRIMARY_CLR = '#39AAAA';
+const BG_CLR      = '#EEF7F7';
+
+function RestoreCompletionOverlay() {
+  const show                  = useSyncStore(s => s.restoreJustCompleted);
+  const isRestoring           = useSyncStore(s => s.isRestoring);
+  const restoreProgress       = useSyncStore(s => s.restoreProgress);
+
+  const opacity  = useRef(new Animated.Value(0)).current;
+  const dotScale = useRef(new Animated.Value(1)).current;
+  const [visible, setVisible] = useState(false);
+
+  // Fade in when restore is running or just completed
+  useEffect(() => {
+    const active = isRestoring || show;
+    if (active) {
+      setVisible(true);
+      Animated.timing(opacity, { toValue: 1, duration: 250, useNativeDriver: true }).start();
+    } else {
+      // Fade out then unmount
+      Animated.timing(opacity, { toValue: 0, duration: 350, useNativeDriver: true }).start(() => {
+        setVisible(false);
+      });
+    }
+  }, [isRestoring, show, opacity]);
+
+  // Pulse animation while visible
+  useEffect(() => {
+    if (!visible) return;
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(dotScale, { toValue: 1.15, duration: 750, useNativeDriver: true }),
+        Animated.timing(dotScale, { toValue: 1,    duration: 750, useNativeDriver: true }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [visible, dotScale]);
+
+  if (!visible) return null;
+
+  const pct   = restoreProgress?.total > 0
+    ? Math.min(1, restoreProgress.done / restoreProgress.total)
+    : (show ? 1 : 0); // completed → full bar
+  const pcInt = Math.round(pct * 100);
+
+  return (
+    <Animated.View style={[rcStyles.root, { opacity }]}>
+      {/* Decorative blobs */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <View style={[rcStyles.blob, { width: 280, height: 260, borderRadius: 140, top: -60, right: -80, backgroundColor: 'rgba(57,170,170,0.14)' }]} />
+        <View style={[rcStyles.blob, { width: 200, height: 190, borderRadius: 100, top: SCREEN_H * 0.3, left: -80, backgroundColor: 'rgba(57,170,170,0.10)' }]} />
+        <View style={[rcStyles.blob, { width: 320, height: 300, borderRadius: 160, bottom: -80, left: -60, backgroundColor: 'rgba(57,170,170,0.55)' }]} />
+        <View style={[rcStyles.blob, { width: 240, height: 230, borderRadius: 120, bottom: -40, right: -60, backgroundColor: 'rgba(57,170,170,0.35)' }]} />
+      </View>
+
+      <Animated.View style={[rcStyles.iconWrap, { transform: [{ scale: dotScale }] }]}>
+        <View style={rcStyles.iconCircle}>
+          <Text style={rcStyles.iconEmoji}>☁️</Text>
+        </View>
+      </Animated.View>
+
+      <Text style={rcStyles.title}>
+        {show ? 'Restore complete!' : 'Restoring your data'}
+      </Text>
+      <Text style={rcStyles.sub}>
+        {show ? 'Loading your books…' : (restoreProgress?.step || 'Connecting to cloud…')}
+      </Text>
+
+      <View style={rcStyles.trackWrap}>
+        <View style={rcStyles.track}>
+          <View style={[rcStyles.trackFill, { width: `${pcInt}%` }]} />
+        </View>
+        <Text style={rcStyles.pct}>{pcInt}%</Text>
+      </View>
+
+      {!show && restoreProgress?.total > 0 && (
+        <Text style={rcStyles.countLabel}>
+          {restoreProgress.done} / {restoreProgress.total} items
+        </Text>
+      )}
+
+      <ActivityIndicator size="small" color={PRIMARY_CLR} style={{ marginTop: 20 }} />
+
+      <Text style={rcStyles.note}>
+        {show ? 'Almost there…' : 'Please keep the app open until restore is complete.'}
+      </Text>
+    </Animated.View>
+  );
+}
+
+const rcStyles = StyleSheet.create({
+  root: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: BG_CLR,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 32, zIndex: 9999,
+  },
+  blob: { position: 'absolute' },
+  iconWrap:   { marginBottom: 28 },
+  iconCircle: {
+    width: 96, height: 96, borderRadius: 48,
+    backgroundColor: 'rgba(57,170,170,0.12)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  iconEmoji:  { fontSize: 44 },
+  title: {
+    fontSize: 22, fontWeight: '700', color: PRIMARY_CLR,
+    marginBottom: 8, textAlign: 'center',
+  },
+  sub: {
+    fontSize: 14, color: '#64748B', textAlign: 'center', marginBottom: 28,
+  },
+  trackWrap:  { width: '100%', marginBottom: 6 },
+  track: {
+    height: 8, borderRadius: 4,
+    backgroundColor: 'rgba(57,170,170,0.18)', overflow: 'hidden', marginBottom: 6,
+  },
+  trackFill:  { height: 8, borderRadius: 4, backgroundColor: PRIMARY_CLR },
+  pct:        { fontSize: 13, color: PRIMARY_CLR, fontWeight: '600', textAlign: 'right' },
+  countLabel: { fontSize: 12, color: '#64748B', textAlign: 'center', marginTop: 2 },
+  note:       { fontSize: 12, color: '#64748B', textAlign: 'center', marginTop: 14, lineHeight: 18 },
+});
+
 // ──────────────────────────────────────────────────────────────────────────────
 
 export default function RootLayout() {
@@ -525,11 +715,13 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <NetworkMonitor />
       <InitialPullMonitor />
+      <AutoDeleteMonitor />
       <SupabaseAuthListener />
       <AuthGuard />
       <Slot />
       <RestoreCloudModal />
       <NotificationPopup />
+      <RestoreCompletionOverlay />
       <Toast config={toastConfig} />
     </QueryClientProvider>
   );

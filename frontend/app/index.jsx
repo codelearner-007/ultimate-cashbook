@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import {
-  View, Text, StyleSheet, Animated, Dimensions, Image, ActivityIndicator,
+  View, Text, StyleSheet, Animated, Dimensions, Image,
 } from 'react-native';
 import Svg, { Ellipse } from 'react-native-svg';
 import { useQueryClient } from '@tanstack/react-query';
@@ -41,74 +41,6 @@ function BackgroundBlobs() {
   );
 }
 
-// ── Restore overlay — shown full-screen during cloud → local download ─────────
-
-function RestoreOverlay({ isRestoring, progress }) {
-  const overlayOpacity = useRef(new Animated.Value(0)).current;
-  const dotScale       = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.timing(overlayOpacity, {
-      toValue: isRestoring ? 1 : 0, duration: 300, useNativeDriver: true,
-    }).start();
-  }, [isRestoring, overlayOpacity]);
-
-  useEffect(() => {
-    if (!isRestoring) return;
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(dotScale, { toValue: 1.18, duration: 700, useNativeDriver: true }),
-        Animated.timing(dotScale, { toValue: 1,    duration: 700, useNativeDriver: true }),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
-  }, [isRestoring, dotScale]);
-
-  if (!isRestoring) return null;
-
-  const pct   = progress?.total > 0 ? Math.min(1, progress.done / progress.total) : 0;
-  const pcInt = Math.round(pct * 100);
-
-  return (
-    <Animated.View style={[s.restoreOverlay, { opacity: overlayOpacity }]}>
-      <BackgroundBlobs />
-
-      {/* Animated cloud icon */}
-      <Animated.View style={[s.restoreIconWrap, { transform: [{ scale: dotScale }] }]}>
-        <View style={s.restoreIconCircle}>
-          <Text style={s.restoreIconEmoji}>☁️</Text>
-        </View>
-      </Animated.View>
-
-      <Text style={s.restoreTitle}>Restoring your data</Text>
-      <Text style={s.restoreSub}>
-        {progress?.step || 'Connecting to cloud…'}
-      </Text>
-
-      {/* Progress bar */}
-      <View style={s.restoreTrackWrap}>
-        <View style={s.restoreTrack}>
-          <Animated.View style={[s.restoreTrackFill, { width: `${pcInt}%` }]} />
-        </View>
-        <Text style={s.restorePct}>{pcInt}%</Text>
-      </View>
-
-      {progress?.total > 0 && (
-        <Text style={s.restoreCountLabel}>
-          {progress.done} / {progress.total} items
-        </Text>
-      )}
-
-      <ActivityIndicator size="small" color={PRIMARY} style={{ marginTop: 20 }} />
-
-      <Text style={s.restoreNote}>
-        Please keep the app open until restore is complete.
-      </Text>
-    </Animated.View>
-  );
-}
-
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function Index() {
@@ -117,9 +49,9 @@ export default function Index() {
   const user   = useAuthStore((s) => s.user);
 
   const {
-    isRestoring, restoreProgress,
+    restoreProgress,
     startRestore, setRestoreProgress, finishRestore, failRestore,
-    setHasRestored,
+    setHasRestored, setRestoreJustCompleted,
   } = useSyncStore();
 
   const fadeAnim  = useRef(new Animated.Value(0)).current;
@@ -183,7 +115,8 @@ export default function Index() {
         setRestoreProgress(done, total, step);
       });
       finishRestore();
-      setHasRestored(true);   // hide restore button in Backup & Sync — data is now local
+      setHasRestored(true);             // hide restore button in Backup & Sync — data is now local
+      setRestoreJustCompleted(true);    // keep overlay until BooksView confirms books are rendered
       qc.invalidateQueries();
       const msg = result.synced > 0
         ? `${result.synced} item(s) restored to your device.`
@@ -195,7 +128,7 @@ export default function Index() {
     } finally {
       if (navigateTarget) router.replace(navigateTarget);
     }
-  }, [startRestore, setRestoreProgress, finishRestore, failRestore, setHasRestored, qc, navigateTarget, router]);
+  }, [startRestore, setRestoreProgress, finishRestore, failRestore, setHasRestored, setRestoreJustCompleted, qc, navigateTarget, router]);
 
   const handleLater = useCallback(() => {
     setShowRestoreSheet(false);
@@ -220,9 +153,6 @@ export default function Index() {
         <Text style={s.appName}>Ultimate CashBook</Text>
         <Text style={s.tagline}>Smart money tracking for your business</Text>
       </Animated.View>
-
-      {/* Full-screen restore overlay (persists until sync complete) */}
-      <RestoreOverlay isRestoring={isRestoring} progress={restoreProgress} />
 
       {/* Restore-or-Later bottom sheet */}
       <RestoreOrFreshSheet
@@ -269,43 +199,4 @@ const s = StyleSheet.create({
     textAlign: 'center', letterSpacing: 0.1, marginBottom: 40,
   },
 
-  // Restore overlay
-  restoreOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: BG,
-    alignItems: 'center', justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  restoreIconWrap: { marginBottom: 28 },
-  restoreIconCircle: {
-    width: 96, height: 96, borderRadius: 48,
-    backgroundColor: 'rgba(57,170,170,0.12)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  restoreIconEmoji: { fontSize: 44 },
-  restoreTitle: {
-    fontSize: 22, fontWeight: '700', color: PRIMARY,
-    marginBottom: 8, textAlign: 'center',
-  },
-  restoreSub: {
-    fontSize: 14, color: TEXT_MUTED, textAlign: 'center', marginBottom: 28,
-  },
-  restoreTrackWrap: { width: '100%', marginBottom: 6 },
-  restoreTrack: {
-    height: 8, borderRadius: 4,
-    backgroundColor: 'rgba(57,170,170,0.18)', overflow: 'hidden', marginBottom: 6,
-  },
-  restoreTrackFill: {
-    height: 8, borderRadius: 4, backgroundColor: PRIMARY,
-  },
-  restorePct: {
-    fontSize: 13, color: PRIMARY, fontWeight: '600', textAlign: 'right',
-  },
-  restoreCountLabel: {
-    fontSize: 12, color: TEXT_MUTED, textAlign: 'center', marginTop: 2,
-  },
-  restoreNote: {
-    fontSize: 12, color: TEXT_MUTED, textAlign: 'center',
-    marginTop: 14, lineHeight: 18,
-  },
 });

@@ -17,6 +17,10 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 // Google Sign-In is a native module — unavailable in Expo Go
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
 
+// "Continue with Email" is a dev-only login path — hidden in production
+// (__DEV__ is true in Expo Go / dev builds, false in EAS production builds)
+const SHOW_EMAIL_LOGIN = __DEV__;
+
 let GoogleSignin = null;
 let statusCodes = {};
 if (!IS_EXPO_GO) {
@@ -344,24 +348,28 @@ export default function LoginScreen() {
                 <Text style={styles.googleBtnText}>Continue with Google</Text>
               </TouchableOpacity>
 
-              {/* Divider */}
-              <View style={styles.dividerRow}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>or</Text>
-                <View style={styles.dividerLine} />
-              </View>
+              {/* Divider — only when the email button below is also shown */}
+              {SHOW_EMAIL_LOGIN && (
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>or</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+              )}
             </>
           )}
 
-          {/* Email */}
-          <TouchableOpacity
-            style={styles.emailBtn}
-            onPress={() => setShowEmail(true)}
-            activeOpacity={0.82}
-          >
-            <EmailIcon size={18} color={C.primary} />
-            <Text style={styles.emailBtnText}>Continue with Email</Text>
-          </TouchableOpacity>
+          {/* Email — dev-only login path, hidden in production builds */}
+          {SHOW_EMAIL_LOGIN && (
+            <TouchableOpacity
+              style={styles.emailBtn}
+              onPress={() => setShowEmail(true)}
+              activeOpacity={0.82}
+            >
+              <EmailIcon size={18} color={C.primary} />
+              <Text style={styles.emailBtnText}>Continue with Email</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Terms — two lines matching screenshot */}

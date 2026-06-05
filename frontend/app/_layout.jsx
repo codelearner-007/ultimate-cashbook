@@ -408,6 +408,7 @@ function NotificationPopup() {
 function RestoreCloudModal() {
   const user             = useAuthStore(s => s.user);
   const { C }            = useTheme();
+  const router               = useRouter();
   const visible              = useSyncStore(s => s.showRestorePrompt);
   const setRestorePrompt     = useSyncStore(s => s.setRestorePrompt);
   const startRestore         = useSyncStore(s => s.startRestore);
@@ -444,6 +445,8 @@ function RestoreCloudModal() {
         text2: `${result.synced} item${result.synced !== 1 ? 's' : ''} downloaded from cloud`,
         visibilityTime: 4000,
       });
+      const target = user?.role === 'superadmin' ? '/(app)/dashboard/users' : '/(app)/books';
+      router.replace(target);
     } catch (err) {
       failRestore(err?.message ?? 'Restore failed');
       SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
@@ -504,7 +507,7 @@ function RestoreCloudModal() {
             disabled={loading}
           >
             <Text style={[restoreStyles.btnSecondaryText, { color: C.textMuted, fontFamily: Font.medium }]}>
-              Start Fresh
+              May be later
             </Text>
           </TouchableOpacity>
         </View>

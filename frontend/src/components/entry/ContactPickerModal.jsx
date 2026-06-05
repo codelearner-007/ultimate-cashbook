@@ -103,7 +103,22 @@ export default function ContactPickerModal({
     }
   }, [activeTab]);
 
+  const normalizePhone = (p) => (p || '').replace(/\D/g, '');
+
   const pickPhoneContact = (c) => {
+    const phoneNorm = normalizePhone(c.phone);
+    const list = newType === 'customer' ? customers : suppliers;
+    if (phoneNorm) {
+      const duplicate = list.find(existing => normalizePhone(existing.phone) === phoneNorm);
+      if (duplicate) {
+        Alert.alert(
+          'Already Added',
+          `"${duplicate.name}" is already saved as a ${newType} with this number.`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+    }
     setNewName(c.name);
     setNewPhone(c.phone);
     setView('create');

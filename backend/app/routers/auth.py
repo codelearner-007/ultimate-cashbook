@@ -51,8 +51,7 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _send_otp_email(to_email: str, code: str) -> None:
-    """Send the OTP email via Gmail SMTP (STARTTLS, port 587)."""
+def _build_otp_message(to_email: str, code: str) -> MIMEMultipart:
     from_address = settings.GMAIL_FROM_ADDRESS if settings.GMAIL_FROM_ADDRESS else settings.GMAIL_SMTP_USER
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"{code} is your Ultimate CashBook sign-in code"
@@ -86,12 +85,31 @@ def _send_otp_email(to_email: str, code: str) -> None:
 """
     msg.attach(MIMEText(plain, "plain"))
     msg.attach(MIMEText(html,  "html"))
+    return msg
 
-    with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as smtp:
+
+def _send_otp_email(to_email: str, code: str) -> None:
+    """Send OTP via Gmail SMTP. Tries STARTTLS port 587 first, falls back to SSL port 465."""
+    msg = _build_otp_message(to_email, code)
+    raw = msg.as_string()
+
+    # Try STARTTLS on port 587
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.ehlo()
+            smtp.login(settings.GMAIL_SMTP_USER, settings.GMAIL_SMTP_PASSWORD)
+            smtp.sendmail(settings.GMAIL_SMTP_USER, to_email, raw)
+        return
+    except (OSError, socket.error, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected) as exc:
+        logger.warning("SMTP port 587 failed (%s: %s), retrying on port 465", type(exc).__name__, exc)
+
+    # Fallback: SSL on port 465
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
         smtp.ehlo()
-        smtp.starttls()
         smtp.login(settings.GMAIL_SMTP_USER, settings.GMAIL_SMTP_PASSWORD)
-        smtp.sendmail(settings.GMAIL_SMTP_USER, to_email, msg.as_string())
+        smtp.sendmail(settings.GMAIL_SMTP_USER, to_email, raw)
 
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
@@ -147,16 +165,16 @@ async def send_otp(body: SendOtpRequest):
         _send_otp_email(email, code)
     except smtplib.SMTPAuthenticationError as exc:
         logger.error("SMTP auth failed for %s: %s", email, exc)
-        raise HTTPException(status_code=500, detail="Email service authentication failed. Contact support.")
+        raise HTTPException(status_code=500, detail=f"Email auth failed: {exc}")
     except smtplib.SMTPRecipientsRefused as exc:
         logger.error("SMTP recipient refused for %s: %s", email, exc)
         raise HTTPException(status_code=400, detail="Could not deliver to that email address.")
     except (OSError, socket.error, smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected) as exc:
-        logger.warning("SMTP network error for %s (%s) — returning 503 for client fallback", email, exc)
-        raise HTTPException(status_code=503, detail="SMTP not reachable — use Supabase native OTP")
+        logger.error("SMTP network error for %s — type=%s detail=%s", email, type(exc).__name__, exc)
+        raise HTTPException(status_code=503, detail=f"SMTP unreachable (both port 587 and 465): {type(exc).__name__}: {exc}")
     except Exception as exc:
-        logger.error("SMTP send failed for %s: %s", email, exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to send sign-in code. Please try again.")
+        logger.error("SMTP send failed for %s — type=%s detail=%s", email, type(exc).__name__, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"SMTP error: {type(exc).__name__}: {exc}")
 
     return {"message": "OTP sent"}
 
@@ -226,17 +244,17 @@ async def verify_otp(body: VerifyOtpRequest):
         )
 
         if create_res.status_code == 422:
-            # User already exists — fetch by email
-            list_res = await client.get(
-                f"{service_url}/auth/v1/admin/users",
-                headers=headers,
-                params={"email": email},
+            # User already exists — look up their ID from the profiles table (email stored there)
+            profile_lookup = (
+                sb.table("profiles")
+                .select("id")
+                .eq("email", email)
+                .single()
+                .execute()
             )
-            list_res.raise_for_status()
-            users = list_res.json().get("users", [])
-            if not users:
+            if not profile_lookup.data:
                 raise HTTPException(status_code=500, detail="Could not resolve user")
-            auth_user = users[0]
+            auth_user = {"id": profile_lookup.data["id"]}
         elif create_res.status_code in (200, 201):
             auth_user = create_res.json()
         else:
@@ -245,15 +263,19 @@ async def verify_otp(body: VerifyOtpRequest):
 
         user_id = auth_user["id"]
 
-        # Generate a magic-link token and exchange it for a real session
+        # Generate a magic-link token via the correct admin endpoint (not user-specific path)
         link_res = await client.post(
-            f"{service_url}/auth/v1/admin/users/{user_id}/generate-link",
+            f"{service_url}/auth/v1/admin/generate-link",
             headers=headers,
             json={"type": "magiclink", "email": email},
         )
         link_res.raise_for_status()
         link_data = link_res.json()
-        hashed_token = link_data.get("hashed_token") or link_data.get("properties", {}).get("hashed_token")
+        # Response shape: { "action_link": "...", "hashed_token": "...", ... }
+        hashed_token = (
+            link_data.get("hashed_token")
+            or link_data.get("properties", {}).get("hashed_token")
+        )
         if not hashed_token:
             raise HTTPException(status_code=500, detail="Could not generate session token")
 
@@ -263,7 +285,7 @@ async def verify_otp(body: VerifyOtpRequest):
             params={"token": hashed_token, "type": "magiclink"},
             follow_redirects=False,
         )
-        # Supabase returns a redirect (3xx) with the tokens in the fragment.
+        # Supabase returns a 3xx redirect; tokens are in the URL fragment of `location`
         location = verify_res.headers.get("location", "")
         if not location:
             raise HTTPException(status_code=500, detail="Session exchange failed")

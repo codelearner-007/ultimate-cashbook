@@ -117,8 +117,11 @@ function EmailModal({ visible, onClose }) {
         body: JSON.stringify({ email: trimmed }),
       });
       if (res.status === 503) {
-        // Dev fallback: Supabase native OTP (routes via Inbucket)
-        const { error } = await supabase.auth.signInWithOtp({ email: trimmed });
+        // Fallback: Supabase native OTP (dev → Inbucket; prod → Supabase email service)
+        const { error } = await supabase.auth.signInWithOtp({
+          email: trimmed,
+          options: { shouldCreateUser: true },
+        });
         if (error) throw new Error(error.message);
         setStep('otp');
         return;

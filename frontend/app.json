@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Ultimate CashBook",
-    "slug": "cashbook",
+    "slug": "ultimate-cashbook",
     "scheme": "ultimatecashbook",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -78,9 +78,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "5d00843f-5802-429e-a328-cf395ab0dd74"
+        "projectId": "33fc45da-8b6f-4a39-afd5-fce89f765406"
       }
     },
-    "owner": "devautobot07"
+    "owner": "ultimate-cashbook"
   }
 }

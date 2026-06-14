@@ -1,5 +1,5 @@
 /**
- * Feature-gate map — source of truth: SUBSCRIPTION_PLANS.md
+ * Feature-gate map — source of truth: constants/plans.js + this file
  * Tiers (ordered): free < pro < business
  */
 import { DEV_TIER } from './devConfig';

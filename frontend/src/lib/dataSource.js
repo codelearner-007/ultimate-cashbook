@@ -1,104 +1,54 @@
 /**
- * Data source router — local-always, cloud-backup architecture.
+ * Data source router — local-first, cloud-mirror architecture.
  *
  * Golden rule: Internet is NEVER required for any CRUD operation.
- * Local SQLite is the primary store for ALL users. Cloud sync is a
- * background side-effect, never a prerequisite.
+ * Local SQLite is the primary store for ALL users. Cloud sync is a background
+ * mirror for paid/superadmin users, driven entirely through a durable write
+ * outbox (sync_outbox) that the AutoSyncMonitor (app/_layout.jsx) drains on
+ * reconnect and app-foreground.
  *
  * Read routing (ALL tiers):
  *   Always → local SQLite (instant, works offline/online, no network check)
  *
  * Write routing:
  *   Free tier          → local SQLite only (never touches cloud)
- *   Paid / Superadmin  → local SQLite first (instant, returned to caller),
- *                        then fire-and-forget background push to cloud.
- *                        If offline or push fails → silent; AutoSyncMonitor
- *                        uploads queued writes on next reconnect.
+ *   Paid / Superadmin  → local SQLite first (instant, returned to caller), THEN
+ *                        ALWAYS enqueue an outbox row (online or offline). The
+ *                        outbox carries the LOCAL row id so the cloud create uses
+ *                        the SAME id — update/delete by id then work everywhere.
  *
- * Initial cloud → local pull:
- *   When a paid/superadmin user logs in on a new device with no local data,
- *   syncManager.syncCloudToLocal() is triggered from _layout.jsx to
- *   download all cloud data into SQLite once.
+ * Shared-id model: the client UUID (localDb.newId()) is the primary key in BOTH
+ * SQLite and Postgres. There is no local→cloud id mapping any more — the id IS
+ * the cloud id. (The books.cloud_id column is kept only for back-compat.)
  */
 
 import { useAuthStore } from '../store/authStore';
-import { useSyncStore }  from '../store/syncStore';
 import { DEV_TIER, DEV_OVERRIDE_LOCAL } from './devConfig';
 import * as L from './localDb';
-import {
-  apiGetBooks              as _apiGetBooks,
-  apiCreateBook            as _apiCreateBook,
-  apiUpdateBook            as _apiUpdateBook,
-  apiDeleteBook            as _apiDeleteBook,
-  apiUpdateBookFieldSettings as _apiUpdateBookFieldSettings,
-  apiGetEntries            as _apiGetEntries,
-  apiGetSummary            as _apiGetSummary,
-  apiCreateEntry           as _apiCreateEntry,
-  apiUpdateEntry           as _apiUpdateEntry,
-  apiDeleteEntry           as _apiDeleteEntry,
-  apiDeleteAllEntries      as _apiDeleteAllEntries,
-  apiGetCategories         as _apiGetCategories,
-  apiCreateCategory        as _apiCreateCategory,
-  apiUpdateCategory        as _apiUpdateCategory,
-  apiDeleteCategory        as _apiDeleteCategory,
-  apiGetCategoryEntries    as _apiGetCategoryEntries,
-  apiGetCustomers          as _apiGetCustomers,
-  apiCreateCustomer        as _apiCreateCustomer,
-  apiGetCustomer           as _apiGetCustomer,
-  apiUpdateCustomer        as _apiUpdateCustomer,
-  apiDeleteCustomer        as _apiDeleteCustomer,
-  apiGetCustomerEntries    as _apiGetCustomerEntries,
-  apiGetSuppliers          as _apiGetSuppliers,
-  apiCreateSupplier        as _apiCreateSupplier,
-  apiGetSupplier           as _apiGetSupplier,
-  apiUpdateSupplier        as _apiUpdateSupplier,
-  apiDeleteSupplier        as _apiDeleteSupplier,
-  apiGetSupplierEntries    as _apiGetSupplierEntries,
-  apiGetPaymentModes       as _apiGetPaymentModes,
-  apiCreatePaymentMode     as _apiCreatePaymentMode,
-  apiUpdatePaymentMode     as _apiUpdatePaymentMode,
-  apiDeletePaymentMode     as _apiDeletePaymentMode,
-  apiReorderPaymentModes   as _apiReorderPaymentModes,
-  apiGetPaymentModeEntries as _apiGetPaymentModeEntries,
-  apiReorderCategories     as _apiReorderCategories,
-  apiReorderCustomers      as _apiReorderCustomers,
-  apiReorderSuppliers      as _apiReorderSuppliers,
-} from './api';
 
 /**
- * Returns true when this user/session is eligible for background cloud push.
- * Used ONLY to decide whether to fire a side-effect — never to block a write.
+ * Returns true when this user/session should mirror writes to the cloud.
+ * NOTE: this is tier-only — it does NOT check connectivity. Writes are queued
+ * in the outbox whether online or offline; the AutoSyncMonitor drains them when
+ * a connection is available. Never used to block a local write.
  *   - Must be paid tier or superadmin
- *   - Must currently be online
- *   - DEV_OVERRIDE_LOCAL disables cloud push for testing
+ *   - DEV_OVERRIDE_LOCAL disables cloud mirroring for testing
  */
 function shouldBackupToCloud() {
   if (DEV_OVERRIDE_LOCAL) return false;
-  const state    = useAuthStore.getState();
-  const isOnline = useSyncStore.getState().isOnline;
-  if (!isOnline) return false;
+  const state = useAuthStore.getState();
   if (state.user?.role === 'superadmin') return true;
   const tier = DEV_TIER ?? state.user?.subscription_tier ?? 'free';
   return tier !== 'free';
 }
 
 /**
- * Resolve the local book record that corresponds to a cloud book ID.
- * Returns null if no mapping exists yet (sync hasn't run for this book).
- */
-function localBookForCloud(cloudBookId) {
-  return L.localGetBookByCloudId(cloudBookId);
-}
-
-/**
- * Given a local book ID, return the corresponding cloud UUID.
- * Falls back to the input ID itself when the book has no cloud_id yet
- * (e.g. the book was created but sync hasn't run, or the ID was already a cloud ID).
- * Used by sharing hooks that must send the cloud UUID to the backend.
+ * Given a local book id, return the id to send to the backend. Since the id is
+ * shared between local and cloud now, this is the identity function — kept so
+ * the sharing hooks (useSharing.js) keep working unchanged.
  */
 export async function resolveCloudBookId(localId) {
-  const cloudId = await L.localGetCloudBookId(localId);
-  return cloudId ?? localId;
+  return localId;
 }
 
 // ── Books ──────────────────────────────────────────────────────────────────────
@@ -107,14 +57,18 @@ export async function resolveCloudBookId(localId) {
 export const apiGetBooks = () => L.localGetBooks();
 
 export const apiCreateBook = async (name, cur) => {
-  // Write local first — instant, no network involved.
   const localBook = await L.localCreateBook(name, cur);
 
   if (shouldBackupToCloud()) {
-    // Fire-and-forget — user never waits on this.
-    _apiCreateBook(name, cur)
-      .then(cloud => L.localSetBookCloudId(localBook.id, cloud.id).catch(() => {}))
-      .catch(() => {}); // silent — AutoSyncMonitor retries on reconnect
+    // Push the book with its shared id, then push the locally-seeded default
+    // payment modes (the cloud seed trigger was removed in migration 012).
+    await L.localEnqueueOutbox('create', 'book', localBook.id, localBook.id, {
+      id: localBook.id, name: localBook.name, currency: localBook.currency ?? cur ?? 'PKR',
+    });
+    const modes = await L.localGetPaymentModes(localBook.id).catch(() => []);
+    for (const m of modes) {
+      await L.localEnqueueOutbox('create', 'payment_mode', m.id, localBook.id, { id: m.id, name: m.name });
+    }
   }
 
   return localBook;
@@ -122,45 +76,24 @@ export const apiCreateBook = async (name, cur) => {
 
 export const apiUpdateBook = async (id, p) => {
   const result = await L.localUpdateBook(id, p);
-
   if (shouldBackupToCloud()) {
-    // id here is a local book id; look up the cloud id for the push.
-    localBookForCloud(id)
-      .then(local => {
-        // If id is already a cloud id (superadmin case during initial sync),
-        // fall back to using it directly.
-        const cloudId = local?.cloud_id ?? id;
-        _apiUpdateBook(cloudId, p).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('update', 'book', id, id, p);
   }
-
   return result;
 };
 
 export const apiDeleteBook = async (id) => {
-  // Capture cloud_id BEFORE deleting — the row won't exist after localDeleteBook
-  const cloudId = await L.localGetCloudBookId(id).catch(() => null);
-
   await L.localDeleteBook(id);
-
-  if (cloudId && shouldBackupToCloud()) {
-    _apiDeleteBook(cloudId).catch(() => {});
+  if (shouldBackupToCloud()) {
+    await L.localEnqueueOutbox('delete', 'book', id, id, null);
   }
 };
 
 export const apiUpdateBookFieldSettings = async (id, s) => {
   const result = await L.localUpdateBookFieldSettings(id, s);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(id)
-      .then(local => {
-        const cloudId = local?.cloud_id ?? id;
-        _apiUpdateBookFieldSettings(cloudId, s).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('field_settings', 'book', id, id, s);
   }
-
   return result;
 };
 
@@ -171,64 +104,57 @@ export const apiGetSummary  = (bookId)          => L.localGetSummary(bookId);
 
 export const apiCreateEntry = async (bookId, p) => {
   const localEntry = await L.localCreateEntry(bookId, p);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiCreateEntry(cloudBookId, {
-          ...p,
-          // FK IDs are local — null them out; text snapshots (category, contact_name) are preserved
-          category_id:     null,
-          customer_id:     null,
-          supplier_id:     null,
-          payment_mode_id: null,
-        }).catch(() => {});
-      })
-      .catch(() => {});
+    // Send the shared id; null the local FK ids (the cloud resolves its own FKs,
+    // but the text snapshots category/contact_name/payment_mode are preserved).
+    await L.localEnqueueOutbox('create', 'entry', localEntry.id, bookId, {
+      id:              localEntry.id,
+      type:            p.type,
+      amount:          p.amount,
+      remark:          p.remark ?? null,
+      category:        p.category ?? null,
+      category_id:     null,
+      payment_mode:    p.payment_mode ?? 'cash',
+      payment_mode_id: null,
+      contact_name:    p.contact_name ?? null,
+      customer_id:     null,
+      supplier_id:     null,
+      entry_date:      p.entry_date,
+      entry_time:      p.entry_time ?? '00:00',
+      attachment_url:      p.attachment_url ?? null,
+      attachment_path:     p.attachment_path ?? null,
+      attachment_provider: p.attachment_provider ?? null,
+    });
   }
-
   return localEntry;
 };
 
 export const apiUpdateEntry = async (bookId, id, p) => {
   const result = await L.localUpdateEntry(bookId, id, p);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiUpdateEntry(cloudBookId, id, p).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('update', 'entry', id, bookId, p);
   }
-
   return result;
 };
 
 export const apiDeleteEntry = async (bookId, id) => {
   await L.localDeleteEntry(bookId, id);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiDeleteEntry(cloudBookId, id).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('delete', 'entry', id, bookId, null);
   }
 };
 
 export const apiDeleteAllEntries = async (bookId) => {
-  await L.localDeleteAllEntries(bookId);
-
+  // Capture ids BEFORE wiping so each cloud delete targets the shared id.
+  let entryIds = [];
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiDeleteAllEntries(cloudBookId).catch(() => {});
-      })
-      .catch(() => {});
+    entryIds = (await L.localGetEntries(bookId).catch(() => [])).map(e => e.id);
+  }
+  await L.localDeleteAllEntries(bookId);
+  if (shouldBackupToCloud()) {
+    for (const eid of entryIds) {
+      await L.localEnqueueOutbox('delete', 'entry', eid, bookId, null);
+    }
   }
 };
 
@@ -238,125 +164,71 @@ export const apiGetCategories      = (bookId)     => L.localGetCategories(bookId
 export const apiGetCategoryEntries = (bookId, id) => L.localGetCategoryEntries(bookId, id);
 
 export const apiCreateCategory = async (bookId, payload) => {
-  const name = typeof payload === 'object' ? payload.name : payload;
+  const name   = typeof payload === 'object' ? payload.name : payload;
   const result = await L.localCreateCategory(bookId, name);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiCreateCategory(cloudBookId, payload).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('create', 'category', result.id, bookId, { id: result.id, name });
   }
-
   return result;
 };
 
 export const apiUpdateCategory = async (bookId, id, p) => {
   const result = await L.localUpdateCategory(bookId, id, p);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiUpdateCategory(cloudBookId, id, p).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('update', 'category', id, bookId, p);
   }
-
   return result;
 };
 
 export const apiDeleteCategory = async (bookId, id) => {
   await L.localDeleteCategory(bookId, id);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiDeleteCategory(cloudBookId, id).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('delete', 'category', id, bookId, null);
   }
 };
 
 export const apiReorderCategories = async (bookId, orderedIds) => {
   const result = await L.localReorderCategories(bookId, orderedIds);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiReorderCategories(cloudBookId, orderedIds).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('reorder', 'category', null, bookId, { ordered_ids: orderedIds });
   }
-
   return result;
 };
 
 // ── Customers ──────────────────────────────────────────────────────────────────
 
-export const apiGetCustomers      = (bookId)     => L.localGetCustomers(bookId);
-export const apiGetCustomer       = (bookId, id) => L.localGetCustomer(bookId, id);
+export const apiGetCustomers       = (bookId)     => L.localGetCustomers(bookId);
+export const apiGetCustomer        = (bookId, id) => L.localGetCustomer(bookId, id);
 export const apiGetCustomerEntries = (bookId, id) => L.localGetCustomerEntries(bookId, id);
 
 export const apiCreateCustomer = async (bookId, p) => {
   const result = await L.localCreateCustomer(bookId, p);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiCreateCustomer(cloudBookId, p).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('create', 'customer', result.id, bookId, { ...p, id: result.id });
   }
-
   return result;
 };
 
 export const apiUpdateCustomer = async (bookId, id, p) => {
   const result = await L.localUpdateCustomer(bookId, id, p);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiUpdateCustomer(cloudBookId, id, p).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('update', 'customer', id, bookId, p);
   }
-
   return result;
 };
 
 export const apiDeleteCustomer = async (bookId, id) => {
   await L.localDeleteCustomer(bookId, id);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiDeleteCustomer(cloudBookId, id).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('delete', 'customer', id, bookId, null);
   }
 };
 
 export const apiReorderCustomers = async (bookId, orderedIds) => {
   const result = await L.localReorderCustomers(bookId, orderedIds);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiReorderCustomers(cloudBookId, orderedIds).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('reorder', 'customer', null, bookId, { ordered_ids: orderedIds });
   }
-
   return result;
 };
 
@@ -368,122 +240,68 @@ export const apiGetSupplierEntries = (bookId, id) => L.localGetSupplierEntries(b
 
 export const apiCreateSupplier = async (bookId, p) => {
   const result = await L.localCreateSupplier(bookId, p);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiCreateSupplier(cloudBookId, p).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('create', 'supplier', result.id, bookId, { ...p, id: result.id });
   }
-
   return result;
 };
 
 export const apiUpdateSupplier = async (bookId, id, p) => {
   const result = await L.localUpdateSupplier(bookId, id, p);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiUpdateSupplier(cloudBookId, id, p).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('update', 'supplier', id, bookId, p);
   }
-
   return result;
 };
 
 export const apiDeleteSupplier = async (bookId, id) => {
   await L.localDeleteSupplier(bookId, id);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiDeleteSupplier(cloudBookId, id).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('delete', 'supplier', id, bookId, null);
   }
 };
 
 export const apiReorderSuppliers = async (bookId, orderedIds) => {
   const result = await L.localReorderSuppliers(bookId, orderedIds);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiReorderSuppliers(cloudBookId, orderedIds).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('reorder', 'supplier', null, bookId, { ordered_ids: orderedIds });
   }
-
   return result;
 };
 
 // ── Payment Modes ──────────────────────────────────────────────────────────────
 
-export const apiGetPaymentModes      = (bookId)     => L.localGetPaymentModes(bookId);
+export const apiGetPaymentModes       = (bookId)     => L.localGetPaymentModes(bookId);
 export const apiGetPaymentModeEntries = (bookId, id) => L.localGetPaymentModeEntries(bookId, id);
 
 export const apiCreatePaymentMode = async (bookId, p) => {
-  const name = typeof p === 'object' ? p.name : p;
+  const name   = typeof p === 'object' ? p.name : p;
   const result = await L.localCreatePaymentMode(bookId, name);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiCreatePaymentMode(cloudBookId, p).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('create', 'payment_mode', result.id, bookId, { id: result.id, name });
   }
-
   return result;
 };
 
 export const apiUpdatePaymentMode = async (bookId, id, p) => {
   const result = await L.localUpdatePaymentMode(bookId, id, p);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiUpdatePaymentMode(cloudBookId, id, p).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('update', 'payment_mode', id, bookId, p);
   }
-
   return result;
 };
 
 export const apiDeletePaymentMode = async (bookId, id) => {
   await L.localDeletePaymentMode(bookId, id);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiDeletePaymentMode(cloudBookId, id).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('delete', 'payment_mode', id, bookId, null);
   }
 };
 
 export const apiReorderPaymentModes = async (bookId, orderedIds) => {
   const result = await L.localReorderPaymentModes(bookId, orderedIds);
-
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiReorderPaymentModes(cloudBookId, orderedIds).catch(() => {});
-      })
-      .catch(() => {});
+    await L.localEnqueueOutbox('reorder', 'payment_mode', null, bookId, { ordered_ids: orderedIds });
   }
-
   return result;
 };

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timezone
@@ -40,6 +40,8 @@ async def save_push_token(
 @router.get("", response_model=List[UserNotificationResponse])
 async def get_notifications(
     unread: Optional[bool] = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     user_id: str = Depends(get_current_user),
 ):
     """Return the current user's notification inbox, newest first."""
@@ -53,7 +55,7 @@ async def get_notifications(
     if unread is True:
         query = query.eq("is_read", False)
 
-    rows = query.execute().data or []
+    rows = query.range(offset, offset + limit - 1).execute().data or []
     return [
         {
             "id": r["id"],

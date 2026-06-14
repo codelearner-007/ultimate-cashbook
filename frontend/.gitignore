@@ -2,3 +2,22 @@
 .env.development
 .env.production
 .env.local
+
+# Node / Expo
+node_modules/
+.expo/
+dist/
+web-build/
+
+# Native build artifacts
+*.aab
+*.apk
+*.ipa
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+yarn-error.log*

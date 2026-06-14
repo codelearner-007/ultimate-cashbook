@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -258,10 +259,18 @@ def generate_pdf(book_name: str, currency: str, entries: list, summary: dict,
         bal_color = GREEN_DARK if running >= 0 else RED_DARK
         per_row_styles.append(("TEXTCOLOR", (7, i), (7, i), bal_color))
 
-    # Totals row
+    # Totals row — accumulate with Decimal so the printed totals match the
+    # summary cards exactly (no float-rounding drift).
     n  = len(rows)
-    ti = sum(float(e["amount"]) for e in entries if e["type"] == "in")
-    to = sum(float(e["amount"]) for e in entries if e["type"] == "out")
+    _cent = Decimal("0.01")
+    ti = float(
+        sum((Decimal(str(e["amount"])) for e in entries if e["type"] == "in"), Decimal("0"))
+        .quantize(_cent, rounding=ROUND_HALF_UP)
+    )
+    to = float(
+        sum((Decimal(str(e["amount"])) for e in entries if e["type"] == "out"), Decimal("0"))
+        .quantize(_cent, rounding=ROUND_HALF_UP)
+    )
     rows.append([
         _p("TOTAL", size=7.5, bold=True, color=WHITE),
         "", "", "", "",

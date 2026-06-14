@@ -3,6 +3,7 @@ from typing import Optional, List
 
 
 class ContactCreate(BaseModel):
+    id: Optional[str] = None  # client-supplied shared UUID; Postgres generates one when absent
     name: str
     phone: Optional[str] = None
     email: Optional[str] = None

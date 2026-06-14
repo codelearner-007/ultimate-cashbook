@@ -14,6 +14,8 @@ async def get_entries(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     type: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
     user_id: str = Depends(get_current_user),
 ):
     sb = get_supabase()
@@ -24,6 +26,7 @@ async def get_entries(
         .select("*")
         .eq("book_id", book_id)
         .eq("user_id", owner_id)
+        .is_("deleted_at", "null")
     )
     if date_from:
         q = q.gte("entry_date", date_from)
@@ -32,7 +35,12 @@ async def get_entries(
     if type in ("in", "out"):
         q = q.eq("type", type)
 
-    result = q.order("entry_date", desc=True).order("entry_time", desc=True).execute()
+    result = (
+        q.order("entry_date", desc=True)
+        .order("entry_time", desc=True)
+        .range(offset, offset + limit - 1)
+        .execute()
+    )
     return result.data or []
 
 
@@ -49,7 +57,7 @@ async def create_entry(
     customer_id = payload.customer_id if not payload.supplier_id else None
     supplier_id = payload.supplier_id if not payload.customer_id else None
 
-    result = sb.table("entries").insert({
+    insert_data = {
         "book_id":              book_id,
         "user_id":              owner_id,
         "type":                 payload.type,
@@ -67,7 +75,13 @@ async def create_entry(
         "attachment_provider":  payload.attachment_provider,
         "entry_date":           payload.entry_date,
         "entry_time":           payload.entry_time,
-    }).execute()
+    }
+    # Trust the client-supplied shared UUID when present so update/delete by id
+    # work across devices; otherwise Postgres default gen_random_uuid() applies.
+    if payload.id:
+        insert_data["id"] = payload.id
+
+    result = sb.table("entries").insert(insert_data).execute()
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create entry")
     return result.data[0]
@@ -166,6 +180,7 @@ async def get_summary(book_id: str, user_id: str = Depends(get_current_user)):
             .select("type, amount")
             .eq("book_id", book_id)
             .eq("user_id", owner_id)
+            .is_("deleted_at", "null")
             .execute()
         )
         rows = result.data or []

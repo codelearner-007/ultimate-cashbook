@@ -6,6 +6,7 @@ from app.models.sharing import (
     ShareCreate, ShareUpdate, ShareRespondPayload,
     ShareResponse, CollaboratorProfile,
 )
+from app.utils.plans import require_feature, get_limit
 
 router = APIRouter()
 
@@ -118,6 +119,9 @@ async def create_share(
     sb = get_supabase()
     _require_owner(sb, book_id, user_id)
 
+    # Book sharing is a paid feature; enforce tier server-side.
+    tier = require_feature(sb, user_id, "book_sharing")
+
     if payload.rights not in VALID_RIGHTS:
         raise HTTPException(status_code=422, detail=f"Invalid rights value: {payload.rights}")
 
@@ -137,6 +141,19 @@ async def create_share(
 
     if target_profile["id"] == user_id:
         raise HTTPException(status_code=400, detail="You cannot share a book with yourself")
+
+    # Guest-count cap — distinct collaborators across all of the owner's books.
+    guest_limit = get_limit(tier, "guest_access")
+    if guest_limit is not None:
+        existing_guests = (
+            sb.table("book_shares").select("shared_with_id").eq("owner_id", user_id).execute()
+        ).data or []
+        distinct_guests = {g["shared_with_id"] for g in existing_guests}
+        if target_profile["id"] not in distinct_guests and len(distinct_guests) >= guest_limit:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Your plan allows up to {guest_limit} guest(s). Upgrade to add more.",
+            )
 
     # Check for duplicate
     existing = (

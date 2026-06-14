@@ -1,207 +1,115 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity, Modal,
-  TextInput, Animated, Keyboard, Platform, ActivityIndicator,
-} from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Keyboard } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import ConfirmSheet from './ConfirmSheet';
 
 export default function DeleteAllEntriesSheet({
   visible, onDismiss, onConfirm, bookName, entryCount, isLoading, C, Font, closeRef,
 }) {
-  const slideY      = useRef(new Animated.Value(500)).current;
-  const bgOpacity   = useRef(new Animated.Value(0)).current;
-  // Non-native driver — drives marginBottom, not transform
-  const kbOffset    = useRef(new Animated.Value(0)).current;
   const [input, setInput] = useState('');
-
-  const isEmpty = entryCount === 0;
-
-  // Keyboard listeners — move sheet above keyboard, return flush on dismiss
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const up = Keyboard.addListener(showEvent, (e) => {
-      Animated.timing(kbOffset, {
-        toValue: e.endCoordinates.height,
-        duration: Platform.OS === 'ios' ? e.duration : 150,
-        useNativeDriver: false,
-      }).start();
-    });
-
-    const down = Keyboard.addListener(hideEvent, (e) => {
-      Animated.timing(kbOffset, {
-        toValue: 0,
-        duration: Platform.OS === 'ios' ? e.duration : 150,
-        useNativeDriver: false,
-      }).start();
-    });
-
-    return () => { up.remove(); down.remove(); };
-  }, []);
-
-  const animateClose = useCallback((callback) => {
-    Animated.parallel([
-      Animated.timing(bgOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
-      Animated.timing(slideY,    { toValue: 500, duration: 220, useNativeDriver: true }),
-    ]).start(() => callback?.());
-  }, []);
+  // ConfirmSheet writes its animateClose into this ref; we mirror it onto the
+  // caller-supplied closeRef and use it for the empty-state "Got it" button.
+  const innerCloseRef = useRef(null);
 
   useEffect(() => {
-    if (closeRef) closeRef.current = animateClose;
-  }, [closeRef, animateClose]);
+    if (closeRef) closeRef.current = innerCloseRef.current;
+  });
 
   useEffect(() => {
-    if (!visible) return;
-    setInput('');
-    slideY.setValue(500);
-    bgOpacity.setValue(0);
-    Animated.parallel([
-      Animated.timing(bgOpacity, { toValue: 1, duration: 240, useNativeDriver: true }),
-      Animated.spring(slideY, { toValue: 0, tension: 160, friction: 20, useNativeDriver: true }),
-    ]).start();
+    if (visible) setInput('');
   }, [visible]);
 
-  const close = () => {
-    Keyboard.dismiss();
-    animateClose(onDismiss);
-  };
+  const isEmpty = entryCount === 0;
   const matched = input.trim() === bookName?.trim();
 
-  if (!visible) return null;
+  if (isEmpty) {
+    return (
+      <ConfirmSheet
+        visible={visible}
+        onDismiss={onDismiss}
+        onConfirm={onConfirm}
+        onBeforeClose={() => Keyboard.dismiss()}
+        keyboardAware
+        closeRef={innerCloseRef}
+        hideHeader
+        footer={(
+          <TouchableOpacity
+            style={[s.closeBtn, { backgroundColor: C.primaryLight }]}
+            onPress={() => { Keyboard.dismiss(); innerCloseRef.current?.(onDismiss); }}
+            activeOpacity={0.8}
+          >
+            <Text style={[s.closeBtnText, { color: C.primary, fontFamily: Font.semiBold }]}>Got it</Text>
+          </TouchableOpacity>
+        )}
+        C={C}
+        Font={Font}
+      >
+        <View style={s.emptyWrap}>
+          <View style={[s.emptyIconCircle, { backgroundColor: C.primaryLight }]}>
+            <Feather name="inbox" size={28} color={C.primary} />
+          </View>
+          <Text style={[s.emptyTitle, { color: C.text, fontFamily: Font.bold }]}>
+            Nothing to Delete
+          </Text>
+          <Text style={[s.emptyBody, { color: C.textMuted, fontFamily: Font.regular }]}>
+            <Text style={{ fontFamily: Font.semiBold, color: C.text }}>"{bookName}"</Text>
+            {' '}has no entries yet. Add some Cash In or Cash Out entries first.
+          </Text>
+        </View>
+      </ConfirmSheet>
+    );
+  }
 
   return (
-    <Modal transparent visible animationType="none" onRequestClose={close} statusBarTranslucent>
-      {/* Dim backdrop — absolutely positioned, independent of sheet layout */}
-      <Animated.View style={[StyleSheet.absoluteFill, s.dimBg, { opacity: bgOpacity }]}>
-        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={close} />
-      </Animated.View>
+    <ConfirmSheet
+      visible={visible}
+      onDismiss={onDismiss}
+      onConfirm={onConfirm}
+      onBeforeClose={() => Keyboard.dismiss()}
+      keyboardAware
+      closeRef={innerCloseRef}
+      icon="trash-2"
+      title="Delete All Entries"
+      confirmLabel="Delete All"
+      loadingLabel="Deleting…"
+      isLoading={isLoading}
+      confirmDisabled={!matched}
+      confirmOpacity={matched && !isLoading ? 1 : 0.35}
+      C={C}
+      Font={Font}
+    >
+      <Text style={[s.body, { color: C.textMuted, fontFamily: Font.regular }]}>
+        All entries in{' '}
+        <Text style={{ fontFamily: Font.semiBold, color: C.text }}>"{bookName}"</Text>
+        {' '}will be permanently deleted. The book stays, entries are gone.
+      </Text>
 
-      {/* Sheet anchor: absolute bottom, moves up via marginBottom when keyboard opens */}
-      <View style={s.anchor} pointerEvents="box-none">
-        {/* kbOffset uses non-native driver (marginBottom) */}
-        <Animated.View style={{ marginBottom: kbOffset }}>
-          {/* slideY uses native driver (transform) — separate Animated.View required */}
-          <Animated.View style={[s.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
-            <View style={[s.handle, { backgroundColor: C.border }]} />
-
-            {isEmpty ? (
-              /* ── Empty state ── */
-              <>
-                <View style={s.emptyWrap}>
-                  <View style={[s.emptyIconCircle, { backgroundColor: C.primaryLight }]}>
-                    <Feather name="inbox" size={28} color={C.primary} />
-                  </View>
-                  <Text style={[s.emptyTitle, { color: C.text, fontFamily: Font.bold }]}>
-                    Nothing to Delete
-                  </Text>
-                  <Text style={[s.emptyBody, { color: C.textMuted, fontFamily: Font.regular }]}>
-                    <Text style={{ fontFamily: Font.semiBold, color: C.text }}>"{bookName}"</Text>
-                    {' '}has no entries yet. Add some Cash In or Cash Out entries first.
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={[s.closeBtn, { backgroundColor: C.primaryLight }]}
-                  onPress={close}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[s.closeBtnText, { color: C.primary, fontFamily: Font.semiBold }]}>Got it</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              /* ── Delete form ── */
-              <>
-                <View style={s.headerRow}>
-                  <View style={[s.iconCircle, { backgroundColor: C.danger, shadowColor: C.danger }]}>
-                    <Feather name="trash-2" size={20} color="#fff" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[s.title, { color: C.text, fontFamily: Font.bold }]}>Delete All Entries</Text>
-                    <Text style={[s.subtitle, { color: C.danger, fontFamily: Font.medium }]}>
-                      This cannot be undone
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={[s.body, { color: C.textMuted, fontFamily: Font.regular }]}>
-                  All entries in{' '}
-                  <Text style={{ fontFamily: Font.semiBold, color: C.text }}>"{bookName}"</Text>
-                  {' '}will be permanently deleted. The book stays, entries are gone.
-                </Text>
-
-                <Text style={[s.inputLabel, { color: C.textMuted, fontFamily: Font.medium }]}>
-                  Type the book name to confirm
-                </Text>
-                <TextInput
-                  style={[
-                    s.input,
-                    {
-                      borderColor: input.length > 0 ? (matched ? C.cashIn : C.danger) : C.border,
-                      color: C.text,
-                      backgroundColor: C.background,
-                      fontFamily: Font.regular,
-                    },
-                  ]}
-                  value={input}
-                  onChangeText={setInput}
-                  placeholder={bookName}
-                  placeholderTextColor={C.textSubtle}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-
-                <View style={s.btnRow}>
-                  <TouchableOpacity style={[s.btn, { borderColor: C.border }]} onPress={close} activeOpacity={0.8}>
-                    <Text style={[s.btnText, { color: C.textMuted, fontFamily: Font.semiBold }]}>Cancel</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[s.btn, s.btnDelete, { backgroundColor: C.danger, opacity: matched && !isLoading ? 1 : 0.35 }]}
-                    onPress={() => matched && !isLoading && onConfirm()}
-                    disabled={!matched || isLoading}
-                    activeOpacity={0.85}
-                  >
-                    {isLoading
-                      ? <ActivityIndicator size="small" color="#fff" />
-                      : <Feather name="trash-2" size={15} color="#fff" />
-                    }
-                    <Text style={[s.btnText, { color: '#fff', fontFamily: Font.bold }]}>
-                      {isLoading ? 'Deleting…' : 'Delete All'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </Animated.View>
-        </Animated.View>
-      </View>
-    </Modal>
+      <Text style={[s.inputLabel, { color: C.textMuted, fontFamily: Font.medium }]}>
+        Type the book name to confirm
+      </Text>
+      <TextInput
+        style={[
+          s.input,
+          {
+            borderColor: input.length > 0 ? (matched ? C.cashIn : C.danger) : C.border,
+            color: C.text,
+            backgroundColor: C.background,
+            fontFamily: Font.regular,
+          },
+        ]}
+        value={input}
+        onChangeText={setInput}
+        placeholder={bookName}
+        placeholderTextColor={C.textSubtle}
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+    </ConfirmSheet>
   );
 }
 
 const s = StyleSheet.create({
-  dimBg:  { backgroundColor: 'rgba(0,0,0,0.55)' },
-  // Absolutely pinned to the bottom — keyboard offset is applied via marginBottom above
-  anchor: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  sheet: {
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, paddingBottom: 36, paddingTop: 10,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.15, shadowRadius: 20, elevation: 20,
-  },
-  handle:    { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
-
   // Delete form
-  headerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
-  iconCircle: {
-    width: 44, height: 44, borderRadius: 14,
-    alignItems: 'center', justifyContent: 'center',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
-  },
-  title:      { fontSize: 16, lineHeight: 22 },
-  subtitle:   { fontSize: 12, lineHeight: 17, marginTop: 1 },
   body:       { fontSize: 13, lineHeight: 19, marginBottom: 18, paddingHorizontal: 2 },
   inputLabel: { fontSize: 12, marginBottom: 7 },
   input: {
@@ -209,14 +117,6 @@ const s = StyleSheet.create({
     paddingHorizontal: 13, paddingVertical: 11,
     fontSize: 14, marginBottom: 18,
   },
-  btnRow:    { flexDirection: 'row', gap: 10 },
-  btn: {
-    flex: 1, paddingVertical: 13, borderRadius: 12,
-    borderWidth: 1, alignItems: 'center', justifyContent: 'center',
-    flexDirection: 'row', gap: 7,
-  },
-  btnDelete: { borderWidth: 0 },
-  btnText:   { fontSize: 14 },
 
   // Empty state
   emptyWrap: { alignItems: 'center', paddingVertical: 12, marginBottom: 20 },

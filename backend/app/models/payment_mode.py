@@ -4,6 +4,7 @@ from typing import Optional
 
 
 class PaymentModeCreate(BaseModel):
+    id: Optional[str] = None  # client-supplied shared UUID; Postgres generates one when absent
     name: str
 
 

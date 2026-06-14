@@ -114,6 +114,8 @@ export default function Index() {
       const result = await syncCloudToLocal((done, total, step) => {
         setRestoreProgress(done, total, step);
       });
+      // Seed the delta cursor so later incremental pulls only fetch new changes.
+      if (result?.server_time) useSyncStore.getState().setSyncCursor(result.server_time);
       finishRestore();
       setHasRestored(true);             // hide restore button in Backup & Sync — data is now local
       setRestoreJustCompleted(true);    // keep overlay until BooksView confirms books are rendered

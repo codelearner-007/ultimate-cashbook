@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -210,21 +211,24 @@ def generate_excel(book_name: str, currency: str, entries: list, summary: dict,
     # ═══════════════════════════════════════════════════════════════════════
     # Data rows
     # ═══════════════════════════════════════════════════════════════════════
-    running   = 0.0
-    total_in  = 0.0
-    total_out = 0.0
+    # Accumulate money with Decimal so the totals row matches the summary
+    # cards exactly (no float-rounding drift); convert to float only when
+    # writing each cell value.
+    running   = Decimal("0")
+    total_in  = Decimal("0")
+    total_out = Decimal("0")
 
     for i, e in enumerate(entries):
         row_idx = DATA_START_ROW + i
-        amt     = float(e["amount"])
+        amt     = Decimal(str(e["amount"]))
         is_in   = e["type"] == "in"
 
         if is_in:
             running  += amt; total_in += amt
-            in_val, out_val = amt, None
+            in_val, out_val = float(amt), None
         else:
             running  -= amt; total_out += amt
-            in_val, out_val = None, amt
+            in_val, out_val = None, float(amt)
 
         row_bg = _fill(GREY) if row_idx % 2 == 0 else _fill(WHITE)
         bd     = _border("hair")
@@ -259,7 +263,7 @@ def generate_excel(book_name: str, currency: str, entries: list, summary: dict,
             _d(8, None)
 
         bal_color = GREEN if running >= 0 else RED
-        _d(9, running, cfmt, bold=True, val_color=bal_color, center=True)
+        _d(9, float(running), cfmt, bold=True, val_color=bal_color, center=True)
         ws.row_dimensions[row_idx].height = 16
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -273,10 +277,11 @@ def generate_excel(book_name: str, currency: str, entries: list, summary: dict,
         c.border    = _border()
         c.alignment = Alignment(horizontal="center", vertical="center")
 
+    _cent = Decimal("0.01")
     ws.cell(row=tr, column=1, value="TOTAL")
-    ws.cell(row=tr, column=7, value=total_in).number_format  = cfmt
-    ws.cell(row=tr, column=8, value=total_out).number_format = cfmt
-    ws.cell(row=tr, column=9, value=running).number_format   = cfmt
+    ws.cell(row=tr, column=7, value=float(total_in.quantize(_cent, rounding=ROUND_HALF_UP))).number_format  = cfmt
+    ws.cell(row=tr, column=8, value=float(total_out.quantize(_cent, rounding=ROUND_HALF_UP))).number_format = cfmt
+    ws.cell(row=tr, column=9, value=float(running.quantize(_cent, rounding=ROUND_HALF_UP))).number_format   = cfmt
     ws.row_dimensions[tr].height = 18
 
     # ═══════════════════════════════════════════════════════════════════════

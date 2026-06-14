@@ -906,7 +906,7 @@ export default function BookDetailScreen() {
               {filtered.length} {filtered.length === 1 ? 'entry' : 'entries'}
               {activeFilterCount > 0 || search ? '  ·  filtered' : '  ·  total'}
             </Text>
-            {(activeFilterCount > 0 || search) && (
+            {(activeFilterCount > 0 || !!search) && (
               <TouchableOpacity
                 style={s.clearFilterBtn}
                 onPress={() => { clearAllFilters(); setSearch(''); }}

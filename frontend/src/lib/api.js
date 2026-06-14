@@ -20,13 +20,14 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-// 401 → session has expired; sign out so AuthGuard redirects to login.
-// 403 → user is deactivated or lacks permission; same outcome.
+// 401 → session is invalid (expired token, or the account was deactivated
+// server-side); sign out so AuthGuard redirects to login.
+// 403 (forbidden action) and 402 (upgrade required) are NOT auth failures —
+// they are surfaced to the calling screen to handle (e.g. show an upgrade sheet).
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const status = error.response?.status;
-    if (status === 401 || status === 403) {
+    if (error.response?.status === 401) {
       await supabase.auth.signOut();
     }
     return Promise.reject(error);
@@ -41,9 +42,11 @@ export const apiGetBooks = async () => {
   return (await api.get('/api/v1/books')).data;
 };
 
-/** POST /api/v1/books */
-export const apiCreateBook = async (name, currency = 'PKR') => {
-  return (await api.post('/api/v1/books', { name, currency })).data;
+/** POST /api/v1/books — pass `id` to use a client-supplied shared UUID */
+export const apiCreateBook = async (name, currency = 'PKR', id = undefined) => {
+  const body = { name, currency };
+  if (id) body.id = id;
+  return (await api.post('/api/v1/books', body)).data;
 };
 
 /** PUT /api/v1/books/:bookId */
@@ -64,6 +67,18 @@ export const apiUpdateBookFieldSettings = async (bookId, fieldSettings) => {
 /** GET /api/v1/books/shared */
 export const apiGetSharedBooks = async () => {
   return (await api.get('/api/v1/books/shared')).data;
+};
+
+/**
+ * GET /api/v1/books/sync/changes?since=<iso8601|empty>
+ * Delta pull for multi-device convergence. Returns every row (incl. soft-deleted
+ * + entry tombstones) changed since `since`, plus server_time for the next cursor.
+ * Shape: { server_time, books, entries, deleted_entry_ids, categories,
+ *          customers, suppliers, payment_modes }
+ */
+export const apiGetSyncChanges = async (since) => {
+  const params = since ? { since } : {};
+  return (await api.get('/api/v1/books/sync/changes', { params })).data;
 };
 
 /** GET /api/v1/books/:bookId/shares */
@@ -319,6 +334,11 @@ export const apiGetUserBooks = async (userId) => {
   return (await api.get(`/api/v1/admin/users/${userId}/books`)).data;
 };
 
+/** PATCH /api/v1/admin/users/:userId/status — activate/deactivate a user */
+export const apiToggleUserStatus = async (userId, isActive) => {
+  return (await api.patch(`/api/v1/admin/users/${userId}/status`, { is_active: isActive })).data;
+};
+
 
 // ── Admin Notifications (superadmin only) ─────────────────────────────────────
 
@@ -372,12 +392,4 @@ export const apiBulkMarkNotificationsRead = async (ids) => {
 /** POST /api/v1/notifications/push-token — register or refresh device push token */
 export const apiSavePushToken = async (token, platform) => {
   return (await api.post('/api/v1/notifications/push-token', { token, platform })).data;
-};
-
-
-// ── Offline migration ─────────────────────────────────────────────────────────
-
-/** POST /api/v1/migrate/offline — upload local SQLite data to Supabase on upgrade */
-export const apiMigrateOffline = async (payload) => {
-  return (await api.post('/api/v1/migrate/offline', payload)).data;
 };

@@ -10,7 +10,10 @@ import { useRouter } from 'expo-router';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import { useTheme } from '../hooks/useTheme';
 import { useAuthStore } from '../store/authStore';
-import { apiUpdateSubscription } from '../lib/api';
+import { apiUpdateSubscription, apiGetProfile } from '../lib/api';
+import {
+  isPurchasesAvailable, configurePurchases, purchaseTier, restorePurchases,
+} from '../lib/purchases';
 import { Font } from '../constants/fonts';
 import { PLAN_META } from '../constants/plans';
 
@@ -129,7 +132,7 @@ const CrossIcon = ({ color, size = 12 }) => (
   </View>
 );
 
-// ── CTA logic (per SUBSCRIPTION_LIFECYCLE.md CTA table) ──────────────────────
+// ── CTA logic — maps (plan, current tier, status) → button label/variant/action ──
 
 /**
  * Returns { label, variant, action } for a plan card's CTA button.
@@ -763,18 +766,82 @@ export default function SubscriptionScreen() {
     }, 600);
   }, []);
 
-  const handleActivateConfirm = useCallback(() => {
+  // Configure RevenueCat once, binding purchases to the Supabase user id.
+  useEffect(() => {
+    if (user?.id) configurePurchases(user.id);
+  }, [user?.id]);
+
+  const showUpgradeSuccess = useCallback((tier) => {
+    const plan = PLANS.find(p => p.key === tier);
+    const wasFreeTier = currentTier === 'free';
+    setSuccessTitle(
+      tier === 'free' ? 'Downgraded to Free'
+        : pendingAction === 'upgrade' ? `Upgraded to ${plan?.name ?? tier}! 👑`
+        : `${plan?.name ?? tier} Activated! 👑`
+    );
+    setShowCancelSheet(false);
+    setShowActivateSheet(false);
+    setPendingPlanKey(null);
+    setPendingAction(null);
+    if (wasFreeTier && tier !== 'free') {
+      setSyncSheetPlan({ name: plan?.name ?? tier, color: plan?.color ?? C.primary });
+      setShowSyncSheet(true);
+    } else {
+      setShowSuccess(true);
+    }
+  }, [currentTier, pendingAction, C.primary, session]);
+
+  // Entitlement is applied by the RevenueCat webhook; poll the profile until the
+  // new tier appears (or timeout), then update local auth/cache.
+  const syncProfileAfterPurchase = useCallback(async (expectedTier) => {
+    let updated = null;
+    for (let i = 0; i < 6; i++) {
+      updated = await apiGetProfile().catch(() => null);
+      if (updated?.subscription_tier === expectedTier) break;
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    if (updated) {
+      setUser(updated, session);
+      qc.setQueryData(['profile'], updated);
+    }
+    return updated;
+  }, [session, qc, setUser]);
+
+  const handleRestore = useCallback(async () => {
+    if (!isPurchasesAvailable()) return;
+    setActivatingKey('restore');
+    try {
+      await restorePurchases();
+      await syncProfileAfterPurchase(currentTier);
+    } catch { /* nothing to restore */ }
+    finally { setActivatingKey(null); }
+  }, [currentTier, syncProfileAfterPurchase]);
+
+  const handleActivateConfirm = useCallback(async () => {
     if (!pendingPlanKey) return;
-    // For activate/upgrade: open platform billing, then simulate a dev update
-    // In production this is replaced by the server notification webhook
-    openPlatformSubscriptions();
-    // Dev convenience — update tier locally so UI reflects the change
-    updateSub({
-      tier: pendingPlanKey,
-      subscription_status: 'active',
-      billing_cycle: billing,
-    });
-  }, [pendingPlanKey, billing, updateSub]);
+    if (isPurchasesAvailable()) {
+      // Real store purchase; entitlement is granted by the verified webhook.
+      setActivatingKey(pendingPlanKey);
+      try {
+        await purchaseTier(pendingPlanKey, billing);
+        const updated = await syncProfileAfterPurchase(pendingPlanKey);
+        showUpgradeSuccess(updated?.subscription_tier ?? pendingPlanKey);
+      } catch {
+        setShowActivateSheet(false);   // user cancelled or purchase failed
+      } finally {
+        setActivatingKey(null);
+      }
+    } else if (process.env.NODE_ENV !== 'production') {
+      // Dev/web fallback (no native store) — requires backend
+      // DEV_ALLOW_CLIENT_SUBSCRIPTION=true. Lets us exercise the paywall UX.
+      // updateSub manages its own activating spinner.
+      updateSub({ tier: pendingPlanKey, subscription_status: 'active', billing_cycle: billing });
+    } else {
+      // Production without the native module (e.g. web) — send to the store.
+      openPlatformSubscriptions();
+      setShowActivateSheet(false);
+    }
+  }, [pendingPlanKey, billing, updateSub, syncProfileAfterPurchase, showUpgradeSuccess]);
 
   const currentPlan = PLANS.find(p => p.key === currentTier) ?? PLANS[0];
   const accentColor = currentPlan.color ?? C.primary;
@@ -932,6 +999,13 @@ export default function SubscriptionScreen() {
           <Text style={[s.note, { color: C.textSubtle, fontFamily: Font.regular }]}>
             Subscriptions are managed through {PLATFORM_LABEL}. Tap any plan to open the payment flow.
           </Text>
+          {isPurchasesAvailable() && !isSuperAdmin && (
+            <TouchableOpacity onPress={handleRestore} activeOpacity={0.7} style={{ marginTop: 12 }}>
+              <Text style={[s.note, { color: C.primary, fontFamily: Font.semiBold, marginTop: 0 }]}>
+                Restore Purchases
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 

@@ -1,38 +1,46 @@
 from fastapi import Header, HTTPException
-from jose import jwt, jwk, JWTError
+from fastapi.concurrency import run_in_threadpool
+import jwt
+from jwt import PyJWKClient
 from app.config import settings
-import httpx
+from app.db.supabase import get_supabase
 import logging
-import time
 
 logger = logging.getLogger(__name__)
 
-_JWKS_TTL = 3600  # 1 hour — rotate cache after this many seconds
+# JWKS client for asymmetric (ES256/RS256) Supabase tokens. PyJWKClient caches
+# fetched signing keys internally, so a single module-level instance is reused.
+_jwks_client: PyJWKClient | None = None
 
-_jwks_cache: dict | None = None
-_jwks_fetched_at: float = 0.0
+
+def _get_jwks_client() -> PyJWKClient:
+    global _jwks_client
+    if _jwks_client is None:
+        _jwks_client = PyJWKClient(f"{settings.SUPABASE_URL}/auth/v1/.well-known/jwks.json")
+    return _jwks_client
 
 
-async def _get_jwks() -> dict:
-    global _jwks_cache, _jwks_fetched_at
-    now = time.monotonic()
-    if _jwks_cache is not None and (now - _jwks_fetched_at) < _JWKS_TTL:
-        return _jwks_cache
+async def _assert_active(user_id: str) -> None:
+    """Reject deactivated accounts. Uses 401 so the client signs out cleanly.
+    The synchronous supabase call is run off the event loop."""
+    def _check():
+        sb = get_supabase()
+        return (
+            sb.table("profiles").select("is_active").eq("id", user_id).single().execute()
+        ).data
+
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(
-                f"{settings.SUPABASE_URL}/auth/v1/.well-known/jwks.json"
-            )
-        _jwks_cache = resp.json()
-        _jwks_fetched_at = now
-        return _jwks_cache
-    except Exception as exc:
-        logger.error("Failed to fetch JWKS: %s", exc)
-        return _jwks_cache or {"keys": []}
+        data = await run_in_threadpool(_check)
+    except Exception:
+        # Profile not found / transient lookup failure: don't hard-block here;
+        # downstream handlers enforce their own access checks.
+        return
+    if data is not None and data.get("is_active") is False:
+        raise HTTPException(status_code=401, detail="Account deactivated")
 
 
 async def get_current_user(authorization: str = Header(...)) -> str:
-    """Validate Supabase JWT (HS256 or ES256/RS256). Returns the user UUID."""
+    """Validate a Supabase JWT (HS256 or ES256/RS256) and return the user UUID."""
     try:
         token = authorization.removeprefix("Bearer ").strip()
         header = jwt.get_unverified_header(token)
@@ -46,38 +54,28 @@ async def get_current_user(authorization: str = Header(...)) -> str:
                 options={"verify_aud": False},
             )
         else:
-            # ES256 / RS256 — verify via JWKS public key
-            kid = header.get("kid")
-            jwks = await _get_jwks()
-            key_data = next(
-                (k for k in jwks.get("keys", []) if not kid or k.get("kid") == kid),
-                None,
+            # ES256 / RS256 — resolve the signing key from Supabase JWKS (cached
+            # by PyJWKClient, which also handles unknown-kid refresh). The fetch is
+            # blocking, so run it off the event loop.
+            signing_key = await run_in_threadpool(
+                lambda: _get_jwks_client().get_signing_key_from_jwt(token)
             )
-            if not key_data:
-                # Key not found — JWKS may be stale, force a refresh and retry once
-                global _jwks_cache
-                _jwks_cache = None
-                jwks = await _get_jwks()
-                key_data = next(
-                    (k for k in jwks.get("keys", []) if not kid or k.get("kid") == kid),
-                    None,
-                )
-            if not key_data:
-                logger.error("No JWKS key for kid=%s, keys=%s", kid, jwks)
-                raise HTTPException(status_code=401, detail="Unknown signing key")
-            key = jwk.construct(key_data)
             payload = jwt.decode(
-                token, key, algorithms=[alg], options={"verify_aud": False}
+                token,
+                signing_key.key,
+                algorithms=[alg],
+                options={"verify_aud": False},
             )
 
         user_id: str | None = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token: missing sub")
+        await _assert_active(user_id)
         return user_id
 
     except HTTPException:
         raise
-    except JWTError as exc:
+    except jwt.PyJWTError as exc:
         logger.error("JWT error: %s", exc)
         raise HTTPException(status_code=401, detail="Could not validate token") from exc
     except Exception as exc:

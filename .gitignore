@@ -25,3 +25,16 @@ Thumbs.db
 *.aab
 *.apk
 *.ipa
+
+# Loose test/scratch images at repo root (keep real assets under */assets/)
+/*.png
+/*.jpg
+/*.jpeg
+
+# Logs / misc
+*.log
+.idea/
+.vscode/
+
+# Playwright MCP test artifacts
+.playwright-mcp/

@@ -5,6 +5,7 @@ from app.auth.jwt import get_current_user
 from app.db.supabase import get_supabase
 from app.models.profile import ProfileResponse, ProfileUpdate, SubscriptionUpdate
 from app.models.sharing import CollaboratorProfile
+from app.config import settings
 
 router = APIRouter()
 
@@ -61,6 +62,18 @@ async def update_subscription(
     payload: SubscriptionUpdate,
     user_id: str = Depends(get_current_user),
 ):
+    """
+    Subscription entitlements are granted ONLY by the verified RevenueCat webhook
+    (routers/webhooks.py) — never trusted from the client. This endpoint is disabled
+    in production and exists only for local testing of tier-gated UI when
+    DEV_ALLOW_CLIENT_SUBSCRIPTION is enabled.
+    """
+    if not settings.DEV_ALLOW_CLIENT_SUBSCRIPTION:
+        raise HTTPException(
+            status_code=403,
+            detail="Subscriptions are managed through the app store and cannot be set directly.",
+        )
+
     sb = get_supabase()
     now = datetime.now(timezone.utc)
 

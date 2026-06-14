@@ -1,12 +1,36 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Optional, Literal
 from decimal import Decimal
 
 
+def _validate_entry_date(v: str) -> str:
+    """Reject anything that is not a strict, zero-padded YYYY-MM-DD date.
+    strptime alone tolerates '2026-1-1'; the round-trip check enforces padding."""
+    try:
+        parsed = datetime.strptime(v, "%Y-%m-%d")
+        if parsed.strftime("%Y-%m-%d") != v:
+            raise ValueError
+    except (ValueError, TypeError):
+        raise ValueError("entry_date must be a valid date in YYYY-MM-DD format")
+    return v
+
+
+def _validate_entry_time(v: str) -> str:
+    """Reject anything that is not a strict, zero-padded HH:MM 24-hour time."""
+    try:
+        parsed = datetime.strptime(v, "%H:%M")
+        if parsed.strftime("%H:%M") != v:
+            raise ValueError
+    except (ValueError, TypeError):
+        raise ValueError("entry_time must be a valid time in HH:MM format")
+    return v
+
+
 class EntryCreate(BaseModel):
+    id: Optional[str] = None  # client-supplied shared UUID; Postgres generates one when absent
     type: Literal["in", "out"]
-    amount: Decimal
+    amount: Decimal = Field(gt=0)
     remark: Optional[str] = None
     category: Optional[str] = None
     category_id: Optional[str] = None
@@ -21,10 +45,20 @@ class EntryCreate(BaseModel):
     entry_date: str   # YYYY-MM-DD
     entry_time: str   # HH:MM
 
+    @field_validator("entry_date")
+    @classmethod
+    def _check_date(cls, v: str) -> str:
+        return _validate_entry_date(v)
+
+    @field_validator("entry_time")
+    @classmethod
+    def _check_time(cls, v: str) -> str:
+        return _validate_entry_time(v)
+
 
 class EntryUpdate(BaseModel):
     type: Optional[Literal["in", "out"]] = None
-    amount: Optional[Decimal] = None
+    amount: Optional[Decimal] = Field(default=None, gt=0)
     remark: Optional[str] = None
     category: Optional[str] = None
     category_id: Optional[str] = None
@@ -38,6 +72,16 @@ class EntryUpdate(BaseModel):
     attachment_provider: Optional[str] = None
     entry_date: Optional[str] = None
     entry_time: Optional[str] = None
+
+    @field_validator("entry_date")
+    @classmethod
+    def _check_date(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_entry_date(v) if v is not None else v
+
+    @field_validator("entry_time")
+    @classmethod
+    def _check_time(cls, v: Optional[str]) -> Optional[str]:
+        return _validate_entry_time(v) if v is not None else v
 
 
 class EntryResponse(BaseModel):

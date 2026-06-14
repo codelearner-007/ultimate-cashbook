@@ -10,7 +10,8 @@
 frontend/
 ├── app/                          # Expo Router file-based routes
 │   ├── _layout.jsx               # Root layout: fonts, QueryClient, AuthGuard, Toast
-│   ├── index.jsx                 # Splash / onboarding redirect
+│   ├── index.jsx                 # Animated splash → redirect (~1.8 s); may show RestoreOrFreshSheet
+│   ├── auth/callback.jsx         # Google OAuth deep-link → exchangeCodeForSession
 │   ├── (auth)/
 │   │   ├── _layout.jsx           # Auth stack (no tab bar)
 │   │   └── login.jsx             # → LoginScreen
@@ -30,18 +31,21 @@ frontend/
 │       │       ├── categories-settings.jsx       # → CategoriesSettingsScreen
 │       │       ├── category-detail.jsx           # → CategoryDetailScreen (entries list)
 │       │       ├── category-profile.jsx          # → CategoryProfileScreen (detail/edit/delete)
-│       │       ├── contact-settings.jsx          # → ContactSettingsScreen
 │       │       ├── payment-mode-settings.jsx     # → PaymentModeSettingsScreen
+│       │       ├── payment-mode-detail.jsx       # → PaymentModeDetailScreen
+│       │       ├── payment-mode-balance.jsx      # → PaymentModeBalanceScreen
 │       │       ├── customers.jsx                 # → ContactsListScreen (type=customer)
 │       │       ├── suppliers.jsx                 # → ContactsListScreen (type=supplier)
 │       │       ├── contact-detail.jsx            # → ContactDetailScreen
 │       │       └── contact-balance.jsx           # → ContactBalanceScreen
+│       ├── admin-profile.jsx     # → ProfileScreen (outer (app) Stack, NOT inside dashboard Tabs)
 │       ├── dashboard/
-│       │   ├── _layout.jsx       # Tabs layout (Users | My Books | Settings)
+│       │   ├── _layout.jsx       # Tabs layout w/ custom AdminTabBar (Users | My Books | Notify | Settings)
 │       │   ├── users.jsx         # → AdminUsersScreen  (superadmin only)
 │       │   ├── books.jsx         # → AdminBooksScreen  (superadmin only)
-│       │   ├── settings.jsx      # → SettingsScreen    (reused)
-│       │   ├── index.jsx         # href: null (redirected by _layout)
+│       │   ├── notifications.jsx # → AdminNotificationsScreen (compose/send) — superadmin only
+│       │   ├── settings.jsx      # → SettingsScreen    (reused; profileRoute=/(app)/admin-profile)
+│       │   ├── index.jsx         # <Redirect href="/(app)/dashboard/users" />
 │       │   └── books/
 │       │       ├── _layout.jsx                       # Stack (admin books sub-nav)
 │       │       ├── index.jsx                         # → AdminBooksScreen
@@ -54,27 +58,28 @@ frontend/
 │       │           ├── book-settings.jsx             # → BookSettingsScreen
 │       │           ├── categories-settings.jsx       # → CategoriesSettingsScreen
 │       │           ├── category-detail.jsx           # → CategoryDetailScreen
-│       │           ├── contact-settings.jsx          # → ContactSettingsScreen
 │       │           ├── payment-mode-settings.jsx     # → PaymentModeSettingsScreen
 │       │           ├── payment-mode-detail.jsx       # → PaymentModeDetailScreen
 │       │           └── payment-mode-balance.jsx      # → PaymentModeBalanceScreen
+│       │           # (+ category-profile, customers, suppliers, contact-detail, contact-balance,
+│       │           #    manage-shares, add-collaborator — mirrors the user books/[id]/* tree)
 │       └── settings/
 │           ├── index.jsx         # → SettingsScreen
 │           ├── profile.jsx       # → ProfileScreen
 │           ├── currency.jsx      # → CurrencyScreen
 │           ├── manage-access.jsx # → ManageAccessScreen
+│           ├── notifications.jsx # → NotificationsScreen (user) / AdminNotificationsInboxScreen (admin)
 │           ├── subscription.jsx  # → SubscriptionScreen
-│           ├── privacy-policy.jsx # → PrivacyPolicyScreen
-│           └── business/
-│               ├── index.jsx     # → BusinessSettingsScreen
-│               ├── profile.jsx   # → BusinessProfileScreen
-│               └── delete.jsx    # → DeleteBusinessScreen
+│           ├── backup-sync.jsx   # → BackupSyncScreen
+│           └── privacy-policy.jsx # → PrivacyPolicyScreen
 ├── src/
 │   ├── screens/                  # All screen components (one file = one screen)
 │   ├── components/
 │   │   ├── books/
 │   │   │   ├── BookMenu.jsx      # Bottom-sheet action menu for a book (delete)
 │   │   │   ├── DraggableList.jsx # Custom drag-reorder list for books
+│   │   │   ├── EntityListScreen.jsx    # Shared settings-list scaffold (header, toggle, search, drag-reorder, FAB, add modal); drives Categories/Contacts/PaymentMode settings screens. Exports ReorderArrows.
+│   │   │   ├── EntityBalanceScreen.jsx # Shared balance/detail scaffold (header, summary, search, grouped entry list); drives Category/Contact/PaymentMode balance screens.
 │   │   │   └── SortSheet.jsx     # Sort-mode picker bottom sheet
 │   │   ├── entry/
 │   │   │   ├── EntryForm.jsx         # Shared form for add/edit entry
@@ -125,28 +130,40 @@ frontend/
 
 | Concern | Library |
 |---|---|
-| Framework | React Native + Expo SDK 51 (JavaScript) |
-| Routing | Expo Router v3 (file-based) |
-| Server state | TanStack React Query v5 |
+| Framework | React Native 0.81 + Expo SDK 54 + React 19.1 (JavaScript) |
+| Routing | Expo Router v6 (file-based) |
+| Local-first store | expo-sqlite ~16 (native) / IndexedDB (web) via `lib/localDb.js` + `localDb.web.js` |
+| Cache / mutations | TanStack React Query v5 (over the local-first data source) |
 | Global state | Zustand v4 |
-| HTTP | Axios (+ Supabase client for auth) |
-| Auth | Supabase Auth (Google OAuth + Email OTP) |
-| Token storage | Expo SecureStore (native) / localStorage (web) |
+| HTTP (cloud mirror) | Axios (+ Supabase client for auth) |
+| Auth | Supabase Auth (Google OAuth) + custom Gmail email-OTP (dev fallback to Supabase native) |
+| In-app purchases | react-native-purchases (RevenueCat) ^8 — native only; `purchases.web.js` is a no-op |
+| Token / preference storage | Expo SecureStore (native) / localStorage (web) |
 | Fonts | @expo-google-fonts/inter |
-| Date/time pickers | react-native-modal-datetime-picker |
+| Date/time pickers | custom `DatePickerModal` / `TimePickerModal` |
 
 ---
 
 ## Auth & Navigation Logic
 
+### Local-first cloud sync (shared-UUID model)
+The app is local-first: every read/write hits SQLite first. For paid/superadmin users the cloud is a background mirror, driven by a durable write **outbox** + a **delta pull** — never fire-and-forget.
+
+- **Shared ids:** `localDb.newId()` UUID is the primary key in BOTH SQLite and cloud Postgres. Create endpoints accept that `id`, so update/delete by id work everywhere. There is no local→cloud id mapping (the `books.cloud_id` column is kept only for back-compat). `dataSource.resolveCloudBookId()` is now the identity function (sharing hooks unchanged).
+- **Outbox (`sync_outbox` in localDb):** every paid/superadmin write enqueues a row `(seq, op, entity, entity_id, book_id, payload(json), attempts, last_error)` regardless of online state. Helpers: `localEnqueueOutbox / localGetOutbox / localDeleteOutboxRow / localBumpOutboxAttempt / localOutboxCount`.
+- **`AutoSyncMonitor` (`app/_layout.jsx`)** replaces the old destructive `AutoDeleteMonitor`. On reconnect (wasOnline edge) and on app-foreground it: (a) drains `sync_outbox` FIFO, resolving each op to its `api.js` call (create/update/delete/reorder/field_settings by shared id); deletes the row on success or benign 404(delete)/409(create); bumps attempts on other failures and drops after 8 attempts with `console.warn`; (b) runs an incremental delta pull `pullDelta(syncCursor)` and persists the new `server_time` cursor. **Never deletes a cloud row just because it's absent locally.**
+- **Delta pull (`syncManager.pullDelta` / `syncCloudToLocal`):** calls `GET /books/sync/changes?since=`, then `localApplyServerChange(entity,row)` (upsert by id, last-write-wins on `updated_at`) and `localApplyTombstone(entity,id)` (entry → hard delete + balance recompute; others → set `deleted_at`). No name/fingerprint dedup.
+- **`syncLocalToCloud`:** id-based full reconcile — creates each local row not yet on the cloud WITH its shared id (payment modes included; the cloud seed trigger is gone).
+- **Soft delete locally:** `localDelete*` set `deleted_at` (entries are hard-deleted locally so balances recompute; book delete cascade-soft-deletes its children). All reads exclude `deleted_at IS NOT NULL`.
+
 ### Root Layout (`app/_layout.jsx`)
 - Loads Inter 400/500/600/700/800; hides splash screen when ready
 - Wraps app in `QueryClientProvider` (single `QueryClient` instance at module level)
+- Renders the monitor/listener tree: `NetworkMonitor` (sets `syncStore.isOnline`), `InitialPullMonitor` (first-launch restore prompt), **`AutoSyncMonitor`** (drains `sync_outbox` + delta pull), `SupabaseAuthListener` (session/profile/push-token), `AuthGuard`, `<Slot />`, `RestoreCloudModal`, `NotificationPopup`, `RestoreCompletionOverlay`, `<Toast />`
 - `AuthGuard` watches `useAuthStore → user` and `useSegments`:
   - No user + inside `(app)` → `router.replace('/(auth)/login')`
-  - User + inside `(auth)` + role `superadmin` → `router.replace('/(app)/dashboard')`
-  - User + inside `(auth)` + role `user` → `router.replace('/(app)/books')`
-- Renders `<Slot />` (page content) + `<Toast />` (global toast layer)
+  - User + not in `(app)` (and not on root index) + role `superadmin` → `router.replace('/(app)/dashboard/users')`
+  - User + not in `(app)` + role `user` → `router.replace('/(app)/books')`
 
 ### Back Navigation Rules
 - **Admin Books tab has its own Stack** (`app/(app)/dashboard/books/_layout.jsx`). This means `books/[id]` screens are pushed within the books-tab Stack (not the outer `(app)` Stack). `router.back()` from BookDetailScreen therefore pops correctly to AdminBooksScreen — NOT to the Dashboard/Users tab.
@@ -161,27 +178,22 @@ frontend/
 
 | Role | Landing route | Can access |
 |---|---|---|
-| `user` | `/(app)/books` | Books, entries, settings |
-| `superadmin` | `/(app)/dashboard` | Dashboard (Users + Books + Settings tabs) |
+| `user` | `/(app)/books` | Books, entries, sharing, subscription, settings |
+| `superadmin` | `/(app)/dashboard/users` | Dashboard (Users + My Books + Notify + Settings tabs); all paid features free |
 
 ---
 
 ## Screen Logic Reference
 
-### `OnboardingScreen` — rendered inside `app/index.jsx` (first launch only)
-- Shown once after the splash screen on first install; skipped on all subsequent launches
-- Persistence: `expo-secure-store` key `onboarding_seen_v1` (native) / `localStorage` (web)
-- 5 horizontal swipeable slides, each with an in-app mock illustration, title, subtitle
-- Dot indicators: active dot = 24 px wide teal; inactive = 8 px grey
-- **Skip** button (top-right, slides 1–4): marks flag + navigates
-- **Next** button: advances to next slide; becomes **Get Started** on slide 5
-- `onFinish` prop called by both Skip and Get Started → `app/index.jsx` writes flag then navigates
-- `AuthGuard` in `_layout.jsx` is inert while on the root index (`segments[0] === undefined`)
+### `app/index.jsx` — animated splash (no onboarding)
+- Inline `Index` component: full-screen branded splash for ~1.8 s, then redirects by auth state (no user → login; superadmin → `/(app)/dashboard/users`; user → `/(app)/books`)
+- For cloud-sync users with empty local data + existing cloud data it shows `RestoreOrFreshSheet` (restore now / later)
+- *(There is no OnboardingScreen — it was removed.)*
 
 ---
 
 ### `LoginScreen` → `/(auth)/login`
-- Email/password or Google → `supabase.auth.signIn*` → on session event → `apiGetProfile()` → `setUser(profile, session)`
+- Google native sign-in (`GoogleSignin.signIn` → `supabase.auth.signInWithIdToken`) or Email OTP (`signInWithOtp`; the email path is dev-only / hidden in production) → on session event → `apiGetProfile()` → `setUser(profile, session)`
 - AuthGuard redirects based on role after login
 
 ---
@@ -340,16 +352,17 @@ This ensures that after a create or delete (which invalidates `['books']` and tr
 
 ## API Layer (`src/lib/api.js`)
 
-All functions call the real FastAPI backend. Axios interceptor attaches the Supabase JWT automatically. 401/403 responses trigger `supabase.auth.signOut()`.
+These functions wrap the cloud mirror, but CRUD is routed through `dataSource.js` (local SQLite first). The Axios interceptor attaches the Supabase JWT automatically and signs out **only on 401** — `402` (upgrade required) and `403` (forbidden action) are surfaced to the calling screen (e.g. to show an upgrade sheet).
 
 | Function | HTTP | Endpoint |
 |---|---|---|
 | `apiGetBooks()` | GET | `/api/v1/books` |
-| `apiCreateBook(name, currency)` | POST | `/api/v1/books` |
+| `apiCreateBook(name, currency, id?)` | POST | `/api/v1/books` — pass `id` to use a client-supplied shared UUID |
 | `apiUpdateBook(bookId, payload)` | PUT | `/api/v1/books/:id` |
 | `apiDeleteBook(bookId)` | DELETE | `/api/v1/books/:id` |
 | `apiUpdateBookFieldSettings(bookId, fieldSettings)` | PATCH | `/api/v1/books/:id/field-settings` |
 | `apiGetSharedBooks()` | GET | `/api/v1/books/shared` — accepted books shared with me |
+| `apiGetSyncChanges(since)` | GET | `/api/v1/books/sync/changes?since=<iso>` — delta pull for multi-device sync |
 | `apiGetBookShares(bookId)` | GET | `/api/v1/books/:id/shares` — collaborators on my book (all statuses) |
 | `apiAddCollaborator(bookId, payload)` | POST | `/api/v1/books/:id/shares` — send invitation (creates pending share) |
 | `apiUpdateShare(bookId, shareId, payload)` | PATCH | `/api/v1/books/:id/shares/:shareId` — update rights/screens |
@@ -361,7 +374,7 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `apiSearchUsers(q)` | GET | `/api/v1/profile/search?q=...` — find user by email |
 | `apiGetProfile()` | GET | `/api/v1/profile` |
 | `apiUpdateProfile(payload)` | PUT | `/api/v1/profile` |
-| `apiUpdateSubscription({ tier, subscription_status, billing_cycle, expires_at?, cancel_at_period_end? })` | PATCH | `/api/v1/profile/subscription` |
+| `apiUpdateSubscription({ subscription_tier, billing_cycle })` | PATCH | `/api/v1/profile/subscription` — **dev only** (403 in prod; webhook is the real writer) |
 | `apiUploadAvatar(uri, mimeType)` | POST | `/api/v1/upload/avatar` — multipart, returns `{ avatar_url }` |
 | `apiUploadAttachment(uri, mimeType, filename, entryId?)` | POST | `/api/v1/upload/attachment` — multipart, returns `{ attachment_url, path, provider }` |
 | `apiDeleteAttachment(path)` | DELETE | `/api/v1/upload/attachment?path=...` — removes file from Supabase Storage |
@@ -370,6 +383,7 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `apiCreateEntry(bookId, payload)` | POST | `/api/v1/books/:id/entries` |
 | `apiUpdateEntry(bookId, entryId, payload)` | PUT | `/api/v1/books/:id/entries/:eid` |
 | `apiDeleteEntry(bookId, entryId)` | DELETE | `/api/v1/books/:id/entries/:eid` |
+| `apiDeleteAllEntries(bookId)` | DELETE | `/api/v1/books/:id/entries` |
 | `apiGetCategories(bookId)` | GET | `/api/v1/books/:id/categories` |
 | `apiCreateCategory(bookId, payload)` | POST | `/api/v1/books/:id/categories` |
 | `apiUpdateCategory(bookId, categoryId, payload)` | PUT | `/api/v1/books/:id/categories/:id` |
@@ -390,6 +404,12 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `apiDeleteSupplier(bookId, id)` | DELETE | `/api/v1/books/:id/suppliers/:id` |
 | `apiGetSupplierEntries(bookId, id)` | GET | `/api/v1/books/:id/suppliers/:id/entries` |
 | `apiReorderSuppliers(bookId, orderedIds)` | PATCH | `/api/v1/books/:id/suppliers/reorder` |
+| `apiGetPaymentModes(bookId)` | GET | `/api/v1/books/:id/payment-modes` |
+| `apiCreatePaymentMode(bookId, payload)` | POST | `/api/v1/books/:id/payment-modes` |
+| `apiUpdatePaymentMode(bookId, id, payload)` | PUT | `/api/v1/books/:id/payment-modes/:id` |
+| `apiDeletePaymentMode(bookId, id)` | DELETE | `/api/v1/books/:id/payment-modes/:id` |
+| `apiGetPaymentModeEntries(bookId, id)` | GET | `/api/v1/books/:id/payment-modes/:id/entries` |
+| `apiReorderPaymentModes(bookId, orderedIds)` | PATCH | `/api/v1/books/:id/payment-modes/reorder` |
 | `apiGetAllUsers()` | GET | `/api/v1/admin/users` |
 | `apiToggleUserStatus(userId, is_active)` | PATCH | `/api/v1/admin/users/:id/status` |
 | `apiGetUserBooks(userId)` | GET | `/api/v1/admin/users/:id/books` |
@@ -401,6 +421,9 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `apiDeleteNotification(id)` | DELETE | `/api/v1/notifications/:id` |
 | `apiBulkDeleteNotifications(ids)` | POST | `/api/v1/notifications/bulk-delete` |
 | `apiBulkMarkNotificationsRead(ids)` | POST | `/api/v1/notifications/bulk-read` |
+| `apiSavePushToken(payload)` | POST | `/api/v1/notifications/push-token` |
+
+*(`apiMigrateOffline` was removed along with the backend `migration` router.)*
 
 ---
 
@@ -411,7 +434,7 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `authStore` | Zustand | `user`, `session`, `setUser(user, session)`, `clearUser()` |
 | `themeStore` | Zustand | `isDark`, `toggle()` |
 | `bookFieldsStore` | Zustand | Empty store (stub); field visibility is persisted as individual boolean columns on `books` (DB) and read from `['books']` React Query cache as `show_customer`, `show_supplier`, `show_category`, `show_attachment` |
-| `syncStore` | Zustand | `isOnline`, `isSyncing`, `isRestoring`, `progress { done, total, step }`, `restoreProgress { done, total, step }`, `lastSyncedAt`, `syncError`, `restoreError`, `showRestorePrompt`; actions: `startSync`, `finishSync`, `failSync`, `startRestore`, `finishRestore`, `failRestore`, `setProgress`, `setRestoreProgress` |
+| `syncStore` | Zustand | `isOnline`, `isSyncing`, `isRestoring`, `progress { done, total, step }`, `restoreProgress { done, total, step }`, `lastSyncedAt`, `syncError`, `restoreError`, `showRestorePrompt`, `syncCursor` (persisted ISO `server_time` of last delta pull); actions: `startSync`, `finishSync`, `failSync`, `startRestore`, `finishRestore`, `failRestore`, `setProgress`, `setRestoreProgress`, `setSyncCursor` |
 | `['books']` | React Query | All books for current user; staleTime 2 min |
 | `['admin-users']` | React Query | All non-admin users; refetchInterval 10 s |
 | `['entries', bookId]` | React Query | Entries for a specific book; staleTime 2 min |

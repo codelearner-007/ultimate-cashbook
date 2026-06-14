@@ -9,7 +9,8 @@ When GMAIL_SMTP_USER is empty (local dev) both endpoints return 503 so the
 frontend knows to fall back to the native Supabase OTP flow (Inbucket).
 """
 
-import random
+import secrets
+import hashlib
 import smtplib
 import socket
 import logging
@@ -19,6 +20,7 @@ from email.mime.text import MIMEText
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from app.config import settings
@@ -49,6 +51,11 @@ def _is_valid_email(email: str) -> bool:
 
 def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _hash_code(email: str, code: str) -> str:
+    """Hash the OTP so it is never stored in plaintext (defence if the row leaks)."""
+    return hashlib.sha256(f"{email}:{code}".encode("utf-8")).hexdigest()
 
 
 def _build_otp_message(to_email: str, code: str) -> MIMEMultipart:
@@ -150,19 +157,19 @@ async def send_otp(body: SendOtpRequest):
     # Delete any existing unused codes for this email
     sb.table("otp_codes").delete().eq("email", email).eq("used", False).execute()
 
-    # Generate and store new code (5-minute expiry)
-    code = str(random.randint(100000, 999999))
+    # Generate a cryptographically-strong 6-digit code; store ONLY its hash.
+    code = f"{secrets.randbelow(900000) + 100000}"
     expires_at = (_now_utc() + timedelta(minutes=5)).isoformat()
     sb.table("otp_codes").insert({
         "email":      email,
-        "code":       code,
+        "code":       _hash_code(email, code),
         "expires_at": expires_at,
         "used":       False,
     }).execute()
 
-    # Send email
+    # Send email (off the event loop so SMTP latency doesn't block other requests)
     try:
-        _send_otp_email(email, code)
+        await run_in_threadpool(_send_otp_email, email, code)
     except smtplib.SMTPAuthenticationError as exc:
         logger.error("SMTP auth failed for %s: %s", email, exc)
         raise HTTPException(status_code=500, detail=f"Email auth failed: {exc}")
@@ -220,7 +227,13 @@ async def verify_otp(body: VerifyOtpRequest):
         raise INVALID
 
     row = rows[0]
-    if row["code"] != code:
+    MAX_ATTEMPTS = 5
+    if (row.get("attempts") or 0) >= MAX_ATTEMPTS:
+        # Too many wrong guesses for this code — burn it so it can't be brute-forced.
+        sb.table("otp_codes").update({"used": True}).eq("id", row["id"]).execute()
+        raise INVALID
+    if row["code"] != _hash_code(email, code):
+        sb.table("otp_codes").update({"attempts": (row.get("attempts") or 0) + 1}).eq("id", row["id"]).execute()
         raise INVALID
 
     # Mark used + clean up old codes

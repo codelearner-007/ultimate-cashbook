@@ -65,16 +65,6 @@ const UserIcon = ({ color, size = 14 }) => (
   </View>
 );
 
-const BuildingIcon = ({ color, size = 14 }) => (
-  <View style={{ width: size, height: size, justifyContent: 'flex-end', alignItems: 'center' }}>
-    <View style={{ width: size * 0.78, height: size * 0.7, borderWidth: 1.5, borderColor: color, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingHorizontal: 2 }}>
-      <View style={{ width: size * 0.18, height: size * 0.18, borderWidth: 1, borderColor: color }} />
-      <View style={{ width: size * 0.18, height: size * 0.18, borderWidth: 1, borderColor: color }} />
-      <View style={{ width: size * 0.18, height: size * 0.18, borderWidth: 1, borderColor: color }} />
-    </View>
-  </View>
-);
-
 const CurrencyIcon = ({ color, size = 14 }) => (
   <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
     <View style={{ width: size * 0.72, height: size * 0.72, borderRadius: size * 0.36, borderWidth: 1.5, borderColor: color, alignItems: 'center', justifyContent: 'center' }}>
@@ -253,7 +243,6 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
       title: 'Account',
       items: [
         { Icon: UserIcon,     label: 'Profile',           sub: null,          route: profileRoute,               accent: null },
-        { Icon: BuildingIcon, label: 'Business Settings', sub: 'My Business', route: '/(app)/settings/business', accent: null },
         { Icon: CurrencyIcon, label: 'Currency',          sub: currencySub,   route: '/(app)/settings/currency', accent: null },
       ],
     },

@@ -27,9 +27,39 @@ import {
   registerPushToken,
   addNotificationTapListener,
 } from '../src/lib/pushNotifications';
-import { syncCloudToLocal } from '../src/lib/syncManager';
-import { localGetBooks } from '../src/lib/localDb';
-import { apiGetBooks as apiGetCloudBooks, apiDeleteBook as apiDeleteCloudBook } from '../src/lib/api';
+import { syncCloudToLocal, pullDelta } from '../src/lib/syncManager';
+import {
+  localGetBooks,
+  localGetOutbox,
+  localDeleteOutboxRow,
+  localBumpOutboxAttempt,
+} from '../src/lib/localDb';
+import {
+  apiGetBooks as apiGetCloudBooks,
+  apiCreateBook,
+  apiUpdateBook,
+  apiUpdateBookFieldSettings,
+  apiDeleteBook,
+  apiCreateEntry,
+  apiUpdateEntry,
+  apiDeleteEntry,
+  apiCreateCategory,
+  apiUpdateCategory,
+  apiDeleteCategory,
+  apiReorderCategories,
+  apiCreateCustomer,
+  apiUpdateCustomer,
+  apiDeleteCustomer,
+  apiReorderCustomers,
+  apiCreateSupplier,
+  apiUpdateSupplier,
+  apiDeleteSupplier,
+  apiReorderSuppliers,
+  apiCreatePaymentMode,
+  apiUpdatePaymentMode,
+  apiDeletePaymentMode,
+  apiReorderPaymentModes,
+} from '../src/lib/api';
 import * as SecureStore from 'expo-secure-store';
 import { useNotificationPopupStore } from '../src/store/notificationPopupStore';
 import { useNotifications } from '../src/hooks/useNotifications';
@@ -135,15 +165,81 @@ function InitialPullMonitor() {
   return null;
 }
 
+// ── Outbox op → api.js call resolver ────────────────────────────────────────────
+//
+// Each queued write carries the SHARED id, so create/update/delete all target the
+// same row id locally and in the cloud. A create of a row that already exists on
+// the cloud (id collision) returns the existing row or a benign conflict — both
+// are treated as success and the outbox row is dropped.
+
+const MAX_OUTBOX_ATTEMPTS = 8;
+
+async function resolveOutboxOp(item) {
+  const { op, entity, entity_id: id, book_id: bookId, payload } = item;
+
+  if (op === 'create') {
+    switch (entity) {
+      case 'book':         return apiCreateBook(payload.name, payload.currency ?? 'PKR', payload.id ?? id);
+      case 'entry':        return apiCreateEntry(bookId, payload);
+      case 'category':     return apiCreateCategory(bookId, payload);
+      case 'customer':     return apiCreateCustomer(bookId, payload);
+      case 'supplier':     return apiCreateSupplier(bookId, payload);
+      case 'payment_mode': return apiCreatePaymentMode(bookId, payload);
+    }
+  } else if (op === 'update') {
+    switch (entity) {
+      case 'book':         return apiUpdateBook(id, payload);
+      case 'entry':        return apiUpdateEntry(bookId, id, payload);
+      case 'category':     return apiUpdateCategory(bookId, id, payload);
+      case 'customer':     return apiUpdateCustomer(bookId, id, payload);
+      case 'supplier':     return apiUpdateSupplier(bookId, id, payload);
+      case 'payment_mode': return apiUpdatePaymentMode(bookId, id, payload);
+    }
+  } else if (op === 'field_settings') {
+    return apiUpdateBookFieldSettings(id, payload);
+  } else if (op === 'delete') {
+    switch (entity) {
+      case 'book':         return apiDeleteBook(id);
+      case 'entry':        return apiDeleteEntry(bookId, id);
+      case 'category':     return apiDeleteCategory(bookId, id);
+      case 'customer':     return apiDeleteCustomer(bookId, id);
+      case 'supplier':     return apiDeleteSupplier(bookId, id);
+      case 'payment_mode': return apiDeletePaymentMode(bookId, id);
+    }
+  } else if (op === 'reorder') {
+    switch (entity) {
+      case 'category':     return apiReorderCategories(bookId, payload.ordered_ids);
+      case 'customer':     return apiReorderCustomers(bookId, payload.ordered_ids);
+      case 'supplier':     return apiReorderSuppliers(bookId, payload.ordered_ids);
+      case 'payment_mode': return apiReorderPaymentModes(bookId, payload.ordered_ids);
+    }
+  }
+  // Unknown op/entity — drop it so it doesn't block the queue.
+  return undefined;
+}
+
+// HTTP errors that mean "the change is already reflected" → safe to drop the row.
+function isBenignOutboxError(err, op) {
+  const status = err?.response?.status;
+  if (op === 'delete' && status === 404) return true;   // already gone on cloud
+  if (op === 'create' && status === 409) return true;   // already exists on cloud
+  return false;
+}
+
 /**
- * When WiFi comes back, delete any cloud books that were removed locally while offline.
- * Only runs for paid/superadmin users (free tier has no cloud data).
- * Fires once per reconnect event; skips if a sync is already running.
+ * Real sync engine. For paid/superadmin users, on reconnect and on app-foreground:
+ *   (a) drains sync_outbox FIFO — each op resolves to its api.js call; the row is
+ *       deleted on success (or benign 404/409), bumped on failure; after
+ *       MAX_OUTBOX_ATTEMPTS it is dropped with a console.warn.
+ *   (b) runs an incremental delta pull (since=lastCursor) and stores the new
+ *       server_time cursor.
+ * NEVER deletes a cloud row just because it is absent locally.
  */
-function AutoDeleteMonitor() {
-  const user     = useAuthStore(s => s.user);
-  const isOnline = useSyncStore(s => s.isOnline);
+function AutoSyncMonitor() {
+  const user      = useAuthStore(s => s.user);
+  const isOnline  = useSyncStore(s => s.isOnline);
   const isSyncing = useSyncStore(s => s.isSyncing);
+  const setRestoreProgress = useSyncStore(s => s.setRestoreProgress);
   const wasOnline = useRef(isOnline);
   const running   = useRef(false);
 
@@ -154,40 +250,79 @@ function AutoDeleteMonitor() {
     return tier && tier !== 'free';
   };
 
+  const runSync = async () => {
+    if (!isEligible(user) || isSyncing || running.current) return;
+    if (!useSyncStore.getState().isOnline) return;
+    running.current = true;
+    try {
+      // (a) Drain the outbox FIFO.
+      let batch = await localGetOutbox(200).catch(() => []);
+      while (batch.length) {
+        for (const item of batch) {
+          try {
+            await resolveOutboxOp(item);
+            await localDeleteOutboxRow(item.seq);
+          } catch (err) {
+            if (isBenignOutboxError(err, item.op)) {
+              await localDeleteOutboxRow(item.seq);
+              continue;
+            }
+            const attempts = (item.attempts ?? 0) + 1;
+            if (attempts >= MAX_OUTBOX_ATTEMPTS) {
+              console.warn(`[sync] dropping outbox row ${item.seq} (${item.op} ${item.entity}) after ${attempts} attempts:`, err?.message ?? err);
+              await localDeleteOutboxRow(item.seq);
+            } else {
+              await localBumpOutboxAttempt(item.seq, err?.message ?? String(err));
+            }
+          }
+        }
+        // Fetch the next page; stop if nothing drained to avoid a tight loop on
+        // rows that keep erroring (they were already bumped/dropped above).
+        const next = await localGetOutbox(200).catch(() => []);
+        if (next.length && next[0]?.seq === batch[0]?.seq) break;
+        batch = next;
+      }
+
+      // (b) Incremental delta pull from the stored cursor.
+      const cursor = useSyncStore.getState().syncCursor;
+      const result = await pullDelta(cursor || '', (done, total, step) => {
+        if (total > 0) setRestoreProgress(done, total, step);
+      });
+      if (result?.server_time) {
+        useSyncStore.getState().setSyncCursor(result.server_time);
+      }
+    } catch {
+      // Silent — will retry on next reconnect/foreground.
+    } finally {
+      running.current = false;
+    }
+  };
+
+  // Fire on reconnect (offline → online edge).
   useEffect(() => {
     const justReconnected = !wasOnline.current && isOnline;
     wasOnline.current = isOnline;
-
-    if (!justReconnected) return;
-    if (!isEligible(user) || isSyncing || running.current) return;
-
-    running.current = true;
-    (async () => {
-      try {
-        const [localBooks, cloudBooks] = await Promise.all([
-          localGetBooks().catch(() => []),
-          apiGetCloudBooks().catch(() => []),
-        ]);
-
-        // Set of cloud IDs that still exist locally
-        const localCloudIds = new Set(localBooks.map(b => b.cloud_id).filter(Boolean));
-
-        // Only bother if this device has ever synced (otherwise localCloudIds is empty
-        // and we'd wrongly delete everything in the cloud)
-        if (localCloudIds.size === 0) return;
-
-        for (const cloudBook of cloudBooks) {
-          if (!localCloudIds.has(cloudBook.id)) {
-            apiDeleteCloudBook(cloudBook.id).catch(() => {});
-          }
-        }
-      } catch {
-        // Silent — will retry on next reconnect
-      } finally {
-        running.current = false;
-      }
-    })();
+    if (justReconnected) runSync();
   }, [isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fire on app-foreground.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') runSync();
+    });
+    return () => sub.remove();
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Initial drain + periodic drain while online/eligible. Without this, a
+  // continuously-foregrounded online session (the common case) would never push
+  // queued writes or pull remote changes, since neither a reconnect nor a
+  // foreground event fires. runSync() self-guards on eligibility/online/in-flight.
+  useEffect(() => {
+    if (!isEligible(user)) return;
+    runSync();
+    const id = setInterval(runSync, 12000);
+    return () => clearInterval(id);
+  }, [user, isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
 }
@@ -435,6 +570,8 @@ function RestoreCloudModal() {
 
     try {
       const result = await syncCloudToLocal((done, total, step) => setRestoreProgress(done, total, step));
+      // Seed the delta cursor so subsequent incremental pulls only fetch new changes.
+      if (result?.server_time) useSyncStore.getState().setSyncCursor(result.server_time);
       finishRestore();
       setHasRestored(true);
       setRestoreJustCompleted(true);  // keep overlay until BooksView signals data is ready
@@ -718,7 +855,7 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <NetworkMonitor />
       <InitialPullMonitor />
-      <AutoDeleteMonitor />
+      <AutoSyncMonitor />
       <SupabaseAuthListener />
       <AuthGuard />
       <Slot />

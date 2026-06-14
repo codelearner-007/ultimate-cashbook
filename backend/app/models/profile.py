@@ -10,6 +10,7 @@ class ProfileResponse(BaseModel):
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
     role: Literal["superadmin", "user"] = "user"
+    is_active: bool = True
     currency: str = "PKR"
     is_dark_mode: bool = False
     subscription_tier: Literal["free", "pro", "business"] = "free"
@@ -37,6 +38,10 @@ class UserWithStats(ProfileResponse):
     entry_count: int = 0
     storage_mb: float = 0.0
     shared_books_count: int = 0  # accepted book_shares where this user is the owner
+
+
+class StatusUpdate(BaseModel):
+    is_active: bool
 
 
 class SubscriptionUpdate(BaseModel):

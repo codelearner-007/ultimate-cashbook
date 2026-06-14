@@ -13,24 +13,36 @@ App Start
         └─ SplashScreen (full-screen teal, ~1.8 s) → /(auth)/login  (or /(app)/books|dashboard if already logged in)
 
 /(auth)/login         LoginScreen
-/(app)/books          BooksScreen          [role: user]
-/(app)/dashboard      AdminUsersScreen     [role: superadmin]  ← lands here
+/(app)/books          BooksScreen          [role: user]  ← user lands here
 /(app)/books/[id]                          BookDetailScreen
 /(app)/books/[id]/add-entry               AddEntryScreen
 /(app)/books/[id]/edit-entry              EditEntryScreen
 /(app)/books/[id]/entry-detail            EntryDetailScreen
 /(app)/books/[id]/category-detail         CategoryDetailScreen   (entries list)
 /(app)/books/[id]/category-profile        CategoryProfileScreen  (detail/rename/delete)
+/(app)/books/[id]/categories-settings     CategoriesSettingsScreen
+/(app)/books/[id]/customers | /suppliers  ContactsListScreen
+/(app)/books/[id]/contact-detail          ContactDetailScreen
+/(app)/books/[id]/contact-balance         ContactBalanceScreen
+/(app)/books/[id]/payment-mode-settings   PaymentModeSettingsScreen
+/(app)/books/[id]/payment-mode-detail     PaymentModeDetailScreen
+/(app)/books/[id]/payment-mode-balance    PaymentModeBalanceScreen
+/(app)/books/[id]/manage-shares           ManageSharesScreen
+/(app)/books/[id]/add-collaborator        AddCollaboratorScreen
 /(app)/books/[id]/reports                 ReportsScreen
 /(app)/books/[id]/book-settings           BookSettingsScreen
 /(app)/settings                           SettingsScreen
 /(app)/settings/profile                   ProfileScreen
-/(app)/settings/business                  BusinessSettingsScreen
 /(app)/settings/currency                  CurrencyScreen
+/(app)/settings/manage-access             ManageAccessScreen
+/(app)/settings/notifications             NotificationsScreen (user) / AdminNotificationsInboxScreen (admin)
 /(app)/settings/subscription              SubscriptionScreen
+/(app)/settings/backup-sync               BackupSyncScreen
 /(app)/settings/privacy-policy            PrivacyPolicyScreen
-/(app)/dashboard/users                    AdminUsersScreen     [superadmin]
+/(app)/admin-profile                      ProfileScreen        [superadmin]
+/(app)/dashboard/users                    AdminUsersScreen     [superadmin]  ← admin lands here
 /(app)/dashboard/books                    AdminBooksScreen     [superadmin]
+/(app)/dashboard/notifications            AdminNotificationsScreen [superadmin]
 /(app)/dashboard/settings                 SettingsScreen       [superadmin]
 ```
 
@@ -39,6 +51,8 @@ App Start
 - `role === 'superadmin'` → push `/(app)/dashboard/users`
 - `role === 'user'` → push `/(app)/books`
 - On `SIGNED_OUT` event → push `/(auth)/login`
+
+*(Removed screens: OnboardingScreen, DashboardScreen, SplashScreen-as-component, BusinessSettingsScreen, BusinessProfileScreen, DeleteBusinessScreen, ContactSettingsScreen — and their routes.)*
 
 ---
 
@@ -250,9 +264,10 @@ All interactions, mutations, states, and API calls are identical to BooksScreen.
 
 ## 4. AdminUsersScreen — `/(app)/dashboard/users` (role: superadmin)
 
-**Layout:** Default landing for superadmin. Three tabs at the top (Expo `<Tabs>`):
+**Layout:** Default landing for superadmin. Four bottom tabs (custom `AdminTabBar` over Expo `<Tabs>`):
 - **Users** (this screen)
 - **My Books** → AdminBooksScreen
+- **Notify** → AdminNotificationsScreen (compose/send push notifications)
 - **Settings** → SettingsScreen
 
 ### Header Row
@@ -336,7 +351,7 @@ No Account Status card — users are differentiated by subscription tier (Free /
 |--------------------|--------|---------------------------------------------------|
 | Back (←)           | Tap    | Navigate back to BooksScreen                      |
 | Book name (title)  | —      | Display only                                      |
-| User-plus icon     | Tap    | (TODO — invite collaborator, not yet implemented) |
+| User-plus icon     | Tap    | Navigate to `manage-shares` (collaborators) — gated by `book_sharing` (Pro+) |
 | ⋮ (3-dot menu)    | Tap    | Opens dropdown menu                               |
 
 ### Dropdown Menu
@@ -797,8 +812,9 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 | Row                    | Action | Result                                  |
 |------------------------|--------|-----------------------------------------|
 | **Profile**            | Tap    | Navigate to `/(app)/settings/profile`   |
-| **Business Settings**  | Tap    | Navigate to `/(app)/settings/business`  |
 | **Currency**           | Tap    | Navigate to `/(app)/settings/currency`  |
+
+*(Business Settings was removed.)*
 
 ### Subscription Section
 | Row                       | Icon                       | Action | Result                                     |
@@ -930,18 +946,14 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 
 ---
 
-## 14. BusinessSettingsScreen — `/(app)/settings/business`
+## 14. CurrencyScreen — `/(app)/settings/currency`
 
-Allows user to set their business/company details (name, address, logo, etc.).
-Used for PDF report headers.
-*(Detailed use-case: populate when screen is implemented)*
+**Purpose:** Set the user's preferred currency (used as the default for new books).
+- Full searchable list of world currencies from `constants/currencies.js` (160+ ISO 4217)
+- Search filters by code/name/symbol; selected currency shows a checkmark
+- Tapping a row → `useUpdateProfile().mutate({ currency: code })` → `router.back()`
 
----
-
-## 15. CurrencyScreen — `/(app)/settings/currency`
-
-Allows user to set their preferred currency symbol.
-*(Detailed use-case: populate when screen is implemented)*
+*(BusinessSettingsScreen and its `/(app)/settings/business` route were removed.)*
 
 ---
 
@@ -1086,17 +1098,18 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 | Export Excel                      | ReportsScreen                             | ✅ Complete (👑 Pro gate) |
 | Subscription plans page           | SubscriptionScreen                        | ✅ Complete               |
 | Crown gates on locked features    | SettingsScreen, ReportsScreen, BooksView  | ✅ Complete               |
-| Invite collaborator               | BookDetailScreen user-plus icon           | Not implemented           |
-| Notifications settings            | SettingsScreen                            | Not implemented           |
+| Invite collaborator               | BookDetailScreen → ManageSharesScreen     | ✅ Complete (👑 Pro gate) |
+| Notifications                     | NotificationsScreen / AdminNotificationsInboxScreen | ✅ Complete     |
 | Privacy & Security (Privacy Policy) | PrivacyPolicyScreen                     | ✅ Complete               |
 | Backup & Sync                     | BackupSyncScreen (`/(app)/settings/backup-sync`) | ✅ Complete (👑 Pro gate) |
 | Language picker                   | SettingsScreen                            | Not implemented           |
 | Help & FAQ                        | SettingsScreen                            | Not implemented           |
 | Rate the App                      | SettingsScreen                            | Not implemented           |
 | Share App                         | SettingsScreen                            | Not implemented           |
-| Business Settings                 | BusinessSettingsScreen                    | Skeleton only             |
-| Currency picker                   | CurrencyScreen                            | Skeleton only             |
+| Currency picker                   | CurrencyScreen                            | ✅ Complete               |
 | Reports charts                    | ReportsScreen                             | ✅ Complete               |
+
+*(Business Settings was removed — no longer a feature.)*
 
 ---
 
@@ -1104,15 +1117,15 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 
 | Error                | Trigger                             | Display                                |
 |----------------------|-------------------------------------|----------------------------------------|
-| 401 Unauthorized     | Expired/invalid JWT                 | Auto sign-out → redirect to login      |
-| 403 Forbidden        | Role mismatch                       | Auto sign-out → redirect to login      |
-| Network error        | No connectivity                     | Toast with message                     |
-| Inactive account     | `is_active = false` on profile fetch | Toast + sign-out                      |
+| 401 Unauthorized     | Expired/invalid JWT, or deactivated account | Auto sign-out → redirect to login |
+| 402 Upgrade required | Over a paid-plan limit (book/share/export) | Surfaced to the screen → upgrade prompt (NOT a sign-out) |
+| 403 Forbidden        | Collaborator lacks rights, or disabled endpoint | Surfaced to the screen (NOT a sign-out) |
+| Network error        | No connectivity                     | App stays usable (local-first); cloud sync resumes on reconnect |
 | Validation (client)  | Missing required field              | Inline field error                     |
 | File too large       | Attachment > 6 MB                   | Toast "File too large (max 6 MB)"      |
 | Duplicate category   | Same name in book                   | Toast from API error                   |
 
 ---
 
-*Last updated: 2026-05-18*
+*Last updated: 2026-06-13*
 *Update this file whenever any screen, button, navigation flow, or API call changes.*

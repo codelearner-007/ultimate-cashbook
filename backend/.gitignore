@@ -3,5 +3,13 @@
 .env.development
 .env.local
 venv/
+.venv/
 __pycache__/
 *.pyc
+*.egg-info/
+
+# OS
+.DS_Store
+
+# Logs
+*.log

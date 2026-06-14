@@ -3,6 +3,7 @@ import * as SecureStore from 'expo-secure-store';
 
 const LAST_SYNC_KEY    = 'cashbook_last_synced_at';
 const HAS_RESTORED_KEY = 'cashbook_has_restored';
+const SYNC_CURSOR_KEY  = 'cashbook_sync_cursor';   // ISO server_time of last delta pull
 
 export const useSyncStore = create((set) => ({
   isOnline:            false,
@@ -20,6 +21,14 @@ export const useSyncStore = create((set) => ({
   // Persisted flag — hides "Restore from Cloud" button once data is local
   // Also set to true after "Start Fresh" (cloud is empty, nothing to restore)
   hasRestoredFromCloud: false,
+
+  // Delta-pull cursor — server_time of the last successful pull. Persisted so an
+  // incremental pull on next launch only fetches rows changed since then.
+  syncCursor: null,
+  setSyncCursor: (iso) => {
+    if (iso) SecureStore.setItemAsync(SYNC_CURSOR_KEY, iso).catch(() => {});
+    set({ syncCursor: iso });
+  },
 
   setOnline:  (v) => set({ isOnline: v }),
 
@@ -57,4 +66,8 @@ SecureStore.getItemAsync(LAST_SYNC_KEY)
 
 SecureStore.getItemAsync(HAS_RESTORED_KEY)
   .then(v => { if (v === '1') useSyncStore.setState({ hasRestoredFromCloud: true }); })
+  .catch(() => {});
+
+SecureStore.getItemAsync(SYNC_CURSOR_KEY)
+  .then(v => { if (v) useSyncStore.setState({ syncCursor: v }); })
   .catch(() => {});

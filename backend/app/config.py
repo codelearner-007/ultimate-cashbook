@@ -18,6 +18,18 @@ class Settings(BaseSettings):
     GMAIL_FROM_NAME:     str = "Ultimate CashBook"
     GMAIL_FROM_ADDRESS:  str = "info@ultimatecashbook.com"
 
+    # RevenueCat webhook shared secret (Authorization header value the webhook must send).
+    # Subscription entitlements are written ONLY by this verified webhook.
+    REVENUECAT_WEBHOOK_AUTH: str = ""
+
+    # Error monitoring (optional). When set, Sentry captures unhandled exceptions.
+    SENTRY_DSN: str = ""
+
+    # Dev-only escape hatch: when true, PATCH /profile/subscription lets the client set
+    # its own tier (for local testing of tier-gated UI without a store sandbox).
+    # MUST stay false in production — leaving it false closes the self-upgrade hole.
+    DEV_ALLOW_CLIENT_SUBSCRIPTION: bool = False
+
     @property
     def cors_origins(self) -> List[str]:
         if self.ALLOWED_ORIGINS == "*":

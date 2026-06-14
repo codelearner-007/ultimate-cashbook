@@ -12,11 +12,12 @@ import {
 
 // ── User hooks ────────────────────────────────────────────────────────────────
 
-export function useNotifications() {
+export function useNotifications({ enabled = true } = {}) {
   return useQuery({
     queryKey: ['notifications'],
     queryFn: () => apiGetNotifications(),
     staleTime: 1000 * 60,
+    enabled,
   });
 }
 

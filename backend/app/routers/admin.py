@@ -4,7 +4,7 @@ import httpx
 import logging
 from app.auth.jwt import get_current_user
 from app.db.supabase import get_supabase
-from app.models.profile import UserWithStats
+from app.models.profile import UserWithStats, StatusUpdate
 from app.models.book import BookResponse
 from app.models.notification import NotificationCreate, NotificationResponse
 
@@ -61,8 +61,34 @@ async def require_superadmin(user_id: str = Depends(get_current_user)) -> str:
 
 @router.get("/users", response_model=List[UserWithStats])
 async def get_all_users(admin_id: str = Depends(require_superadmin)):
-    """All non-superadmin profiles with book/entry stats."""
+    """All non-superadmin profiles with book/entry stats.
+
+    Fast path: a single `get_admin_user_stats()` RPC (migration 014) computes
+    every user's stats in one round-trip. Falls back to the per-user loop
+    (one query each for books/entries + two storage RPCs + shares) when the
+    migration hasn't been applied yet.
+    """
     sb = get_supabase()
+
+    # ── Fast path: single-round-trip RPC (migration 014) ──────────────────
+    try:
+        stats_res = sb.rpc("get_admin_user_stats").execute()
+        if stats_res.data is not None:
+            result = []
+            for row in stats_res.data:
+                data_bytes    = row.get("data_bytes") or 0
+                storage_bytes = row.get("storage_bytes") or 0
+                storage_mb    = round((data_bytes + storage_bytes) / (1024 * 1024), 3)
+                profile = {k: v for k, v in row.items()
+                           if k not in ("data_bytes", "storage_bytes")}
+                result.append({
+                    **profile,
+                    "storage_mb": storage_mb,
+                })
+            return result
+    except Exception:
+        pass  # RPC missing (migration not run) → fall back to per-user loop below
+
     profiles_res = (
         sb.table("profiles")
         .select("*")
@@ -120,6 +146,23 @@ async def get_all_users(admin_id: str = Depends(require_superadmin)):
         })
 
     return result
+
+
+@router.patch("/users/{user_id}/status", response_model=dict)
+async def set_user_status(
+    user_id: str,
+    payload: StatusUpdate,
+    admin_id: str = Depends(require_superadmin),
+):
+    """Activate/deactivate a user. A deactivated user is rejected at auth (401)."""
+    sb = get_supabase()
+    target = sb.table("profiles").select("role").eq("id", user_id).single().execute()
+    if not target.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.data["role"] == "superadmin":
+        raise HTTPException(status_code=400, detail="Cannot change a superadmin's status")
+    sb.table("profiles").update({"is_active": payload.is_active}).eq("id", user_id).execute()
+    return {"id": user_id, "is_active": payload.is_active}
 
 
 @router.get("/users/{user_id}/books", response_model=List[BookResponse])

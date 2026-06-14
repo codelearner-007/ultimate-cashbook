@@ -4,6 +4,7 @@ from typing import Optional
 
 
 class BookCreate(BaseModel):
+    id: Optional[str] = None  # client-supplied shared UUID; Postgres generates one when absent
     name: str
     currency: str = "PKR"
 

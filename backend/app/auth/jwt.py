@@ -32,8 +32,13 @@ async def _assert_active(user_id: str) -> None:
     try:
         data = await run_in_threadpool(_check)
     except Exception:
-        # Profile not found / transient lookup failure: don't hard-block here;
-        # downstream handlers enforce their own access checks.
+        # INTENTIONAL fail-open: this is a SECONDARY control — the JWT itself is
+        # already cryptographically validated above. A transient Supabase failure
+        # must not 401 every authenticated request (total outage). The rare case of
+        # a deactivated user slipping through during a DB blip is bounded and far
+        # cheaper than locking out all active users. For hard, immediate revocation,
+        # the admin deactivation flow should ALSO ban the Supabase auth user
+        # (blocks token refresh) as defence-in-depth.
         return
     if data is not None and data.get("is_active") is False:
         raise HTTPException(status_code=401, detail="Account deactivated")

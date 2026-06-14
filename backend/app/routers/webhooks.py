@@ -13,6 +13,7 @@ their own subscription fields, so this service-role path is the sole source of
 truth for paid entitlements.
 """
 
+import hmac
 import logging
 from datetime import datetime, timezone
 
@@ -59,7 +60,8 @@ async def revenuecat_webhook(request: Request, authorization: str = Header(None)
     # 1. Verify the shared secret (RevenueCat sends it as the Authorization header).
     if not settings.REVENUECAT_WEBHOOK_AUTH:
         raise HTTPException(status_code=503, detail="Webhook not configured")
-    if authorization != settings.REVENUECAT_WEBHOOK_AUTH:
+    # Constant-time comparison to avoid leaking the secret via response timing.
+    if not hmac.compare_digest(authorization or "", settings.REVENUECAT_WEBHOOK_AUTH):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
     body = await request.json()

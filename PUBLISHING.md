@@ -12,16 +12,32 @@ where. Values in `ALL_CAPS` are yours to fill.
 
 ---
 
-## 0. Accounts to create (one-time, paid/identity-gated)
+## 0. Costs, blockers & the cheapest path
 
-| Account | Why | Notes |
-|---|---|---|
-| Apple Developer Program | iOS App Store | $99/yr, requires legal identity / D-U-N-S for orgs |
-| Google Play Console | Android | $25 one-time |
-| RevenueCat | Subscriptions | free tier fine to start |
-| Supabase (prod project) | DB/Auth/Storage | confirm whether the project in `eas.json` is your prod one |
-| Render (or host) | FastAPI backend | already referenced: `ultimate-cashbook.onrender.com` |
-| Sentry (optional) | Error reporting | only needed to turn on monitoring |
+**Almost everything is free.** The only unavoidable cost is the store developer
+account(s). Everything else (Supabase, backend host, RevenueCat, Sentry, Google
+login, email-OTP) runs on free tiers.
+
+| Credential / account | Blocks what? | Needed to launch? | Cost |
+|---|---|---|---|
+| Supabase URL + anon key | All cloud features (auth, sync) | **Yes** — you already have one; confirm it's prod | Free |
+| Backend URL (Render) | Cloud API | **Yes** — already deployed (`ultimate-cashbook.onrender.com`) | Free (sleeps when idle) |
+| Supabase service key + JWT secret | Backend auth | **Yes** — set in Render env (never in repo) | Free |
+| Google OAuth web client ID | Google login *only* | No — email-OTP works without it | Free |
+| RevenueCat keys (`appl_`/`goog_`) | In-app purchases *only* | **No** — app disables purchases gracefully when blank | Free up to ~$2.5k/mo revenue |
+| Sentry DSN | Error monitoring | No — no-op when blank | Free tier |
+| Gmail SMTP | Production email-OTP | No — falls back to Supabase native OTP | Free (Gmail app password) |
+| Google Play Console | Android publishing | **Yes for Android** | **$25 one-time** |
+| Apple Developer Program | iOS publishing | **Yes for iOS** | **$99 / year** |
+
+### Cheapest path to a live app — ~$25 total
+1. **Android only**, **free app, no in-app purchases** → the only cost is the **$25** Play Console fee.
+2. Skip RevenueCat, Apple, Sentry, and Gmail for now — none of them block a free Android launch.
+3. Validate with real users, then add in-app subscriptions (RevenueCat, free), iOS ($99/yr), and monitoring (Sentry, free) when it's worth it.
+
+> You already have a Supabase project + a deployed backend. If those are the ones you
+> intend to ship, the most important free pieces are done — for a free Android launch
+> you mainly need the $25 Play account. Step-by-step for every key is in §7.
 
 ---
 
@@ -122,3 +138,53 @@ eas submit --platform android --profile production   # track: internal (raise in
 | Support + privacy-policy URLs | ⬜ host the policy text (also shipped in-app) |
 
 Once steps 1–5 are filled in and the compliance items declared, the app is submittable.
+
+---
+
+## 7. How to get each key (step by step)
+
+### Supabase (free) — URL, anon key, service key, JWT secret
+1. supabase.com → **New project** (free tier), pick a nearby region.
+2. **Project Settings → API**:
+   - **Project URL** → `EXPO_PUBLIC_SUPABASE_URL` and backend `SUPABASE_URL`.
+   - **anon / public key** → `EXPO_PUBLIC_SUPABASE_ANON_KEY`. *(New 2026 projects may show a `sb_publishable_…` key instead of a JWT — use that; it's the public/anon equivalent.)*
+   - **service_role / secret key** → backend `SUPABASE_SERVICE_KEY` only. **Never** put this in the app or repo.
+   - **JWT Secret** (same API page; new projects use ES256/JWKS, which the backend also supports) → backend `SUPABASE_JWT_SECRET`.
+3. Run migrations `001`→`014` (SQL Editor or `supabase db push`).
+4. **Auth → URL Configuration → Redirect URLs** → add `ultimatecashbook://auth/callback`.
+
+### Backend host (Render, free)
+1. render.com → **New → Web Service** → connect the repo → root directory `backend/`.
+2. It uses the `Procfile`. Add the env vars from §2.
+3. Copy the service URL → `EXPO_PUBLIC_API_URL`. (Free tier sleeps when idle; the first request after a nap is slow.)
+
+### Google login (free, optional) — `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`
+1. console.cloud.google.com → new project.
+2. **APIs & Services → OAuth consent screen** → External → fill app name + support email → save.
+3. **Credentials → Create credentials → OAuth client ID → Web application** → copy the **Client ID** → `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`. Add authorized redirect `https://YOUR_REF.supabase.co/auth/v1/callback`.
+4. (Android native) Also create an **Android** OAuth client with package `com.ultimatecashbook.app` + the SHA-1 from your EAS keystore (`eas credentials`).
+5. Supabase → **Auth → Providers → Google** → paste the Web client ID + secret.
+   *Skip all of this to launch with email-OTP only.*
+
+### RevenueCat (free) — `appl_` / `goog_` keys  *(do AFTER you have store accounts; optional for a free launch)*
+1. revenuecat.com → free account → **New project**.
+2. Add your App Store + Play Store apps (the store app records must exist first).
+3. Create **Entitlements** + **Products** mapped to your store subscriptions, named so the id contains the tier (`pro`/`business`) and period (`month`/`year`).
+4. **Project settings → API keys** → copy the public app keys: `appl_…` → `EXPO_PUBLIC_REVENUECAT_IOS_KEY`, `goog_…` → `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`.
+5. **Integrations → Webhooks** → URL `https://YOUR_API/api/v1/webhooks/revenuecat`, **Authorization** = your `REVENUECAT_WEBHOOK_AUTH`.
+
+### Sentry (free, optional) — `EXPO_PUBLIC_SENTRY_DSN`
+1. sentry.io → free account → **Create project → React Native** → copy the **DSN**.
+
+### Gmail SMTP (free, optional) — production email-OTP
+1. A Gmail account → enable **2-Step Verification** → **App Passwords** → create one (16 chars).
+2. Backend env: `GMAIL_SMTP_USER` = the address, `GMAIL_SMTP_PASSWORD` = the app password. *(Skip → backend returns 503 → the app uses Supabase native OTP.)*
+
+### Google Play Console — $25 one-time
+1. play.google.com/console → pay $25 → complete identity verification (can take 1–2 days).
+2. Create the app record.
+3. **Setup → API access** → link a Google Cloud project → create a **service account** → grant it the release permission → download the JSON → save as `frontend/google-service-account.json` (already gitignored).
+
+### Apple Developer Program — $99/year
+1. developer.apple.com/programs → **Enroll** → identity verification.
+2. **App Store Connect** → create the app record → note the **App ID** (`ascAppId`); your **Team ID** is under developer.apple.com → Membership. `eas submit` prompts for both.

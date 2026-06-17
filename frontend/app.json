@@ -44,7 +44,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Ultimate CashBook uses your camera to take photos for your profile and to attach receipts to entries.",
         "NSPhotoLibraryUsageDescription": "Ultimate CashBook accesses your photo library to set a profile photo and to attach receipt images to entries.",
-        "NSContactsUsageDescription": "Ultimate CashBook accesses your contacts to quickly add customers and suppliers."
+        "NSContactsUsageDescription": "Ultimate CashBook accesses your contacts to quickly add customers and suppliers.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "plugins": [

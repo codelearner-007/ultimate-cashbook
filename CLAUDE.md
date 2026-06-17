@@ -13,6 +13,7 @@ Each sub-folder has its own `CLAUDE.md` with detailed, up-to-date logic for that
 | Frontend | [frontend/CLAUDE.md](frontend/CLAUDE.md) | Screen logic, routes, hooks, API calls, state, styling |
 | Backend | [backend/CLAUDE.md](backend/CLAUDE.md) | Endpoints, Pydantic models, auth middleware, DB patterns |
 | Supabase | [supabase/CLAUDE.md](supabase/CLAUDE.md) | Schema, RLS, Storage, Auth setup, migrations |
+| Publishing | [PUBLISHING.md](PUBLISHING.md) | Step-by-step launch runbook: Supabase/Render/RevenueCat/EAS provisioning + store compliance |
 
 ## App Skeleton (click-by-click use-case map)
 

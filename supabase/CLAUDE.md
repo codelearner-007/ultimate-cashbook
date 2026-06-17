@@ -515,7 +515,7 @@ The `GET /api/v1/admin/users` endpoint reads the `get_admin_user_stats()` RPC (m
   - [ ] Add mobile redirect: `ultimatecashbook://auth/callback` to allowed URLs
 - [ ] Configure the RevenueCat webhook to `POST /api/v1/webhooks/revenuecat` with the `REVENUECAT_WEBHOOK_AUTH` secret in its Authorization header
 - [ ] Copy values to env files:
-  - **Frontend `.env`:** `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_REVENUECAT_IOS_KEY`, `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`
+  - **Frontend `.env`:** `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_REVENUECAT_IOS_KEY`, `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`, `EXPO_PUBLIC_SENTRY_DSN` (optional)
   - **Backend `.env`:** `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_JWT_SECRET`, `REVENUECAT_WEBHOOK_AUTH`, `GMAIL_SMTP_*` (for production OTP)
 
 ---

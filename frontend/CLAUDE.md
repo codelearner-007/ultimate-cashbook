@@ -144,6 +144,7 @@ frontend/
 | HTTP (cloud mirror) | Axios (+ Supabase client for auth) |
 | Auth | Supabase Auth (Google OAuth) + custom Gmail email-OTP (dev fallback to Supabase native) |
 | In-app purchases | react-native-purchases (RevenueCat) ^8 — native only; `purchases.web.js` is a no-op |
+| Error reporting | @sentry/react-native ~7 — `Sentry.init` in `_layout.jsx` (gated on `EXPO_PUBLIC_SENTRY_DSN`), root wrapped in `Sentry.wrap`, Metro via `getSentryExpoConfig`, Expo config plugin `@sentry/react-native` |
 | Token / preference storage | Expo SecureStore (native) / localStorage (web) |
 | Fonts | @expo-google-fonts/inter |
 | Date/time pickers | custom `DatePickerModal` / `TimePickerModal` |
@@ -165,6 +166,7 @@ The app is local-first: every read/write hits SQLite first. For paid/superadmin 
 ### Root Layout (`app/_layout.jsx`)
 - Loads Inter 400/500/600/700/800; hides splash screen when ready
 - Wraps app in `QueryClientProvider` (single `QueryClient` instance at module level)
+- Initialises Sentry at module load (no-op unless `EXPO_PUBLIC_SENTRY_DSN` is set) and exports the root via `Sentry.wrap(RootLayout)`
 - Renders the monitor/listener tree: `NetworkMonitor` (sets `syncStore.isOnline`), `InitialPullMonitor` (first-launch restore prompt), **`AutoSyncMonitor`** (drains `sync_outbox` + delta pull), `SupabaseAuthListener` (session/profile/push-token), `AuthGuard`, `<Slot />`, `RestoreCloudModal`, `NotificationPopup`, `RestoreCompletionOverlay`, `<Toast />`
 - `AuthGuard` watches `useAuthStore → user` and `useSegments`:
   - No user + inside `(app)` → `router.replace('/(auth)/login')`

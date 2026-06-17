@@ -23,7 +23,8 @@
         "EXPO_PUBLIC_API_URL": "https://ultimate-cashbook.onrender.com",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "729677181390-m1tt4up16ch71pshpeefaarp5pbsampq.apps.googleusercontent.com",
         "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": ""
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "",
+        "EXPO_PUBLIC_SENTRY_DSN": ""
       }
     },
     "production": {
@@ -38,7 +39,8 @@
         "EXPO_PUBLIC_API_URL": "https://ultimate-cashbook.onrender.com",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "729677181390-m1tt4up16ch71pshpeefaarp5pbsampq.apps.googleusercontent.com",
         "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": ""
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": "",
+        "EXPO_PUBLIC_SENTRY_DSN": ""
       }
     }
   },

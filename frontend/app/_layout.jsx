@@ -3,6 +3,7 @@ import { Platform, Modal, View, Text, TouchableOpacity, StyleSheet, AppState, An
 import Toast from '../src/lib/toast';
 import { toastConfig } from '../src/components/ui/AppToast';
 import { Slot, useRouter, useSegments } from 'expo-router';
+import * as Sentry from '@sentry/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as SplashScreen from 'expo-splash-screen';
 import {
@@ -834,7 +835,16 @@ const rcStyles = StyleSheet.create({
 
 // ──────────────────────────────────────────────────────────────────────────────
 
-export default function RootLayout() {
+// Error monitoring — active only when EXPO_PUBLIC_SENTRY_DSN is set (no-op otherwise).
+const SENTRY_DSN = process.env.EXPO_PUBLIC_SENTRY_DSN;
+Sentry.init({
+  dsn: SENTRY_DSN,
+  enabled: !!SENTRY_DSN,
+  tracesSampleRate: __DEV__ ? 1.0 : 0.2,
+  sendDefaultPii: false,
+});
+
+function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Inter_400Regular,
     Inter_500Medium,
@@ -866,3 +876,5 @@ export default function RootLayout() {
     </QueryClientProvider>
   );
 }
+
+export default Sentry.wrap(RootLayout);

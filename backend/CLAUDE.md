@@ -535,6 +535,16 @@ uvicorn app.main:app --reload  # Dev server at http://localhost:8000
 
 Swagger UI: `http://localhost:8000/docs`
 
+### Tests
+
+```bash
+cd backend
+pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest tests/ -v
+```
+
+`tests/test_account_deletion.py` covers `DELETE /api/v1/profile` end-to-end through the real FastAPI route + DI, with a recording fake Supabase client (asserts storage purge → `auth.admin.delete_user`, best-effort storage failures, 500 on auth failure, and the auth requirement). `tests/conftest.py` sets dummy env so the app imports without a real project.
+
 ---
 
 ## Deployment (Render)

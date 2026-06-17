@@ -1,4 +1,6 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from typing import List
 from datetime import datetime, timezone
 from app.auth.jwt import get_current_user
@@ -7,6 +9,7 @@ from app.models.profile import ProfileResponse, ProfileUpdate, SubscriptionUpdat
 from app.models.sharing import CollaboratorProfile
 from app.config import settings
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -121,3 +124,52 @@ async def search_users(
         .execute()
     ).data or []
     return results
+
+
+@router.delete("", status_code=204)
+async def delete_account(user_id: str = Depends(get_current_user)):
+    """
+    Permanently delete the authenticated user's account and ALL associated data.
+
+    Storage objects (entry attachments + avatar) are not foreign-keyed, so they are
+    purged first (best-effort). Deleting the Supabase auth user then cascades every
+    database row — profiles, books, entries, categories, contacts, payment modes,
+    shares, notifications — via the `on delete cascade` FKs to auth.users.
+
+    Required for App Store / Play Store launch (Apple Guideline 5.1.1(x):
+    in-app account deletion).
+    """
+    sb = get_supabase()
+
+    def _purge():
+        # 1. Entry attachments — the storage path is recorded on each entry row.
+        try:
+            rows = (
+                sb.table("entries")
+                .select("attachment_path")
+                .eq("user_id", user_id)
+                .execute()
+            ).data or []
+            paths = [r["attachment_path"] for r in rows if r.get("attachment_path")]
+            if paths:
+                sb.storage.from_("attachments").remove(paths)
+        except Exception:
+            logger.warning("Attachment cleanup failed for %s during account deletion", user_id, exc_info=True)
+
+        # 2. Avatar(s) under {user_id}/ in the public avatars bucket.
+        try:
+            objects = sb.storage.from_("avatars").list(user_id) or []
+            avatar_paths = [f"{user_id}/{o['name']}" for o in objects if o.get("name")]
+            if avatar_paths:
+                sb.storage.from_("avatars").remove(avatar_paths)
+        except Exception:
+            logger.warning("Avatar cleanup failed for %s during account deletion", user_id, exc_info=True)
+
+        # 3. Delete the auth user — cascades every DB row via FK on delete cascade.
+        sb.auth.admin.delete_user(user_id)
+
+    try:
+        await run_in_threadpool(_purge)
+    except Exception as exc:
+        logger.exception("Account deletion failed for %s", user_id)
+        raise HTTPException(status_code=500, detail="Failed to delete account") from exc

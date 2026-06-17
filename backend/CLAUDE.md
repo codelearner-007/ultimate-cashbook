@@ -15,7 +15,7 @@ backend/
 │   │   └── jwt.py            # PyJWT validation, get_current_user (enforces is_active)
 │   ├── routers/
 │   │   ├── auth.py           # POST /api/v1/auth/send-otp + /verify-otp (Gmail SMTP; hashed OTP; 503 → dev fallback)
-│   │   ├── profile.py        # GET/PUT /api/v1/profile, GET /search, PATCH /subscription (403 in prod)
+│   │   ├── profile.py        # GET/PUT/DELETE /api/v1/profile, GET /search, PATCH /subscription (403 in prod)
 │   │   ├── books.py          # GET/POST/PUT/DELETE /api/v1/books, /shared, /sync/changes (delta)
 │   │   ├── sharing.py        # /api/v1/books/{id}/shares CRUD + /respond + /leave (402 gates)
 │   │   ├── invitations.py    # GET /api/v1/invitations/received + /given
@@ -92,7 +92,7 @@ GMAIL_FROM_ADDRESS=             # default "info@ultimatecashbook.com"
 
 ### App setup (`main.py`)
 - CORS: `allow_origins = settings.cors_origins`, **`allow_credentials = False`** (no wildcard-with-credentials).
-- A global exception handler logs server-side and returns a generic `{"detail": "Internal server error"}` — internals are never leaked to clients.
+- A global exception handler logs server-side and returns a generic `{"detail": "Internal server error"}` — internals are never leaked to clients. Its manual CORS headers echo the request `Origin` when it is in the allow-list (and `Vary: Origin`), so 500s don't get a mismatched `Access-Control-Allow-Origin` in multi-origin setups.
 - Sentry is initialized only when `SENTRY_DSN` is set.
 
 ---
@@ -157,6 +157,7 @@ No JWT auth required (these endpoints issue the session).
 | PUT | `` | Update own profile (full_name, phone, avatar_url, currency, is_dark_mode) | ✅ |
 | PATCH | `/subscription` | **Disabled in prod — returns 403** unless `DEV_ALLOW_CLIENT_SUBSCRIPTION=true`. The RevenueCat webhook is the sole writer of `subscription_*`. | ✅ |
 | GET | `/search?q=email` | ilike-search users by email (exclude self, max 10) | ✅ |
+| DELETE | `` | **Permanently delete own account.** Purges storage (entry attachments from `entries.attachment_path` + avatar folder) best-effort, then `sb.auth.admin.delete_user(user_id)` cascades every DB row via the `on delete cascade` FKs to `auth.users`. Returns 204. Required for App Store launch (Apple Guideline 5.1.1(x)). | ✅ |
 
 ---
 

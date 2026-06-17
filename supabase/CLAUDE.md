@@ -429,7 +429,7 @@ Migration 013 (`processed_webhook_events`) is similarly locked down (RLS deny-al
 1. Go to **Authentication → Providers → Google** in Supabase dashboard
 2. Enable Google provider; paste Google Client ID and Secret from Google Cloud Console
 3. Set Authorized Redirect URI in Google Cloud: `https://<project-ref>.supabase.co/auth/v1/callback`
-4. Add mobile deep-link: `cashbook://auth/callback` to allowed redirect URLs in Supabase
+4. Add mobile deep-link: `ultimatecashbook://auth/callback` to allowed redirect URLs in Supabase
 
 ### Email OTP (custom, Gmail SMTP)
 - Implemented by the backend `auth` router (`POST /api/v1/auth/send-otp` + `/verify-otp`), NOT Supabase's built-in magic link.
@@ -512,7 +512,7 @@ The `GET /api/v1/admin/users` endpoint reads the `get_admin_user_stats()` RPC (m
 - [ ] Enable Google OAuth (Authentication → Providers → Google)
   - [ ] Add Google Client ID and Secret
   - [ ] Set redirect URL: `https://<ref>.supabase.co/auth/v1/callback`
-  - [ ] Add mobile redirect: `cashbook://auth/callback` to allowed URLs
+  - [ ] Add mobile redirect: `ultimatecashbook://auth/callback` to allowed URLs
 - [ ] Configure the RevenueCat webhook to `POST /api/v1/webhooks/revenuecat` with the `REVENUECAT_WEBHOOK_AUTH` secret in its Authorization header
 - [ ] Copy values to env files:
   - **Frontend `.env`:** `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_REVENUECAT_IOS_KEY`, `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`

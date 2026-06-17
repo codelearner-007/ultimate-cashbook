@@ -1006,6 +1006,30 @@ export default function SubscriptionScreen() {
               </Text>
             </TouchableOpacity>
           )}
+
+          {/* Auto-renew disclosure — App Store Guideline 3.1.2 / Play billing policy */}
+          <Text style={[s.disclosure, { color: C.textSubtle, fontFamily: Font.regular }]}>
+            Payment is charged to your {PLATFORM_LABEL} account at confirmation of purchase.
+            Subscriptions renew automatically for the same price and period unless cancelled at
+            least 24 hours before the end of the current period. Manage or cancel anytime in your
+            {' '}{PLATFORM_LABEL} account settings.
+          </Text>
+
+          <View style={s.legalRow}>
+            <Text
+              style={[s.legalLink, { color: C.primary, fontFamily: Font.semiBold }]}
+              onPress={() => router.push('/(app)/settings/terms')}
+            >
+              Terms of Use
+            </Text>
+            <Text style={[s.legalDot, { color: C.textSubtle }]}>•</Text>
+            <Text
+              style={[s.legalLink, { color: C.primary, fontFamily: Font.semiBold }]}
+              onPress={() => router.push('/(app)/settings/privacy-policy')}
+            >
+              Privacy Policy
+            </Text>
+          </View>
         </View>
       </ScrollView>
 
@@ -1102,4 +1126,8 @@ const makeStyles = (C) => StyleSheet.create({
   cardsWrap:    { paddingHorizontal: 16, paddingTop: 16 },
   yearlyNote:   { fontSize: 12, textAlign: 'center', marginBottom: 4 },
   note:         { textAlign: 'center', fontSize: 12, marginTop: 4, paddingHorizontal: 16 },
+  disclosure:   { fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 18, paddingHorizontal: 16 },
+  legalRow:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10 },
+  legalLink:    { fontSize: 12 },
+  legalDot:     { fontSize: 12 },
 });

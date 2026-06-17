@@ -21,10 +21,13 @@
         "EXPO_PUBLIC_SUPABASE_URL": "https://vbwvfnhrexykpbrbfhnt.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZid3ZmbmhyZXh5a3BicmJmaG50Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MzY5NTQsImV4cCI6MjA5NTExMjk1NH0.BF82obEKwwvE1aM_x9iob5r2ij1qdN_KYz9VKtrZIrI",
         "EXPO_PUBLIC_API_URL": "https://ultimate-cashbook.onrender.com",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "729677181390-m1tt4up16ch71pshpeefaarp5pbsampq.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "729677181390-m1tt4up16ch71pshpeefaarp5pbsampq.apps.googleusercontent.com",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "",
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": ""
       }
     },
     "production": {
+      "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
       },
@@ -33,11 +36,23 @@
         "EXPO_PUBLIC_SUPABASE_URL": "https://vbwvfnhrexykpbrbfhnt.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZid3ZmbmhyZXh5a3BicmJmaG50Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MzY5NTQsImV4cCI6MjA5NTExMjk1NH0.BF82obEKwwvE1aM_x9iob5r2ij1qdN_KYz9VKtrZIrI",
         "EXPO_PUBLIC_API_URL": "https://ultimate-cashbook.onrender.com",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "729677181390-m1tt4up16ch71pshpeefaarp5pbsampq.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "729677181390-m1tt4up16ch71pshpeefaarp5pbsampq.apps.googleusercontent.com",
+        "EXPO_PUBLIC_REVENUECAT_IOS_KEY": "",
+        "EXPO_PUBLIC_REVENUECAT_ANDROID_KEY": ""
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "appleId": "REPLACE_WITH_APPLE_ID_EMAIL",
+        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID",
+        "appleTeamId": "REPLACE_WITH_APPLE_TEAM_ID"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./google-service-account.json",
+        "track": "internal"
+      }
+    }
   }
 }

@@ -86,8 +86,10 @@ App Start
 
 | Element                           | Action | Result                                                                              |
 |-----------------------------------|--------|-------------------------------------------------------------------------------------|
-| "Continue with Google" button     | Tap    | `supabase.auth.signInWithOAuth({ provider: 'google' })` — opens browser OAuth flow |
-| "Continue with Email" button      | Tap    | Opens EmailModal (Step 1) — **dev-only**, hidden in production builds (`__DEV__ === false`); the "or" divider is hidden with it |
+| "Continue with Google" button     | Tap    | Native Google sign-in (`GoogleSignin.signIn` → `supabase.auth.signInWithIdToken`). **Native only** — hidden on web and in Expo Go |
+| "Continue with Email" button      | Tap    | Opens EmailModal (Step 1). Shown on **web** (the only login path there) and in dev / Expo Go builds; hidden on native production. The "or" divider shows only when Google is also visible |
+| "Terms of Service" link           | Tap    | Navigate to `/legal/terms` (TermsScreen) |
+| "Privacy Policy" link             | Tap    | Navigate to `/legal/privacy` (PrivacyPolicyScreen) |
 
 ### EmailModal — Step 1 (Email input)
 | Element                           | Action | Result                                                           |
@@ -827,6 +829,7 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 | **Manage Access**     | 👑 Pro (if free)  | Tap    | Navigate to manage-access (if Pro+) OR subscription screen (if free) |
 | **Notifications**     | —                  | Tap    | Navigate to notifications                                            |
 | **Privacy & Security** | —                 | Tap    | Navigate to `/(app)/settings/privacy-policy` (PrivacyPolicyScreen)  |
+| **Terms of Service**  | —                  | Tap    | Navigate to `/(app)/settings/terms` (TermsScreen — usage terms & EULA) |
 | **Backup & Sync**     | 👑 Pro (if free)  | Tap    | Navigate to subscription (if free), navigate to `/(app)/settings/backup-sync` (BackupSyncScreen) otherwise |
 | Language              | —                  | TODO   | —                                                                    |
 
@@ -837,10 +840,11 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 | Rate the App  | Open app store rating   |
 | Share App     | Open OS share sheet     |
 
-### Logout
+### Logout & Delete Account
 | Element                  | Action | Result                                                                                    |
 |--------------------------|--------|-------------------------------------------------------------------------------------------|
-| **Logout** button / row  | Tap    | Alert "Are you sure?" → confirm → `supabase.auth.signOut()` + `clearUser()` → redirect to `/login` |
+| **Logout** button / row  | Tap    | LogoutSheet confirm → `supabase.auth.signOut()` + `clearUser()` → redirect to `/login` |
+| **Delete Account** row   | Tap    | DeleteAccountSheet (type **DELETE** to confirm) → `DELETE /api/v1/profile` (purges storage + cascades all DB rows via FK) → `localClearAll()` + `signOut()` + `clearUser()` → redirect to `/login`. Error → toast, account untouched. Required for App Store (Apple Guideline 5.1.1(x)) |
 
 ---
 
@@ -1057,6 +1061,13 @@ Triggered when a **free-tier user** activates any paid plan.
 - "Upload N Item(s)" button — uploads local SQLite data to cloud
 - "Later" outline button → dismisses to SuccessDialog
 
+### Paywall Disclosure & Legal Links (below the plan cards)
+Required by App Store Guideline 3.1.2 / Google Play billing policy.
+- **Auto-renew disclosure** text: payment charged to the App Store / Google Play account at confirmation; auto-renews same price/period unless cancelled ≥24h before period end; manage or cancel anytime in store account settings.
+- **"Terms of Use"** link → `/(app)/settings/terms` (TermsScreen).
+- **"Privacy Policy"** link → `/(app)/settings/privacy-policy` (PrivacyPolicyScreen).
+- On web the purchase CTAs are hidden (`isPurchasesAvailable()` is false; RevenueCat is native-only) — plans and disclosure still render as a no-op preview.
+
 ---
 
 ## EntryForm Component (shared: AddEntry + EditEntry)
@@ -1101,6 +1112,8 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 | Invite collaborator               | BookDetailScreen → ManageSharesScreen     | ✅ Complete (👑 Pro gate) |
 | Notifications                     | NotificationsScreen / AdminNotificationsInboxScreen | ✅ Complete     |
 | Privacy & Security (Privacy Policy) | PrivacyPolicyScreen                     | ✅ Complete               |
+| Terms of Service / EULA           | TermsScreen (`/(app)/settings/terms`, `/legal/terms`) | ✅ Complete |
+| Delete Account (in-app)           | SettingsScreen → DeleteAccountSheet → `DELETE /api/v1/profile` | ✅ Complete |
 | Backup & Sync                     | BackupSyncScreen (`/(app)/settings/backup-sync`) | ✅ Complete (👑 Pro gate) |
 | Language picker                   | SettingsScreen                            | Not implemented           |
 | Help & FAQ                        | SettingsScreen                            | Not implemented           |
@@ -1127,5 +1140,5 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 
 ---
 
-*Last updated: 2026-06-13*
+*Last updated: 2026-06-17*
 *Update this file whenever any screen, button, navigation flow, or API call changes.*

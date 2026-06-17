@@ -22,14 +22,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Attach CORS headers manually — CORSMiddleware does not wrap the exception handler layer,
-# so a bare 500 would be returned without them, causing browser CORS errors.
-_origin_header = settings.ALLOWED_ORIGINS if settings.ALLOWED_ORIGINS == "*" else settings.cors_origins[0]
-CORS_HEADERS = {
-    "Access-Control-Allow-Origin": _origin_header,
-    "Access-Control-Allow-Headers": "*",
-    "Access-Control-Allow-Methods": "*",
-}
+# Attach CORS headers manually — CORSMiddleware does not wrap the exception handler
+# layer, so a bare 500 would be returned without them, causing browser CORS errors.
+# Echo the request Origin when it is allowed so multi-origin setups don't get a
+# mismatched Access-Control-Allow-Origin on errors.
+def _cors_headers(request: Request) -> dict:
+    allowed = settings.cors_origins
+    origin = request.headers.get("origin")
+    if "*" in allowed:
+        acao = "*"
+    elif origin and origin in allowed:
+        acao = origin
+    else:
+        acao = allowed[0] if allowed else "*"
+    return {
+        "Access-Control-Allow-Origin": acao,
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Methods": "*",
+        "Vary": "Origin",
+    }
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
@@ -38,7 +49,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error"},
-        headers=CORS_HEADERS,
+        headers=_cors_headers(request),
     )
 
 app.include_router(profile.router, prefix="/api/v1/profile",  tags=["profile"])

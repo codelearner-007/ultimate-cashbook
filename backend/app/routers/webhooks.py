@@ -39,9 +39,9 @@ def _product_to_tier(product_id: str, entitlement_ids: list[str]) -> str:
     return "pro"  # any other paid entitlement maps to pro
 
 
-def _billing_cycle(product_id: str, period_type) -> str:
+def _billing_cycle(product_id: str) -> str:
     hay = (product_id or "").lower()
-    if "year" in hay or "annual" in hay or str(period_type or "").lower() == "annual":
+    if "year" in hay or "annual" in hay:
         return "yearly"
     return "monthly"
 
@@ -97,7 +97,7 @@ async def revenuecat_webhook(request: Request, authorization: str = Header(None)
         update = {
             "subscription_tier": _product_to_tier(product_id, entitlement_ids),
             "subscription_status": "active",
-            "subscription_billing_cycle": _billing_cycle(product_id, event.get("period_type")),
+            "subscription_billing_cycle": _billing_cycle(product_id),
             "subscription_expires_at": expires_iso,
             "subscription_cancel_at_period_end": False,
             "subscription_started_at": now_iso,

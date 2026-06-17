@@ -71,7 +71,11 @@ frontend/
 │           ├── notifications.jsx # → NotificationsScreen (user) / AdminNotificationsInboxScreen (admin)
 │           ├── subscription.jsx  # → SubscriptionScreen
 │           ├── backup-sync.jsx   # → BackupSyncScreen
-│           └── privacy-policy.jsx # → PrivacyPolicyScreen
+│           ├── privacy-policy.jsx # → PrivacyPolicyScreen
+│           └── terms.jsx         # → TermsScreen (in-app, post-auth)
+│   ├── legal/                    # Pre-auth legal routes (reachable from LoginScreen; outside (app) so AuthGuard lets logged-out users view them)
+│   │   ├── terms.jsx             # → TermsScreen
+│   │   └── privacy.jsx           # → PrivacyPolicyScreen
 ├── src/
 │   ├── screens/                  # All screen components (one file = one screen)
 │   ├── components/
@@ -95,7 +99,9 @@ frontend/
 │   │       ├── SyncConfirmSheet.jsx   # Confirm upload local → cloud
 │   │       ├── ClearLocalDataSheet.jsx # Confirm clear local data (cloud unaffected)
 │   │       ├── RestoreOrFreshSheet.jsx # Restore-or-Later sheet (launch + BackupSyncScreen)
-│   │       └── FreshStartSheet.jsx    # 2-step confirm: delete all cloud + local data
+│   │       ├── FreshStartSheet.jsx    # 2-step confirm: delete all cloud + local data
+│   │       ├── ConfirmSheet.jsx       # Shared animated confirm-sheet scaffold (Delete*, Logout, …)
+│   │       └── DeleteAccountSheet.jsx # Type-"DELETE" confirm → permanent account deletion
 │   ├── hooks/
 │   │   ├── useBooks.js           # useBooks, useCreateBook, useDeleteBook (React Query)
 │   │   ├── useBookSort.js        # Sort state + sorted list derivation
@@ -193,7 +199,9 @@ The app is local-first: every read/write hits SQLite first. For paid/superadmin 
 ---
 
 ### `LoginScreen` → `/(auth)/login`
-- Google native sign-in (`GoogleSignin.signIn` → `supabase.auth.signInWithIdToken`) or Email OTP (`signInWithOtp`; the email path is dev-only / hidden in production) → on session event → `apiGetProfile()` → `setUser(profile, session)`
+- Google native sign-in (`GoogleSignin.signIn` → `supabase.auth.signInWithIdToken`) or Email OTP (`signInWithOtp`) → on session event → `apiGetProfile()` → `setUser(profile, session)`
+- **Platform gating:** Google is native-only (`CAN_GOOGLE = Platform.OS !== 'web' && !IS_EXPO_GO`) — the google-signin native module is required only when `CAN_GOOGLE`, so web/Expo Go never load it. Email OTP (`SHOW_EMAIL_LOGIN = __DEV__ || Platform.OS === 'web'`) is the login path on web and in dev / Expo Go; hidden on native production.
+- Terms of Service / Privacy Policy links → `/legal/terms` and `/legal/privacy` (pre-auth routes outside `(app)`)
 - AuthGuard redirects based on role after login
 
 ---
@@ -298,10 +306,17 @@ The app is local-first: every read/write hits SQLite first. For paid/superadmin 
 
 ---
 
-### `PrivacyPolicyScreen` → `/(app)/settings/privacy-policy`
+### `PrivacyPolicyScreen` → `/(app)/settings/privacy-policy` (also `/legal/privacy`)
 - Static scrollable screen — no API calls, no state
 - Intro card with `C.primaryLight` / `C.primaryMid` styling; 11 policy sections rendered in a single `C.card` container
 - Back navigates to settings; header matches all other settings sub-screens
+
+---
+
+### `TermsScreen` → `/(app)/settings/terms` (also `/legal/terms`)
+- Static scrollable screen — no API calls, no state; mirrors `PrivacyPolicyScreen` structure (intro card + 12 sections)
+- Serves as the Terms of Service **and** EULA (acceptance, license, accounts, auto-renewing subscriptions & billing, data, acceptable use, not-financial-advice, warranty/liability disclaimers, termination, changes, contact)
+- Reached pre-auth from LoginScreen (`/legal/terms`) and post-auth from SettingsScreen + SubscriptionScreen (`/(app)/settings/terms`)
 
 ---
 
@@ -375,6 +390,7 @@ These functions wrap the cloud mirror, but CRUD is routed through `dataSource.js
 | `apiGetProfile()` | GET | `/api/v1/profile` |
 | `apiUpdateProfile(payload)` | PUT | `/api/v1/profile` |
 | `apiUpdateSubscription({ subscription_tier, billing_cycle })` | PATCH | `/api/v1/profile/subscription` — **dev only** (403 in prod; webhook is the real writer) |
+| `apiDeleteAccount()` | DELETE | `/api/v1/profile` — permanently deletes the account + all data (storage purge + DB cascade) |
 | `apiUploadAvatar(uri, mimeType)` | POST | `/api/v1/upload/avatar` — multipart, returns `{ avatar_url }` |
 | `apiUploadAttachment(uri, mimeType, filename, entryId?)` | POST | `/api/v1/upload/attachment` — multipart, returns `{ attachment_url, path, provider }` |
 | `apiDeleteAttachment(path)` | DELETE | `/api/v1/upload/attachment?path=...` — removes file from Supabase Storage |

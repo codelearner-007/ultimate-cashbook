@@ -17,7 +17,11 @@ import { getCurrency } from '../constants/currencies';
 import AdminPillBadge from '../components/ui/AdminPillBadge';
 import CrownBadge, { CROWN_COLORS } from '../components/ui/CrownBadge';
 import LogoutSheet from '../components/ui/LogoutSheet';
+import DeleteAccountSheet from '../components/ui/DeleteAccountSheet';
 import { canAccess } from '../lib/canAccess';
+import { apiDeleteAccount } from '../lib/api';
+import { localClearAll } from '../lib/localDb';
+import Toast from '../lib/toast';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -146,6 +150,22 @@ const LogoutIcon = ({ color, size = 14 }) => (
   </View>
 );
 
+const DocIcon = ({ color, size = 14 }) => (
+  <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: size * 0.62, height: size * 0.8, borderWidth: 1.5, borderColor: color, borderRadius: 2, alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+      <View style={{ width: size * 0.34, height: 1.2, backgroundColor: color }} />
+      <View style={{ width: size * 0.34, height: 1.2, backgroundColor: color }} />
+    </View>
+  </View>
+);
+
+const TrashIcon = ({ color, size = 14 }) => (
+  <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: size * 0.7, height: 1.5, backgroundColor: color, marginBottom: 1 }} />
+    <View style={{ width: size * 0.58, height: size * 0.6, borderWidth: 1.5, borderColor: color, borderTopWidth: 0, borderBottomLeftRadius: 2, borderBottomRightRadius: 2 }} />
+  </View>
+);
+
 // ── Section data ──────────────────────────────────────────────────────────────
 
 const SUPPORT_SECTION = {
@@ -265,6 +285,7 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
         { Icon: ShareIcon,  label: 'Manage Access',      sub: 'Invitations & shared books', route: hasSharing ? '/(app)/settings/manage-access' : '/(app)/settings/subscription', accent: null, badge: hasSharing ? pendingInviteCount : 0, crown: hasSharing ? null : 'pro' },
         { Icon: BellIcon,   label: 'Notifications',      sub: 'Manage alerts',              route: '/(app)/settings/notifications', accent: null },
         { Icon: ShieldIcon, label: 'Privacy & Security', sub: 'Privacy policy',              route: '/(app)/settings/privacy-policy', accent: null },
+        { Icon: DocIcon,    label: 'Terms of Service',   sub: 'Usage terms & EULA',          route: '/(app)/settings/terms', accent: null },
         { Icon: CloudIcon,  label: 'Backup & Sync',      sub: hasCloud ? 'Cloud sync active' : 'Requires Pro or Business', route: hasCloud ? '/(app)/settings/backup-sync' : '/(app)/settings/subscription', accent: null, crown: hasCloud ? null : 'pro' },
         { Icon: GlobeIcon,  label: 'Language',           sub: 'English',                    route: null, accent: null },
       ],
@@ -274,6 +295,8 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
 
   const [logoutVisible, setLogoutVisible] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
+  const [deleteVisible, setDeleteVisible] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const handleLogout = () => setLogoutVisible(true);
 
@@ -283,6 +306,25 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
     setLogoutLoading(false);
     setLogoutVisible(false);
     clearUser(); // AuthGuard in _layout.jsx handles the redirect
+  };
+
+  const confirmDeleteAccount = async () => {
+    setDeleteLoading(true);
+    try {
+      await apiDeleteAccount();                 // backend purges storage + cascades all DB rows
+      await localClearAll().catch(() => {});    // wipe this device's local-first copy
+      if (supabase) await supabase.auth.signOut();
+      setDeleteVisible(false);
+      clearUser();                              // AuthGuard redirects to login
+    } catch (err) {
+      Toast.show({
+        type: 'error',
+        text1: 'Could not delete account',
+        text2: err?.response?.data?.detail || err?.message || 'Please try again.',
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const s = useMemo(() => makeStyles(C, hPad, showBottomNav), [C, hPad, showBottomNav]);
@@ -378,7 +420,7 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
           </View>
         ))}
 
-        {/* Logout */}
+        {/* Logout + Delete Account */}
         <View style={s.sectionWrap}>
           <View style={[s.card, { backgroundColor: C.card, borderColor: C.border }]}>
             <TouchableOpacity style={rowStyles.row} onPress={handleLogout} activeOpacity={0.7}>
@@ -387,6 +429,19 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
               </View>
               <View style={rowStyles.body}>
                 <Text style={[rowStyles.label, { color: C.danger, fontFamily: Font.semiBold }]}>Logout</Text>
+              </View>
+              <ChevronRight color={C.danger} />
+            </TouchableOpacity>
+
+            <View style={[rowStyles.divider, { backgroundColor: C.border }]} />
+
+            <TouchableOpacity style={rowStyles.row} onPress={() => setDeleteVisible(true)} activeOpacity={0.7}>
+              <View style={[rowStyles.iconBox, { backgroundColor: C.dangerLight }]}>
+                <TrashIcon color={C.danger} size={15} />
+              </View>
+              <View style={rowStyles.body}>
+                <Text style={[rowStyles.label, { color: C.danger, fontFamily: Font.semiBold }]}>Delete Account</Text>
+                <Text style={[rowStyles.sub, { color: C.textMuted, fontFamily: Font.regular }]}>Permanently erase your account & data</Text>
               </View>
               <ChevronRight color={C.danger} />
             </TouchableOpacity>
@@ -402,6 +457,15 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
         onDismiss={() => setLogoutVisible(false)}
         onConfirm={confirmLogout}
         isLoading={logoutLoading}
+        C={C}
+        Font={Font}
+      />
+
+      <DeleteAccountSheet
+        visible={deleteVisible}
+        onDismiss={() => setDeleteVisible(false)}
+        onConfirm={confirmDeleteAccount}
+        isLoading={deleteLoading}
         C={C}
         Font={Font}
       />

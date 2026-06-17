@@ -7,6 +7,7 @@ import {
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import Svg, { Path, Ellipse } from 'react-native-svg';
 import Constants from 'expo-constants';
+import { useRouter } from 'expo-router';
 import { LightColors } from '../constants/colors';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
@@ -14,16 +15,17 @@ import { apiGetProfile } from '../lib/api';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
-// Google Sign-In is a native module — unavailable in Expo Go
+// Google Sign-In is a native module — unavailable in Expo Go and on web.
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
+const CAN_GOOGLE = Platform.OS !== 'web' && !IS_EXPO_GO;
 
-// "Continue with Email" is a dev-only login path — hidden in production
-// (__DEV__ is true in Expo Go / dev builds, false in EAS production builds)
-const SHOW_EMAIL_LOGIN = __DEV__;
+// "Continue with Email" — always available on web (no native Google there) and
+// in dev / Expo Go builds; hidden on native production where Google is primary.
+const SHOW_EMAIL_LOGIN = __DEV__ || Platform.OS === 'web';
 
 let GoogleSignin = null;
 let statusCodes = {};
-if (!IS_EXPO_GO) {
+if (CAN_GOOGLE) {
   const gs = require('@react-native-google-signin/google-signin');
   GoogleSignin = gs.GoogleSignin;
   statusCodes = gs.statusCodes;
@@ -273,6 +275,7 @@ function EmailModal({ visible, onClose }) {
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function LoginScreen() {
+  const router = useRouter();
   const [loading,   setLoading]   = useState(false);
   const [showEmail, setShowEmail] = useState(false);
 
@@ -331,8 +334,8 @@ export default function LoginScreen() {
           <Text style={styles.cardTitle}>Welcome</Text>
           <Text style={styles.cardSub}>Login or signup to backup your data securely</Text>
 
-          {/* Google — hidden in Expo Go (native module not available) */}
-          {!IS_EXPO_GO && (
+          {/* Google — native only (hidden in Expo Go and on web) */}
+          {CAN_GOOGLE && (
             <>
               <TouchableOpacity
                 style={[styles.googleBtn, loading && { opacity: 0.6 }]}
@@ -375,9 +378,9 @@ export default function LoginScreen() {
         {/* Terms — two lines matching screenshot */}
         <Text style={styles.terms}>
           {'By creating an account, you agree to our '}
-          <Text style={styles.link}>Terms of Service</Text>
-          {'\n'}
-          <Text style={styles.link}>Privacy Policy</Text>
+          <Text style={styles.link} onPress={() => router.push('/legal/terms')}>Terms of Service</Text>
+          {' and '}
+          <Text style={styles.link} onPress={() => router.push('/legal/privacy')}>Privacy Policy</Text>
         </Text>
 
 

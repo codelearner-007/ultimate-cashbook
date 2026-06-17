@@ -5,7 +5,7 @@ import { supabase } from '../../src/lib/supabase';
 import { LightColors } from '../../src/constants/colors';
 
 // Google OAuth deep-link handler.
-// After Supabase redirects back to cashbook://auth/callback, Expo Router
+// After Supabase redirects back to ultimatecashbook://auth/callback, Expo Router
 // mounts this screen. We extract the code from the URL and let supabase-js
 // exchange it for a session; onAuthStateChange in _layout.jsx fires and
 // AuthGuard redirects the user to the correct screen.

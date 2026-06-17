@@ -147,6 +147,11 @@ export const apiUpdateSubscription = async ({ tier, billing_cycle = 'monthly' })
   })).data;
 };
 
+/** DELETE /api/v1/profile — permanently delete the account and all its data */
+export const apiDeleteAccount = async () => {
+  await api.delete('/api/v1/profile');
+};
+
 /** POST /api/v1/upload/avatar — multipart upload, returns { avatar_url } */
 export const apiUploadAvatar = async (uri, mimeType = 'image/jpeg') => {
   const filename = uri.split('/').pop() || 'avatar.jpg';

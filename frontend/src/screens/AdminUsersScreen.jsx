@@ -15,6 +15,7 @@ import Toast from '../lib/toast';
 import { apiGetAllUsers, apiGetBooks } from '../lib/api';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PLAN_META, planColor, planLabel } from '../constants/plans';
+import { SUPER_ADMIN_GOLD as SAG } from '../constants/colors';
 import { UserRowSkeleton } from '../components/ui/Shimmer';
 
 // ── Super Admin header badge ──────────────────────────────────────────────────
@@ -25,7 +26,7 @@ const SA_SPARKS = [
   { bottom: -4, left: 10 },
   { bottom: -4, right: 2 },
 ];
-const SA_SPARK_COLORS = ['#FCD34D', '#F59E0B', '#FDE68A', '#D97706'];
+const SA_SPARK_COLORS = SAG.spark;
 
 function SuperAdminBadge() {
   const glow   = useRef(new Animated.Value(1)).current;
@@ -77,12 +78,12 @@ function SuperAdminBadge() {
 const sab = StyleSheet.create({
   badge: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: 'rgba(251,191,36,0.22)',
-    borderWidth: 1, borderColor: 'rgba(251,191,36,0.55)',
+    backgroundColor: SAG.bg,
+    borderWidth: 1, borderColor: SAG.border,
     borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3,
   },
-  dot:   { width: 5, height: 5, borderRadius: 3, backgroundColor: '#FCD34D' },
-  text:  { fontSize: 10, fontFamily: Font.semiBold, color: '#FCD34D', letterSpacing: 0.4 },
+  dot:   { width: 5, height: 5, borderRadius: 3, backgroundColor: SAG.dot },
+  text:  { fontSize: 10, fontFamily: Font.semiBold, color: SAG.text, letterSpacing: 0.4 },
   spark: { position: 'absolute', width: 4, height: 4, borderRadius: 1 },
 });
 
@@ -186,13 +187,13 @@ const ShareIcon = ({ color, size = 14 }) => (
 
 const UserRow = memo(({ item, onPress, C, s }) => {
   const initials = getInitials(item.full_name);
-  const pColor   = item.isAdmin ? '#F59E0B' : planColor(item.subscription_tier, C.primary);
+  const pColor   = item.isAdmin ? SAG.spark[1] : planColor(item.subscription_tier, C.primary);
   const pColorBg = `${pColor}20`;
   const tier     = item.isAdmin ? null : (item.subscription_tier ?? 'free');
   const cycle    = item.subscription_billing_cycle ?? 'monthly';
   return (
     <TouchableOpacity
-      style={[s.userCard, item.isAdmin && { borderColor: 'rgba(251,191,36,0.45)', backgroundColor: 'rgba(251,191,36,0.07)' }]}
+      style={[s.userCard, item.isAdmin && { borderColor: SAG.border, backgroundColor: SAG.bg }]}
       onPress={onPress}
       activeOpacity={0.7}
     >
@@ -206,9 +207,9 @@ const UserRow = memo(({ item, onPress, C, s }) => {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 }}>
           <Text style={[s.userName, { flex: 1 }]} numberOfLines={1}>{item.full_name}</Text>
           {item.isAdmin ? (
-            <View style={[s.userStatusPill, { backgroundColor: 'rgba(251,191,36,0.18)', borderColor: 'rgba(251,191,36,0.5)' }]}>
-              <View style={[s.userStatusDot, { backgroundColor: '#FCD34D' }]} />
-              <Text style={[s.userStatusText, { color: '#D97706' }]}>Super Admin</Text>
+            <View style={[s.userStatusPill, { backgroundColor: SAG.bg, borderColor: SAG.border }]}>
+              <View style={[s.userStatusDot, { backgroundColor: SAG.dot }]} />
+              <Text style={[s.userStatusText, { color: SAG.textDark }]}>Super Admin</Text>
             </View>
           ) : (
             <View style={[s.userStatusPill, { backgroundColor: `${pColor}18`, borderColor: `${pColor}55` }]}>
@@ -547,7 +548,7 @@ export default function AdminUsersScreen() {
 
               {/* Avatar + identity */}
               {(() => {
-                const mPColor   = selectedUser.isAdmin ? '#F59E0B' : planColor(selectedUser.subscription_tier, C.primary);
+                const mPColor   = selectedUser.isAdmin ? SAG.spark[1] : planColor(selectedUser.subscription_tier, C.primary);
                 const mPColorBg = `${mPColor}20`;
                 return (
               <View style={s.modalAvatarSection}>

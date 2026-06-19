@@ -11,6 +11,9 @@ router = APIRouter()
 
 VALID_RIGHTS = {"view", "view_create_edit", "view_create_edit_delete"}
 
+# Mirrors canAccess.js LIMITS.guest_access — superadmin is always unlimited
+GUEST_LIMITS = {"free": 0, "pro": 1, "business": 10}  # None / missing = unlimited
+
 
 def _require_owner(sb, book_id: str, user_id: str):
     """Raise 404 if book doesn't belong to user."""
@@ -120,6 +123,32 @@ async def create_share(
 
     if payload.rights not in VALID_RIGHTS:
         raise HTTPException(status_code=422, detail=f"Invalid rights value: {payload.rights}")
+
+    # Enforce per-tier guest_access limit (count accepted + pending shares across all owner's books)
+    profile = (
+        sb.table("profiles")
+        .select("role, subscription_tier")
+        .eq("id", user_id)
+        .single()
+        .execute()
+    ).data or {}
+
+    if profile.get("role") != "superadmin":
+        tier  = profile.get("subscription_tier") or "free"
+        limit = GUEST_LIMITS.get(tier)  # None = unlimited
+        if limit is not None:
+            active_count = (
+                sb.table("book_shares")
+                .select("id", count="exact")
+                .eq("owner_id", user_id)
+                .in_("status", ["accepted", "pending"])
+                .execute()
+            ).count or 0
+            if active_count >= limit:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"SHARE_LIMIT_REACHED:{limit}",
+                )
 
     # Look up the target user by email
     target = (

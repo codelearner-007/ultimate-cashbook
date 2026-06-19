@@ -176,7 +176,7 @@ Reads `subscription_tier` from `authStore` synchronously — no network call, no
 
 | Feature key | FREE | PRO | BUSINESS |
 |---|---|---|---|
-| `add_book` | ❌ if books ≥ 3 | ❌ if books ≥ 15 | ✅ unlimited |
+| `add_book` | ❌ if books ≥ 5 | ❌ if books ≥ 15 | ✅ unlimited |
 | `export_pdf_excel` | ❌ | ✅ | ✅ |
 | `reports_download_share` | ❌ | ✅ | ✅ |
 | `shared_books` | ❌ | ✅ | ✅ |
@@ -260,7 +260,7 @@ Every element below must: (a) always render, (b) show `CrownBadge`, (c) intercep
 
 | Element | Current behavior | Gate condition | Crown placement | PaywallSheet tier |
 |---|---|---|---|---|
-| FAB "+" (personal workspace) | Opens "Add New Book" modal | Free AND `books.length >= 3`; OR Pro AND `books.length >= 15` | `CrownBadge size="sm"` overlaid top-right on FAB circle | `'pro'` (if Free) or `'business'` (if Pro at limit) |
+| FAB "+" (personal workspace) | Opens "Add New Book" modal | Free AND `books.length >= 5`; OR Pro AND `books.length >= 15` | `CrownBadge size="sm"` overlaid top-right on FAB circle | `'pro'` (if Free) or `'business'` (if Pro at limit) |
 
 Implementation notes:
 - FAB is at line ~797 in `BooksView.jsx` (`onPress={() => setShowModal(true)}`)
@@ -356,7 +356,7 @@ No subscription gates apply. Free users have full CRUD on customers and supplier
 
 Added to backend **after** Phase 4 frontend is complete. Never trust the client alone.
 
-- [ ] `POST /api/v1/books` — read `profiles.subscription_tier` for the requesting user; compare `books` count to `3` (FREE) / `15` (PRO); return `HTTP 403 {"detail": "Book limit reached for your plan. Upgrade to add more."}` if exceeded
+- [ ] `POST /api/v1/books` — read `profiles.subscription_tier` for the requesting user; compare `books` count to `5` (FREE) / `15` (PRO); return `HTTP 403 {"detail": "Book limit reached for your plan. Upgrade to add more."}` if exceeded
 - [ ] Export endpoints (`GET /api/v1/books/:id/report/pdf` and `.../report/excel`) — check tier is `PRO` or `BUSINESS`; return `HTTP 403` if `FREE`
 - [ ] Share endpoints (`POST /api/v1/books/:id/shares`) — check tier is `PRO` or `BUSINESS`; return `HTTP 403` if `FREE`
 - [ ] Frontend already handles `403` responses from Axios interceptor with an `Alert` — no new error handling needed for backend rejections
@@ -420,7 +420,7 @@ Added to backend **after** Phase 4 frontend is complete. Never trust the client 
 
   | Area | Storage | Behavior |
   |---|---|---|
-  | Guest's own books | Local SQLite only | Unchanged — free-tier rules still apply (≤3 books, no cloud sync) |
+  | Guest's own books | Local SQLite only | Unchanged — free-tier rules still apply (≤5 books, no cloud sync) |
   | Shared book(s) from owner | Cloud (owner's Supabase) | Full cloud access scoped to those books only |
 
   Implementation notes:

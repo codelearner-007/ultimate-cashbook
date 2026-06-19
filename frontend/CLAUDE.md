@@ -65,10 +65,6 @@ frontend/
 │           ├── manage-access.jsx # → ManageAccessScreen
 │           ├── subscription.jsx  # → SubscriptionScreen
 │           ├── privacy-policy.jsx # → PrivacyPolicyScreen
-│           └── business/
-│               ├── index.jsx     # → BusinessSettingsScreen
-│               ├── profile.jsx   # → BusinessProfileScreen
-│               └── delete.jsx    # → DeleteBusinessScreen
 ├── src/
 │   ├── screens/                  # All screen components (one file = one screen)
 │   ├── components/
@@ -90,7 +86,8 @@ frontend/
 │   │       ├── SyncConfirmSheet.jsx   # Confirm upload local → cloud
 │   │       ├── ClearLocalDataSheet.jsx # Confirm clear local data (cloud unaffected)
 │   │       ├── RestoreOrFreshSheet.jsx # Restore-or-Later sheet (launch + BackupSyncScreen)
-│   │       └── FreshStartSheet.jsx    # 2-step confirm: delete all cloud + local data
+│   │       ├── FreshStartSheet.jsx    # 2-step confirm: delete all cloud + local data
+│   │       └── LimitReachedSheet.jsx  # Plan-limit notification sheet (books & shares); props: visible, onDismiss, limitType ('books'|'shares'), currentLimit, currentTier
 │   ├── hooks/
 │   │   ├── useBooks.js           # useBooks, useCreateBook, useDeleteBook (React Query)
 │   │   ├── useBookSort.js        # Sort state + sorted list derivation
@@ -147,6 +144,21 @@ frontend/
   - User + inside `(auth)` + role `superadmin` → `router.replace('/(app)/dashboard')`
   - User + inside `(auth)` + role `user` → `router.replace('/(app)/books')`
 - Renders `<Slot />` (page content) + `<Toast />` (global toast layer)
+- `InitialPullMonitor` — runs on **every login** (session-scoped, not persisted):
+  - Eligible users: superadmin OR paid subscription tier (non-free)
+  - If local DB is empty AND cloud has books → `apiGetCloudBooks()` → sets `showRestorePrompt=true` → `RestoreCloudModal` appears
+  - New users (cloud also empty) → no prompt; `AuthGuard` redirects straight to books
+  - If local already has data → no prompt (user is returning on a device with existing data)
+- `RestoreCloudModal` — centered full-screen `Modal` (not a bottom sheet), shown when `showRestorePrompt=true`:
+  - **"Restore from Cloud"** → `syncCloudToLocal()` with `setRestoreJustCompleted(true)` → toast → `router.replace(target)`
+  - **"Start Fresh"** → dismisses prompt → toast → `router.replace(target)`; cloud data stays safe
+- `RestoreCompletionOverlay` — full-screen animated overlay (`zIndex: 9999`), rendered in `_layout.jsx` above `<Slot />`:
+  - Active when `isRestoring === true` OR `restoreJustCompleted === true`
+  - Fades in on start, shows pulsing ☁️ icon + progress bar; title changes to "Restore complete! / Loading your books…" when done
+  - Fades out (350 ms) when `restoreJustCompleted` is cleared by `BooksView`
+- `AutoSyncMonitor` — silently syncs local → cloud on reconnect (once per reconnect, paid/superadmin only, skips if sync/restore running)
+- `AutoDeleteMonitor` — on reconnect, deletes from cloud any books removed locally while offline (only runs when device has previously synced, i.e. `localCloudIds.size > 0`)
+- `NotificationPopup` — centered modal card for unread notifications; auto-shows for regular users; also shows tapped notifications from the OS tray for any logged-in user
 
 ### Back Navigation Rules
 - **Admin Books tab has its own Stack** (`app/(app)/dashboard/books/_layout.jsx`). This means `books/[id]` screens are pushed within the books-tab Stack (not the outer `(app)` Stack). `router.back()` from BookDetailScreen therefore pops correctly to AdminBooksScreen — NOT to the Dashboard/Users tab.
@@ -169,20 +181,21 @@ frontend/
 ## Screen Logic Reference
 
 ### `OnboardingScreen` — rendered inside `app/index.jsx` (first launch only)
-- Shown once after the splash screen on first install; skipped on all subsequent launches
-- Persistence: `expo-secure-store` key `onboarding_seen_v1` (native) / `localStorage` (web)
-- 5 horizontal swipeable slides, each with an in-app mock illustration, title, subtitle
-- Dot indicators: active dot = 24 px wide teal; inactive = 8 px grey
-- **Skip** button (top-right, slides 1–4): marks flag + navigates
-- **Next** button: advances to next slide; becomes **Get Started** on slide 5
-- `onFinish` prop called by both Skip and Get Started → `app/index.jsx` writes flag then navigates
+- Shown once after the 1.8 s splash delay on first install; skipped on all subsequent launches
+- `app/index.jsx` checks `onboarding_seen_v1` (SecureStore native / localStorage web) before navigating
+- When flag absent → `setShowOnboarding(true)` → renders `<OnboardingScreen onFinish={handleOnboardingFinish} />` in place of the splash
+- `onFinish` → `setOnboardingSeen()` writes flag → navigates based on `user` role (or to login if no user)
 - `AuthGuard` in `_layout.jsx` is inert while on the root index (`segments[0] === undefined`)
 
 ---
 
 ### `LoginScreen` → `/(auth)/login`
-- Email/password or Google → `supabase.auth.signIn*` → on session event → `apiGetProfile()` → `setUser(profile, session)`
-- AuthGuard redirects based on role after login
+- **Google:** native `GoogleSignin.signIn()` → `supabase.auth.signInWithIdToken()` — hidden in Expo Go (native module unavailable)
+- **Email OTP:** two-step bottom sheet (`EmailModal`):
+  - Step 1: `POST /api/v1/auth/send-otp` (falls back to `supabase.auth.signInWithOtp()` if 503)
+  - Step 2: `POST /api/v1/auth/verify-otp` → `supabase.auth.setSession()` → `apiGetProfile()` → `setUser()` (falls back to `supabase.auth.verifyOtp()` if 503)
+- Email button visible when `IS_EXPO_GO || __DEV__` (hidden in production EAS builds)
+- After session: `SupabaseAuthListener` fires `SIGNED_IN` → `resolveProfile(session)` → `setUser(profile, session)` → `AuthGuard` redirects based on role
 
 ---
 
@@ -190,7 +203,8 @@ frontend/
 - `useBooks()` — queryKey `['books']`, staleTime 2 min, calls `GET /api/v1/books`
 - Header: total net balance (sum across all books), book count, theme toggle, avatar → settings
 - Sort modes: `updated` (default) | `created` | `alpha` | `custom` (drag-reorder)
-- FAB → "Add New Book" modal → `useCreateBook().mutate({ name })`
+- FAB → if `books.length >= getLimit(user,'books')` → `LimitReachedSheet` (limitType='books'); else "Add New Book" modal → `useCreateBook().mutate({ name })`
+- Book creation error `BOOK_LIMIT_REACHED:{n}` from backend also opens `LimitReachedSheet`
 - ⋮ on card → `BookMenu` bottom sheet → confirm delete → `useDeleteBook().mutate(id)`
 - Tap book → `/(app)/books/[id]`
 - Bottom nav: Cashbooks | Help | Settings
@@ -267,11 +281,27 @@ frontend/
 - Status card: online dot (animated pulse), last-sync time, upload + restore progress bars
 - Local data card: counts for books / entries / categories / customers / suppliers
 - **Cloud Actions** (paid only):
-  - "Sync to Cloud" → `SyncConfirmSheet` → `syncLocalToCloud(onProgress)` → toast
-  - "Restore from Cloud" → `RestoreOrFreshSheet` → `syncCloudToLocal(onProgress)` → toast
-  - "Clear local data only" → `ClearLocalDataSheet` → `localClearAll()`
-- **Danger Zone**: "Start Fresh" → `FreshStartSheet` (2-step confirm) → `apiDeleteBook()` for each cloud book → `localClearAll()` → toast
+  - "Sync to Cloud" → `SyncConfirmSheet` → `syncLocalToCloud(onProgress)` → toast; if local empty → "Nothing to sync" modal alert
+  - "Restore from Cloud" — conditional render (see logic below) → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal(onProgress)` → toast
+- **Danger Zone**: "Start Fresh" → `FreshStartSheet` (2-step confirm) → `apiGetBooks()` → `apiDeleteBook()` for each cloud book → `localClearAll()` → toast
 - All sync/restore state in `useSyncStore`: `isSyncing`, `isRestoring`, `progress`, `restoreProgress`
+
+#### "Restore from Cloud" button — visibility logic
+Computed variable `hasUnrestoredCloudData` (derived from `delta` returned by `getCloudDeltaStats()`):
+```js
+const hasUnrestoredCloudData = !deltaLoading && hasCloudData &&
+  ((delta?.onlyInCloudEntries ?? 0) > 0 || (delta?.newBooks ?? 0) > 0);
+```
+The button renders only when **both** conditions are met:
+- `!hasRestoredFromCloud` — no restore has completed this session (set to `true` by `finishRestore()` in syncStore)
+- `hasUnrestoredCloudData === true` — cloud has books or entries that are not yet present on device
+
+This means the button is **hidden** when:
+- There is no cloud data at all (`hasCloudData === false`)
+- Local already has everything cloud has — i.e. `delta.onlyInCloudEntries === 0 && delta.newBooks === 0` (local and cloud are in sync, so restoring would do nothing)
+- A restore was already completed this session (`hasRestoredFromCloud === true`)
+
+When the button is visible, it can still be **disabled** (but shown) only while offline, syncing, or restoring in progress.
 
 ---
 

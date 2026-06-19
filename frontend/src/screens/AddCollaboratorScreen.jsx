@@ -8,11 +8,12 @@ import SearchBar from '../components/ui/SearchBar';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
-import { useAddCollaborator } from '../hooks/useSharing';
+import { useAddCollaborator, useGivenInvitations } from '../hooks/useSharing';
 import { apiSearchUsers } from '../lib/api';
 import { useQuery } from '@tanstack/react-query';
 import { shadow } from '../constants/shadows';
 import SuccessDialog from '../components/ui/SuccessDialog';
+import LimitReachedSheet from '../components/ui/LimitReachedSheet';
 import { RIGHTS, SCREENS, DEFAULT_SCREENS, getInitials } from '../constants/sharing';
 import { useAuthStore } from '../store/authStore';
 import { canAccess, getLimit } from '../lib/canAccess';
@@ -26,13 +27,22 @@ export default function AddCollaboratorScreen() {
 
   const authUser = useAuthStore(s => s.user);
   const canShare = canAccess(authUser, 'book_sharing');
+  const shareLimit = getLimit(authUser, 'guest_access'); // Infinity for superadmin / business
 
-  const [searchInput,  setSearchInput]  = useState('');
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [rights,       setRights]       = useState('view');
-  const [showSuccess,  setShowSuccess]  = useState(false);
-  const [successMsg,   setSuccessMsg]   = useState('');
-  const [screens,      setScreens]      = useState({ ...DEFAULT_SCREENS });
+  // Count accepted + pending shares the owner already has across all books
+  const { data: givenInvitations = [] } = useGivenInvitations();
+  const activeShareCount = givenInvitations.filter(
+    i => i.status === 'accepted' || i.status === 'pending'
+  ).length;
+  const atShareLimit = isFinite(shareLimit) && activeShareCount >= shareLimit;
+
+  const [searchInput,   setSearchInput]   = useState('');
+  const [selectedUser,  setSelectedUser]  = useState(null);
+  const [rights,        setRights]        = useState('view');
+  const [showSuccess,   setShowSuccess]   = useState(false);
+  const [successMsg,    setSuccessMsg]    = useState('');
+  const [screens,       setScreens]       = useState({ ...DEFAULT_SCREENS });
+  const [showLimitSheet, setShowLimitSheet] = useState(false);
 
   const addCollaborator = useAddCollaborator(id);
 
@@ -66,6 +76,11 @@ export default function AddCollaboratorScreen() {
 
   const handleAdd = useCallback(() => {
     if (!selectedUser) return;
+    // Client-side limit guard (backend also enforces this)
+    if (atShareLimit) {
+      setShowLimitSheet(true);
+      return;
+    }
     addCollaborator.mutate(
       {
         email:   selectedUser.email,
@@ -79,13 +94,17 @@ export default function AddCollaboratorScreen() {
         },
         onError: (err) => {
           const detail = err?.response?.data?.detail ?? 'Something went wrong. Please try again.';
+          if (typeof detail === 'string' && detail.startsWith('SHARE_LIMIT_REACHED:')) {
+            setShowLimitSheet(true);
+            return;
+          }
           Alert.alert('Could not add', detail);
         },
       },
     );
-  }, [selectedUser, rights, screens, addCollaborator, name]);
+  }, [selectedUser, rights, screens, addCollaborator, name, atShareLimit]);
 
-  const canSubmit = !!selectedUser && !addCollaborator.isPending;
+  const canSubmit = !!selectedUser && !addCollaborator.isPending && !atShareLimit;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: C.background }]}>
@@ -138,6 +157,31 @@ export default function AddCollaboratorScreen() {
         showsVerticalScrollIndicator={false}
         style={!canShare ? { display: 'none' } : undefined}
       >
+
+        {/* ── Share quota indicator ─────────────────────────────────────── */}
+        {isFinite(shareLimit) && (
+          <View style={[
+            styles.quotaBar,
+            atShareLimit
+              ? { backgroundColor: C.dangerLight, borderColor: C.danger + '55' }
+              : { backgroundColor: C.primaryLight, borderColor: C.primaryMid },
+          ]}>
+            <Feather
+              name={atShareLimit ? 'alert-circle' : 'users'}
+              size={14}
+              color={atShareLimit ? C.danger : C.primary}
+            />
+            <Text style={[
+              styles.quotaText,
+              { color: atShareLimit ? C.danger : C.primary, fontFamily: Font.medium },
+            ]}>
+              {atShareLimit
+                ? `Guest limit reached (${activeShareCount}/${shareLimit}) — upgrade to add more`
+                : `${activeShareCount}/${shareLimit} guests used on your plan`
+              }
+            </Text>
+          </View>
+        )}
 
         {/* ── Step 1: Search ─────────────────────────────────────────────── */}
         <Text style={[styles.stepLabel, { color: C.textMuted, fontFamily: Font.semiBold }]}>
@@ -334,6 +378,14 @@ export default function AddCollaboratorScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
+      <LimitReachedSheet
+        visible={showLimitSheet}
+        onDismiss={() => setShowLimitSheet(false)}
+        limitType="shares"
+        currentLimit={shareLimit === Infinity ? 0 : shareLimit}
+        currentTier={authUser?.subscription_tier ?? 'free'}
+      />
+
       <SuccessDialog
         visible={showSuccess}
         onDismiss={() => { setShowSuccess(false); router.back(); }}
@@ -349,6 +401,9 @@ export default function AddCollaboratorScreen() {
 const styles = StyleSheet.create({
   safe:    { flex: 1 },
   content: { paddingHorizontal: 16, paddingTop: 20 },
+
+  quotaBar:    { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 18 },
+  quotaText:   { fontSize: 13, flex: 1, lineHeight: 19 },
 
   gate:        { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
   gateBox:     { width: 88, height: 88, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginBottom: 22 },

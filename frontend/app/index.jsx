@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import {
-  View, Text, StyleSheet, Animated, Dimensions, Image,
+  View, Text, StyleSheet, Animated, Dimensions, Image, Platform,
 } from 'react-native';
 import Svg, { Ellipse } from 'react-native-svg';
+import * as SecureStore from 'expo-secure-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../src/store/authStore';
 import { useSyncStore } from '../src/store/syncStore';
@@ -11,6 +12,27 @@ import { canAccess } from '../src/lib/canAccess';
 import { getLocalStats, getCloudDeltaStats, syncCloudToLocal } from '../src/lib/syncManager';
 import Toast from '../src/lib/toast';
 import RestoreOrFreshSheet from '../src/components/ui/RestoreOrFreshSheet';
+import OnboardingScreen from '../src/screens/OnboardingScreen';
+
+const ONBOARDING_KEY = 'onboarding_seen_v1';
+
+async function getOnboardingSeen() {
+  try {
+    if (Platform.OS === 'web') return localStorage.getItem(ONBOARDING_KEY) === 'true';
+    return (await SecureStore.getItemAsync(ONBOARDING_KEY)) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+async function setOnboardingSeen() {
+  try {
+    if (Platform.OS === 'web') { localStorage.setItem(ONBOARDING_KEY, 'true'); return; }
+    await SecureStore.setItemAsync(ONBOARDING_KEY, 'true');
+  } catch {
+    // ignore
+  }
+}
 
 const { width, height } = Dimensions.get('window');
 
@@ -57,6 +79,7 @@ export default function Index() {
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(24)).current;
 
+  const [showOnboarding,   setShowOnboarding]   = useState(false);
   const [showRestoreSheet, setShowRestoreSheet] = useState(false);
   const [cloudBookCount,   setCloudBookCount]   = useState(0);
   const [navigateTarget,   setNavigateTarget]   = useState(null);
@@ -71,6 +94,13 @@ export default function Index() {
   // After splash, decide where to go
   useEffect(() => {
     const timer = setTimeout(async () => {
+      // First launch: show onboarding before anything else
+      const seen = await getOnboardingSeen();
+      if (!seen) {
+        setShowOnboarding(true);
+        return;
+      }
+
       if (!user) {
         router.replace('/(auth)/login');
         return;
@@ -106,6 +136,19 @@ export default function Index() {
     return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const handleOnboardingFinish = useCallback(async () => {
+    await setOnboardingSeen();
+    setShowOnboarding(false);
+    if (!user) {
+      router.replace('/(auth)/login');
+      return;
+    }
+    const target = user.role === 'superadmin'
+      ? '/(app)/dashboard/users'
+      : '/(app)/books';
+    router.replace(target);
+  }, [user, router]);
+
   // Restore: download cloud → local, stay on this screen (with overlay) until done
   const doRestore = useCallback(async () => {
     setShowRestoreSheet(false);
@@ -134,6 +177,10 @@ export default function Index() {
     setShowRestoreSheet(false);
     if (navigateTarget) router.replace(navigateTarget);
   }, [navigateTarget, router]);
+
+  if (showOnboarding) {
+    return <OnboardingScreen onFinish={handleOnboardingFinish} />;
+  }
 
   return (
     <View style={s.root}>

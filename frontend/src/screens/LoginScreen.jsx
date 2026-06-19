@@ -8,6 +8,7 @@ import SafeAreaView from '../components/ui/AppSafeAreaView';
 import Svg, { Path, Ellipse } from 'react-native-svg';
 import Constants from 'expo-constants';
 import { LightColors } from '../constants/colors';
+import { useTheme } from '../hooks/useTheme';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { apiGetProfile } from '../lib/api';
@@ -17,9 +18,8 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 // Google Sign-In is a native module — unavailable in Expo Go
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
 
-// "Continue with Email" is a dev-only login path — hidden in production
-// (__DEV__ is true in Expo Go / dev builds, false in EAS production builds)
-const SHOW_EMAIL_LOGIN = __DEV__;
+// Show email login in Expo Go (local dev) or any dev build; hidden in production EAS builds
+const SHOW_EMAIL_LOGIN = IS_EXPO_GO || __DEV__;
 
 let GoogleSignin = null;
 let statusCodes = {};
@@ -275,6 +275,7 @@ function EmailModal({ visible, onClose }) {
 export default function LoginScreen() {
   const [loading,   setLoading]   = useState(false);
   const [showEmail, setShowEmail] = useState(false);
+  const { C: TC, isDark } = useTheme();
 
   const handleGoogleSignIn = async () => {
     if (!GoogleSignin) return;
@@ -302,8 +303,8 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#EEF7F7" />
+    <SafeAreaView style={[styles.safe, { backgroundColor: TC.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={TC.background} />
       <BackgroundBlobs />
 
       <ScrollView
@@ -394,7 +395,7 @@ export default function LoginScreen() {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#EEF7F7' },
+  safe: { flex: 1 },
 
   scroll: {
     flexGrow: 1,

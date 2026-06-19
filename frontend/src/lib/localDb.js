@@ -744,6 +744,12 @@ export async function localClearAll() {
 
 // ── Cloud-ID bridge (links local books to their cloud counterparts) ─────────────
 
+export async function localBookExists(bookId) {
+  const db  = await getDb();
+  const row = await db.getFirstAsync(`SELECT 1 FROM books WHERE id = ?`, [bookId]);
+  return !!row;
+}
+
 export async function localGetBookByCloudId(cloudId) {
   const db = await getDb();
   return db.getFirstAsync(`SELECT * FROM books WHERE cloud_id = ?`, [cloudId]);

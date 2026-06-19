@@ -18,6 +18,7 @@ import {
 } from '../hooks/useSharing';
 import { RIGHTS_MAP, getInitials } from '../constants/sharing';
 import EditShareSheet from '../components/sharing/EditShareSheet';
+import { canAccess } from '../lib/canAccess';
 
 // ── Status badge config ────────────────────────────────────────────────────────
 // Two statuses: 'pending' (awaiting) and 'accepted' (active).
@@ -544,12 +545,83 @@ const es = StyleSheet.create({
   sub:     { fontSize: 13, lineHeight: 20, textAlign: 'center' },
 });
 
+// ── Paywall overlay ────────────────────────────────────────────────────────────
+
+const PaywallOverlay = ({ onUpgrade, C, Font, isDark }) => (
+  <View style={pw.wrap} pointerEvents="box-none">
+    {/* Frosted-glass blur layer */}
+    <View style={[pw.blur, { backgroundColor: isDark ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.78)' }]} />
+
+    {/* Card */}
+    <View style={[pw.card, { backgroundColor: C.card, borderColor: C.border }]}>
+      <View style={[pw.iconCircle, { backgroundColor: C.primaryLight }]}>
+        <Feather name="lock" size={28} color={C.primary} />
+      </View>
+
+      <Text style={[pw.title, { color: C.text, fontFamily: Font.bold }]}>
+        Pro Feature
+      </Text>
+      <Text style={[pw.sub, { color: C.textMuted, fontFamily: Font.regular }]}>
+        Book sharing and collaboration is available on the Pro plan. Upgrade to invite others and manage access to your cashbooks.
+      </Text>
+
+      <TouchableOpacity
+        style={[pw.btn, { backgroundColor: C.primary }]}
+        onPress={onUpgrade}
+        activeOpacity={0.85}
+      >
+        <Feather name="zap" size={15} color="#fff" />
+        <Text style={[pw.btnText, { fontFamily: Font.bold }]}>Upgrade to Pro</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+);
+
+const pw = StyleSheet.create({
+  wrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    zIndex: 10,
+  },
+  blur: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  card: {
+    width: '100%',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  iconCircle: {
+    width: 68, height: 68, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 16,
+  },
+  title:   { fontSize: 20, lineHeight: 28, marginBottom: 10 },
+  sub:     { fontSize: 14, lineHeight: 22, textAlign: 'center', marginBottom: 24 },
+  btn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingVertical: 14, paddingHorizontal: 28,
+    borderRadius: 14, width: '100%', justifyContent: 'center',
+  },
+  btnText: { fontSize: 15, color: '#fff' },
+});
+
 // ── Screen ─────────────────────────────────────────────────────────────────────
 
 export default function ManageAccessScreen() {
   const router = useRouter();
   const { C, Font, isDark } = useTheme();
   const user = useAuthStore((s) => s.user);
+  const hasAccess = canAccess(user, 'book_sharing');
   useRealtimeInvitations(user?.id);
   useRealtimeGivenInvitations(user?.id);
 
@@ -766,6 +838,16 @@ export default function ManageAccessScreen() {
         C={C}
         Font={Font}
       />
+
+      {/* Paywall — rendered on top for free-tier users */}
+      {!hasAccess && (
+        <PaywallOverlay
+          onUpgrade={() => router.push('/(app)/settings/subscription')}
+          C={C}
+          Font={Font}
+          isDark={isDark}
+        />
+      )}
     </SafeAreaView>
   );
 }

@@ -621,13 +621,22 @@ const PRIMARY_CLR = '#39AAAA';
 const BG_CLR      = '#EEF7F7';
 
 function RestoreCompletionOverlay() {
-  const show                  = useSyncStore(s => s.restoreJustCompleted);
-  const isRestoring           = useSyncStore(s => s.isRestoring);
-  const restoreProgress       = useSyncStore(s => s.restoreProgress);
+  const show                      = useSyncStore(s => s.restoreJustCompleted);
+  const setRestoreJustCompleted   = useSyncStore(s => s.setRestoreJustCompleted);
+  const isRestoring               = useSyncStore(s => s.isRestoring);
+  const restoreProgress           = useSyncStore(s => s.restoreProgress);
 
   const opacity  = useRef(new Animated.Value(0)).current;
   const dotScale = useRef(new Animated.Value(1)).current;
   const [visible, setVisible] = useState(false);
+
+  // Auto-dismiss after 2.5 s once restore is done, in case BooksView never clears it
+  // (e.g. navigation race where BooksView mounts after isLoading is already false)
+  useEffect(() => {
+    if (!show) return;
+    const t = setTimeout(() => setRestoreJustCompleted(false), 2500);
+    return () => clearTimeout(t);
+  }, [show, setRestoreJustCompleted]);
 
   // Fade in when restore is running or just completed
   useEffect(() => {

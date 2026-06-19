@@ -19,7 +19,7 @@ import { Feather } from '@expo/vector-icons';
  *   isLoading  — boolean
  *   C, Font    — theme objects
  */
-export default function FreshStartSheet({ visible, onDismiss, onConfirm, isLoading, C, Font }) {
+export default function FreshStartSheet({ visible, onDismiss, onConfirm, isLoading, statusLabel, C, Font }) {
   const slideY    = useRef(new Animated.Value(600)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
   const [step, setStep] = useState(1);  // 1 = warning, 2 = final confirm
@@ -136,30 +136,32 @@ export default function FreshStartSheet({ visible, onDismiss, onConfirm, isLoadi
                 </Text>
               </View>
 
-              <View style={s.btnRow}>
-                <TouchableOpacity
-                  style={[s.btn, { borderColor: C.border }]}
-                  onPress={() => !isLoading && setStep(1)}
-                  activeOpacity={0.8}
-                  disabled={isLoading}
-                >
-                  <Text style={[s.btnText, { color: C.textMuted, fontFamily: Font.semiBold }]}>Go Back</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[s.btn, { backgroundColor: isLoading ? C.dangerLight : C.danger, borderColor: C.danger }]}
-                  onPress={() => !isLoading && onConfirm()}
-                  disabled={isLoading}
-                  activeOpacity={0.85}
-                >
-                  {isLoading
-                    ? <ActivityIndicator size="small" color={C.danger} />
-                    : <Feather name="trash-2" size={15} color="#fff" />
-                  }
-                  <Text style={[s.btnText, { color: isLoading ? C.danger : '#fff', fontFamily: Font.bold }]}>
-                    {isLoading ? 'Deleting…' : 'Delete Everything'}
+              {isLoading ? (
+                <View style={[s.loadingBox, { backgroundColor: C.dangerLight, borderColor: C.danger + '44' }]}>
+                  <ActivityIndicator size="small" color={C.danger} />
+                  <Text style={[s.loadingText, { color: C.danger, fontFamily: Font.semiBold }]}>
+                    {statusLabel || 'Deleting…'}
                   </Text>
-                </TouchableOpacity>
-              </View>
+                </View>
+              ) : (
+                <View style={s.btnRow}>
+                  <TouchableOpacity
+                    style={[s.btn, { borderColor: C.border }]}
+                    onPress={() => setStep(1)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[s.btnText, { color: C.textMuted, fontFamily: Font.semiBold }]}>Go Back</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[s.btn, { backgroundColor: C.danger, borderColor: C.danger }]}
+                    onPress={onConfirm}
+                    activeOpacity={0.85}
+                  >
+                    <Feather name="trash-2" size={15} color="#fff" />
+                    <Text style={[s.btnText, { color: '#fff', fontFamily: Font.bold }]}>Delete Everything</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </>
           )}
         </Animated.View>
@@ -212,4 +214,11 @@ const s = StyleSheet.create({
     flexDirection: 'row', gap: 7,
   },
   btnText: { fontSize: 14 },
+
+  // Loading state
+  loadingBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 12, borderWidth: 1, padding: 14,
+  },
+  loadingText: { fontSize: 14, flex: 1 },
 });

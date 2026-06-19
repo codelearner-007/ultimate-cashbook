@@ -602,11 +602,11 @@ export default function BookDetailScreen() {
           </View>
           <View style={s.headerRight}>
             <TouchableOpacity
-              style={s.headerIconBtn}
+              style={[s.headerIconBtn, { width: 'auto', paddingHorizontal: 8 }]}
               onPress={selectedIds.size === filtered.length ? () => setSelectedIds(new Set()) : selectAll}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Text style={{ color: '#fff', fontFamily: Font.semiBold, fontSize: 12 }}>
+              <Text style={{ color: '#fff', fontFamily: Font.semiBold, fontSize: 12 }} numberOfLines={1}>
                 {selectedIds.size === filtered.length ? 'Deselect All' : 'Select All'}
               </Text>
             </TouchableOpacity>

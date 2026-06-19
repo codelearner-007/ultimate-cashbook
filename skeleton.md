@@ -47,20 +47,20 @@ App Start
 **Purpose:** Full-screen branded splash shown on every launch while auth state resolves. Navigates automatically after ~1.8 s.
 
 ### Layout
-- Full-screen teal (`#39AAAA`) background
-- Centered card (glassmorphism — `rgba(255,255,255,0.15)`, rounded, border) with:
-  - App icon (from `assets/icon.png`)
-  - App name "Ultimate CashBook" in white bold
-  - Three pill chips: Income · Expense · Reports
-- "Developed by Devautobot / devautobot.com" footer at the bottom
-- Card fades in + springs to scale on mount
+- Light background (`#EEF7F7`) with decorative teal SVG blobs in corners
+- Centered content (fade-in + slide-up animation):
+  - Circular logo image (`assets/logo1.jpg`) with a teal border ring
+  - App name "Ultimate CashBook" in teal bold
+  - Tagline "Smart money tracking for your business"
+- First-launch only: renders `OnboardingScreen` in place of the splash content
 
 ### Flow
-1. App opens → splash renders immediately
-2. After 1.8 s → navigates based on auth state:
+1. App opens → splash renders immediately with fade/slide animation
+2. After 1.8 s → logic runs:
+   - First launch (no `onboarding_seen_v1` flag) → renders `OnboardingScreen`; on finish → writes flag → navigates based on auth state
    - No user → `/(auth)/login`
-   - `role === 'superadmin'` → `/(app)/dashboard/users`
-   - `role === 'user'` → `/(app)/books`
+   - Paid/superadmin + local empty + cloud has books → shows `RestoreOrFreshSheet` bottom sheet
+   - Otherwise → `role === 'superadmin'` → `/(app)/dashboard/users`; `role === 'user'` → `/(app)/books`
 
 ---
 
@@ -72,22 +72,22 @@ App Start
 
 | Element                           | Action | Result                                                                              |
 |-----------------------------------|--------|-------------------------------------------------------------------------------------|
-| "Continue with Google" button     | Tap    | `supabase.auth.signInWithOAuth({ provider: 'google' })` — opens browser OAuth flow |
-| "Continue with Email" button      | Tap    | Opens EmailModal (Step 1) — **dev-only**, hidden in production builds (`__DEV__ === false`); the "or" divider is hidden with it |
+| "Continue with Google" button     | Tap    | `GoogleSignin.signIn()` → `supabase.auth.signInWithIdToken({ provider: 'google' })` — native Google Sign-In (hidden in Expo Go; not available there) |
+| "Continue with Email" button      | Tap    | Opens EmailModal (Step 1) — visible in Expo Go OR `__DEV__` builds; hidden in production EAS builds; the "or" divider is hidden when email button is hidden |
 
 ### EmailModal — Step 1 (Email input)
-| Element                           | Action | Result                                                           |
-|-----------------------------------|--------|------------------------------------------------------------------|
-| Email input                       | Type   | Updates local state                                              |
-| "Send OTP" / "Continue" button    | Tap    | `supabase.auth.signInWithOtp({ email })` → advances to OTP step |
-| Close / Back                      | Tap    | Closes modal                                                     |
+| Element                | Action | Result                                                                                                                        |
+|------------------------|--------|-------------------------------------------------------------------------------------------------------------------------------|
+| Email input            | Type   | Updates local state                                                                                                           |
+| "Send Code" button     | Tap    | `POST /api/v1/auth/send-otp` → advances to OTP step; if backend returns 503 falls back to `supabase.auth.signInWithOtp()` |
+| Cancel button          | Tap    | Resets form and closes modal                                                                                                  |
 
 ### EmailModal — Step 2 (OTP verification)
-| Element               | Action | Result                                                     |
-|-----------------------|--------|------------------------------------------------------------|
-| 6-digit OTP input     | Type   | Updates local state                                        |
-| "Verify" button       | Tap    | `supabase.auth.verifyOtp({ email, token, type: 'email' })` |
-| "Resend OTP"          | Tap    | Re-calls `signInWithOtp`                                   |
+| Element                 | Action | Result                                                                                                                                 |
+|-------------------------|--------|----------------------------------------------------------------------------------------------------------------------------------------|
+| 6-digit code input      | Type   | Updates local state                                                                                                                    |
+| "Verify & Sign In" btn  | Tap    | `POST /api/v1/auth/verify-otp` → sets session via `supabase.auth.setSession()` → `apiGetProfile()` → `setUser()`; if 503 falls back to `supabase.auth.verifyOtp()` |
+| "← Change Email" btn    | Tap    | Goes back to Step 1                                                                                                                    |
 
 ### After Successful Login
 1. `SupabaseAuthListener` detects `SIGNED_IN` event
@@ -102,46 +102,42 @@ App Start
 
 ---
 
-## 1b. Restore-or-Later — splash-screen sheet (paid/superadmin only)
+## 1b. Restore-or-Later — two implementations
 
-**Trigger:** `app/index.jsx` checks after the 1.8 s splash delay when:
+### A) Splash-screen sheet (paid/superadmin, `app/index.jsx`)
+
+**Trigger:** After 1.8 s delay when:
 - User is paid tier or superadmin (`canAccess(user, 'cloud_sync')`)
-- Device is online
 - `getLocalStats().books === 0` AND `getCloudDeltaStats().hasCloudData === true`
 
-**Rendered in:** `app/index.jsx` (above the splash content, as a bottom sheet)
+**Rendered in:** `app/index.jsx` as a `RestoreOrFreshSheet` bottom sheet overlaying the splash.
 
-### Layout
-- `RestoreOrFreshSheet` — bottom sheet with handle bar, cloud icon, title, two option cards
+| Element          | Action | Result                                                                          |
+|------------------|--------|---------------------------------------------------------------------------------|
+| **Restore** card | Tap    | Sheet dismisses → `syncCloudToLocal()` runs with `RestoreCompletionOverlay` → toast → `router.replace(target)` |
+| **Later** card   | Tap    | Sheet dismisses → `router.replace(target)` (no sync); restore available from Backup & Sync |
 
-### UI Elements
+### B) Post-login cloud modal (`app/_layout.jsx`)
 
-| Element               | Action | Result                                                                        |
-|-----------------------|--------|-------------------------------------------------------------------------------|
-| **Restore** card      | Tap    | Sheet dismisses → global `RestoreCompletionOverlay` shown → `syncCloudToLocal()` runs with animated progress bar → success/error toast → navigate to books → overlay persists until books load → overlay fades out |
-| **Later** card        | Tap    | Sheet dismisses → navigate to books (no sync); user can restore from Backup & Sync later |
+**Component:** `RestoreCloudModal` — a centered full-screen `Modal` (not a bottom sheet).
 
-### RestoreCompletionOverlay (global full-screen animated overlay — `app/_layout.jsx`)
-- Shown immediately after tapping **Restore** and stays visible across navigation (survives `router.replace()`)
-- **Phase 1 — Downloading:** animated pulsing ☁️ icon, progress bar (0–100%), step label, item count, "Please keep the app open" note
-- **Phase 2 — Loading books:** title changes to "Restore complete!", sub changes to "Loading your books…", progress bar stays at 100%
-- Fades out with a 350 ms animation once `BooksView` signals books have finished loading (`restoreJustCompleted` cleared)
+**Trigger:** `InitialPullMonitor` runs on every login (session-scoped, not persisted):
+- Eligible: superadmin OR paid subscription tier
+- If local DB is empty AND cloud has books → `showRestorePrompt = true` → modal appears
+
+| Element                   | Action | Result                                                                            |
+|---------------------------|--------|-----------------------------------------------------------------------------------|
+| **Restore from Cloud** btn | Tap   | `syncCloudToLocal()` with progress → `setRestoreJustCompleted(true)` → toast → `router.replace(target)` |
+| **Start Fresh** btn        | Tap   | Dismisses modal → toast "Starting fresh…" → `router.replace(target)`              |
+
+### RestoreCompletionOverlay (global — `app/_layout.jsx`)
+- Full-screen light bg (`#EEF7F7`) with teal blob decorations; `zIndex: 9999`
+- Shown during restore AND after until `BooksView` signals books have loaded
+- **Restoring phase:** animated pulsing ☁️ icon, progress bar (0–100%), step label, item count, "Please keep the app open" note
+- **Done phase:** title "Restore complete!", sub "Loading your books…", progress bar at 100%
+- Fades out (350 ms) when `restoreJustCompleted` is cleared by `BooksView`
 - Cannot be dismissed by the user
-- Implemented in `app/_layout.jsx` as `<RestoreCompletionOverlay />` rendered above everything; `zIndex: 9999`
-- State: `syncStore.restoreJustCompleted` (bool) — set `true` by `finishRestore()` callers, cleared `false` by `BooksView.useEffect` when `!isLoading`
-
-### States
-| State        | Display                                                                       |
-|--------------|-------------------------------------------------------------------------------|
-| Default      | Two option cards: Restore (teal) / Later (neutral)                             |
-| Restoring    | Full-screen overlay with animated progress bar; sheet is hidden                |
-| Restore done, books loading | Overlay shows "Restore complete! / Loading your books…", progress at 100% |
-| Books loaded | Overlay fades out (350 ms); books list becomes visible                         |
-
-### Notes
-- Sheet only appears once per session (no SecureStore flag — re-checked every cold launch)
-- If restore fails → error toast + navigate to books; user can retry from Settings → Backup & Sync
-- `isRestoring` / `restoreProgress` / `restoreJustCompleted` stored in `syncStore.js`
+- State: `syncStore.restoreJustCompleted` (bool) — set `true` by restore callers, cleared by `BooksView`
 
 ---
 
@@ -279,10 +275,11 @@ All interactions, mutations, states, and API calls are identical to BooksScreen.
 | Chip           | State | Action | Result |
 |----------------|-------|--------|--------|
 | **All**        | Active when all filters at default | Tap | Resets all filters to default |
-| **Plan ▾**     | Highlighted when active | Tap | Opens **Plan Picker Sheet** |
+| **Status ▾**   | Highlighted when active | Tap | Opens dropdown: Active / Inactive (filters by `is_active`) |
+| **Access ▾**   | Highlighted when active | Tap | Opens dropdown: Has Shared Books / No Shared Books (filters by `shared_books_count`) |
 | **All Time ▾** | Highlighted when date filter set | Tap | Opens **Date Picker Sheet** |
 
-Both filters compose client-side.
+All filters compose client-side.
 
 #### Date Picker Sheet (filters by `created_at` join date)
 | Option        | Result                                     |
@@ -893,19 +890,33 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 - Counts: Cashbooks / Entries / Categories / Customers / Suppliers
 
 ### Cloud Actions Section (paid/superadmin only)
-| Button                  | State                      | Action                                                                               |
-|-------------------------|----------------------------|--------------------------------------------------------------------------------------|
-| **Sync to Cloud**       | Default                    | Tap → `SyncConfirmSheet` → `syncLocalToCloud()` with progress                       |
-| **Sync to Cloud**       | Already synced             | Disabled, shows "All Data Synced" + green check icon                                 |
-| **Sync to Cloud**       | Syncing                    | Disabled, shows "Syncing…"                                                           |
-| **Restore from Cloud**  | Has cloud data             | Tap → `RestoreOrFreshSheet` → `syncCloudToLocal()` with progress                    |
-| **Restore from Cloud**  | No cloud data / offline    | Disabled, shows "No cloud data found" sub-label                                      |
-| **Clear local data only** | Has local data           | Tap → `ClearLocalDataSheet` → `localClearAll()` (cloud unaffected)                  |
+| Button                  | State                                                     | Action                                                                               |
+|-------------------------|-----------------------------------------------------------|--------------------------------------------------------------------------------------|
+| **Sync to Cloud**       | Default                                                   | Tap → `SyncConfirmSheet` → `syncLocalToCloud()` with progress                       |
+| **Sync to Cloud**       | Already synced (`delta.toUpload === 0 && localTotal > 0`) | Icon changes to check-circle, sublabel "Local and cloud are in sync"; tap shows toast "Already synced" |
+| **Sync to Cloud**       | Syncing in progress                                       | Disabled + icon "loader", shows "Syncing…"                                           |
+| **Sync to Cloud**       | No local data (`stats.total === 0`)                       | Tap → shows "Nothing to sync" centered modal alert                                   |
+| **Restore from Cloud**  | Visible only when `!hasRestoredFromCloud && hasUnrestoredCloudData` | Tap → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal()` with progress |
+| **Restore from Cloud**  | Offline / syncing / restoring                             | Disabled (still visible)                                                             |
+
+#### "Restore from Cloud" button — visibility logic
+
+The button is **hidden** (not rendered) unless all of the following are true:
+
+1. `hasRestoredFromCloud === false` — user has not completed a restore this session
+2. `hasCloudData === true` — the cloud account has at least one book
+3. `delta.onlyInCloudEntries > 0` OR `delta.newBooks > 0` — cloud contains books or entries that are not yet present locally (i.e. local and cloud are **not** in sync)
+4. `deltaLoading === false` — delta comparison has finished loading
+
+If local already contains everything that cloud has (all books and entries match), the button is hidden because restoring would have no effect. It also hides immediately after a successful restore (`hasRestoredFromCloud` is set to `true` in `syncStore`).
+
+When visible, the button is **disabled** (but still shown) only while offline (`!isOnline`), syncing, or restoring.
 
 ### Danger Zone Card
-| Element                   | Action | Result                                                               |
-|---------------------------|--------|----------------------------------------------------------------------|
-| **Start Fresh** button    | Tap    | Opens `FreshStartSheet` (2-step confirm)                             |
+| Element                   | State   | Action | Result                                                               |
+|---------------------------|---------|--------|----------------------------------------------------------------------|
+| **Start Fresh** button    | Online  | Tap    | Opens `FreshStartSheet` (2-step confirm)                             |
+| **Start Fresh** button    | Offline | —      | Disabled (grey, label "Start Fresh (offline)"); tap does nothing     |
 
 #### FreshStartSheet — step 1 (warning)
 - Lists what will be deleted: cloud books, local data, contacts/categories
@@ -924,8 +935,7 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 | Sheet                | Purpose                                      |
 |----------------------|----------------------------------------------|
 | `SyncConfirmSheet`   | Confirm upload local → cloud                 |
-| `ClearLocalDataSheet`| Confirm clear local only (cloud safe)        |
-| `RestoreOrFreshSheet`| Confirm restore cloud → local (from screen)  |
+| `RestoreOrFreshSheet`| Confirm restore cloud → local (mode="confirm") |
 | `FreshStartSheet`    | 2-step confirm delete cloud + local          |
 
 ---
@@ -1114,5 +1124,5 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 
 ---
 
-*Last updated: 2026-05-18*
+*Last updated: 2026-06-20 (audit pass — aligned with actual code)*
 *Update this file whenever any screen, button, navigation flow, or API call changes.*

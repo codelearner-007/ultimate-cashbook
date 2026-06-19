@@ -155,6 +155,7 @@ export default function BackupSyncScreen() {
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [showFreshStart,     setShowFreshStart]     = useState(false);
   const [isFreshStarting,    setIsFreshStarting]    = useState(false);
+  const [freshStartStatus,   setFreshStartStatus]   = useState('');
   const [showEmptyAlert,     setShowEmptyAlert]     = useState(false);
 
   const dotOpacity = useRef(new Animated.Value(1)).current;
@@ -217,10 +218,14 @@ export default function BackupSyncScreen() {
 
   const isAlreadySynced = !deltaLoading && delta !== null && delta.toUpload === 0 && (stats?.total ?? 0) > 0;
   const hasCloudData    = delta?.hasCloudData ?? false;
+  // True when cloud has data that is not yet on this device (restore would actually do something)
+  const hasUnrestoredCloudData = !deltaLoading && hasCloudData &&
+    ((delta?.onlyInCloudEntries ?? 0) > 0 || (delta?.newBooks ?? 0) > 0);
 
   // ── Sync local → cloud ────────────────────────────────────────────────────
   const handleSync = useCallback(() => {
-    if (isSyncing || isAlreadySynced) return;
+    if (isSyncing) return;
+    if (isAlreadySynced) { Toast.show({ type: 'success', text1: 'Already synced', text2: 'All local data is up to date in the cloud.' }); return; }
     if (!isOnline) { Alert.alert('No connection', 'Please connect to the internet to sync your data.'); return; }
     if (!canSync)  { Alert.alert('Pro feature', 'Cloud backup & sync requires a Pro or Business plan.'); return; }
     if (!stats || stats.total === 0) { setShowEmptyAlert(true); return; }
@@ -277,20 +282,34 @@ export default function BackupSyncScreen() {
   // ── Start fresh (delete cloud + local) ───────────────────────────────────
   const doFreshStart = useCallback(async () => {
     setIsFreshStarting(true);
+    setFreshStartStatus('Fetching cloud books…');
     try {
-      // Delete all cloud books (cascade deletes entries, categories, etc.)
-      const cloudBooks = await apiGetBooks().catch(() => []);
-      for (const book of cloudBooks) {
-        await apiDeleteBook(book.id).catch(() => {});
+      // Fetch cloud books directly from backend (not local SQLite)
+      let cloudBooks = [];
+      try {
+        cloudBooks = await apiGetBooks();
+      } catch {
+        cloudBooks = [];
       }
+
+      // Delete each cloud book one by one with progress label
+      for (let i = 0; i < cloudBooks.length; i++) {
+        setFreshStartStatus(`Deleting book ${i + 1} of ${cloudBooks.length}…`);
+        await apiDeleteBook(cloudBooks[i].id);
+      }
+
       // Clear local SQLite
+      setFreshStartStatus('Clearing local data…');
       await localClearAll();
-      setHasRestored(true);   // cloud is now empty — nothing left to restore
+
+      setHasRestored(true);
       qc.invalidateQueries();
       await loadData();
       setShowFreshStart(false);
+      setFreshStartStatus('');
       Toast.show({ type: 'success', text1: 'Fresh Start', text2: 'All data has been erased.' });
     } catch (err) {
+      setFreshStartStatus('');
       Toast.show({ type: 'error', text1: 'Error', text2: err?.message ?? 'Could not complete fresh start.' });
     } finally {
       setIsFreshStarting(false);
@@ -425,25 +444,22 @@ export default function BackupSyncScreen() {
               <ActionBtn
                 icon={isSyncing ? 'loader' : isAlreadySynced ? 'check-circle' : 'upload-cloud'}
                 label={isSyncing ? 'Syncing…' : isAlreadySynced ? 'All Data Synced' : 'Sync to Cloud'}
-                sublabel={isAlreadySynced ? 'Local and cloud are in sync' : 'Upload local data to your cloud account'}
+                sublabel={!isOnline ? 'No internet connection' : isAlreadySynced ? 'Local and cloud are in sync' : 'Upload local data to your cloud account'}
                 onPress={handleSync}
                 variant="primary"
-                disabled={isSyncing || isAlreadySynced || isRestoring}
+                disabled={!isOnline || isSyncing || isRestoring}
                 C={C}
               />
 
-              {/* Restore Cloud → Local — hidden once restore or fresh-start has completed */}
-              {!hasRestoredFromCloud && (
+              {/* Restore Cloud → Local — hidden when local already matches cloud or restore completed */}
+              {!hasRestoredFromCloud && hasUnrestoredCloudData && (
                 <ActionBtn
                   icon={isRestoring ? 'loader' : 'download-cloud'}
                   label={isRestoring ? 'Restoring…' : 'Restore from Cloud'}
-                  sublabel={hasCloudData
-                    ? `${cloudBookCount} book${cloudBookCount !== 1 ? 's' : ''} available in cloud`
-                    : 'No cloud data found'
-                  }
+                  sublabel={!isOnline ? 'No internet connection' : `${cloudBookCount} book${cloudBookCount !== 1 ? 's' : ''} available in cloud`}
                   onPress={handleRestore}
                   variant="secondary"
-                  disabled={isRestoring || isSyncing || !hasCloudData}
+                  disabled={!isOnline || isRestoring || isSyncing}
                   C={C}
                 />
               )}
@@ -469,13 +485,21 @@ export default function BackupSyncScreen() {
                 </View>
               </View>
               <TouchableOpacity
-                style={[st.dangerBtn, { backgroundColor: C.danger, opacity: (isFreshStarting || isSyncing || isRestoring) ? 0.6 : 1 }]}
-                onPress={() => setShowFreshStart(true)}
-                disabled={isFreshStarting || isSyncing || isRestoring}
+                style={[st.dangerBtn, {
+                  backgroundColor: (!isOnline || isFreshStarting || isSyncing || isRestoring) ? C.border : C.danger,
+                  opacity: (!isOnline || isFreshStarting || isSyncing || isRestoring) ? 0.6 : 1,
+                }]}
+                onPress={() => {
+                  if (!isOnline) return;
+                  setShowFreshStart(true);
+                }}
+                disabled={!isOnline || isFreshStarting || isSyncing || isRestoring}
                 activeOpacity={0.85}
               >
-                <Feather name="trash-2" size={15} color="#fff" />
-                <Text style={[st.dangerBtnText, { fontFamily: Font.bold }]}>Start Fresh</Text>
+                <Feather name="trash-2" size={15} color={!isOnline ? C.textMuted : '#fff'} />
+                <Text style={[st.dangerBtnText, { fontFamily: Font.bold, color: !isOnline ? C.textMuted : '#fff' }]}>
+                  {isOnline ? 'Start Fresh' : 'Start Fresh (offline)'}
+                </Text>
               </TouchableOpacity>
             </View>
           </>
@@ -522,6 +546,7 @@ export default function BackupSyncScreen() {
         onDismiss={() => setShowFreshStart(false)}
         onConfirm={doFreshStart}
         isLoading={isFreshStarting}
+        statusLabel={freshStartStatus}
         C={C}
         Font={Font}
       />

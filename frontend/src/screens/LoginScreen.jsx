@@ -18,9 +18,8 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 // Google Sign-In is a native module — unavailable in Expo Go
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
 
-// "Continue with Email" is a dev-only login path — hidden in production
-// (__DEV__ is true in Expo Go / dev builds, false in EAS production builds)
-const SHOW_EMAIL_LOGIN = __DEV__;
+// Show email login in Expo Go (local dev) or any dev build; hidden in production EAS builds
+const SHOW_EMAIL_LOGIN = IS_EXPO_GO || __DEV__;
 
 let GoogleSignin = null;
 let statusCodes = {};

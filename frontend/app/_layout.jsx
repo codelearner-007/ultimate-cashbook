@@ -27,7 +27,7 @@ import {
   registerPushToken,
   addNotificationTapListener,
 } from '../src/lib/pushNotifications';
-import { syncCloudToLocal } from '../src/lib/syncManager';
+import { syncCloudToLocal, syncLocalToCloud } from '../src/lib/syncManager';
 import { localGetBooks } from '../src/lib/localDb';
 import { apiGetBooks as apiGetCloudBooks, apiDeleteBook as apiDeleteCloudBook } from '../src/lib/api';
 import * as SecureStore from 'expo-secure-store';
@@ -50,19 +50,21 @@ const queryClient = new QueryClient({
 function NetworkMonitor() {
   const setOnline = useSyncStore(s => s.setOnline);
   useEffect(() => {
+    // isInternetReachable is null on Android until confirmed — treat null as reachable
+    const online = (s) => !!s.isConnected && s.isInternetReachable !== false;
     // Initial check
     Network.getNetworkStateAsync()
-      .then(state => setOnline(!!state.isConnected && !!state.isInternetReachable))
+      .then(state => setOnline(online(state)))
       .catch(() => {});
     // Real-time connectivity changes (fires immediately when network toggles)
     const netSub = Network.addNetworkStateListener(state => {
-      setOnline(!!state.isConnected && !!state.isInternetReachable);
+      setOnline(online(state));
     });
     // Also re-verify when the app returns to foreground
     const appSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         Network.getNetworkStateAsync()
-          .then(s => setOnline(!!s.isConnected && !!s.isInternetReachable))
+          .then(s => setOnline(online(s)))
           .catch(() => {});
       }
     });
@@ -76,17 +78,22 @@ function NetworkMonitor() {
 
 
 /**
- * Checks once per device install whether cloud has data the user would want
- * to restore. If local is empty AND cloud has books, sets showRestorePrompt=true
- * so the user sees a modal asking whether to restore.
- * The actual sync is triggered by RestoreCloudModal on user confirmation.
+ * After every login: if the user has a subscription, local storage is empty,
+ * and the cloud has books, show the Restore-or-Start-Fresh prompt.
+ *
+ * The check runs once per login session (session-scoped ref guard prevents
+ * re-firing when the user navigates between screens or the network toggles).
+ * No persistent SecureStore flag is written — the prompt reappears on the
+ * next login if the user chose "Start Fresh" last time.
  */
 function InitialPullMonitor() {
   const user             = useAuthStore(s => s.user);
   const isOnline         = useSyncStore(s => s.isOnline);
   const isSyncing        = useSyncStore(s => s.isSyncing);
   const setRestorePrompt = useSyncStore(s => s.setRestorePrompt);
-  const checkLock        = useRef(false);
+  // Tracks the user-id that was already checked this session so re-renders
+  // (network toggle, screen changes) don't re-run the cloud check.
+  const checkedForUser   = useRef(null);
 
   const isEligible = (u) => {
     if (!u) return false;
@@ -96,40 +103,32 @@ function InitialPullMonitor() {
   };
 
   useEffect(() => {
-    if (!user || !isOnline || isSyncing || checkLock.current) return;
+    if (!user || !isOnline || isSyncing) return;
     if (!isEligible(user)) return;
+    // Only run once per login session for this user
+    if (checkedForUser.current === user.id) return;
+    checkedForUser.current = user.id;
 
-    const PULL_FLAG = `cashbook_initial_pull_done_${user.id}`;
-
-    SecureStore.getItemAsync(PULL_FLAG)
-      .then(async (done) => {
-        if (done) return; // already decided on this device
-
+    (async () => {
+      try {
         const localBooks = await localGetBooks().catch(() => []);
         if (localBooks.length > 0) {
-          // Local data exists — no need to prompt
-          SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
+          // Device already has local data — no prompt needed
           return;
         }
 
-        // Local is empty — check if cloud has any books
-        checkLock.current = true;
-        try {
-          const cloudBooks = await apiGetCloudBooks();
-          if (cloudBooks && cloudBooks.length > 0) {
-            // Cloud has data → ask the user what they want
-            setRestorePrompt(true);
-          } else {
-            // Cloud is also empty — nothing to restore, mark done
-            SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
-          }
-        } catch {
-          // Network error — silently skip; will re-check on next session
-        } finally {
-          checkLock.current = false;
+        // Local is empty — check cloud
+        const cloudBooks = await apiGetCloudBooks();
+        if (cloudBooks && cloudBooks.length > 0) {
+          // Cloud has data → ask the user: Restore or Start Fresh
+          setRestorePrompt(true);
         }
-      })
-      .catch(() => {});
+        // Cloud also empty → new user, go straight to books (AuthGuard handles redirect)
+      } catch {
+        // Network error — silently skip; will re-check on next login
+        checkedForUser.current = null; // allow retry on reconnect
+      }
+    })();
   }, [user, isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
@@ -183,6 +182,59 @@ function AutoDeleteMonitor() {
         }
       } catch {
         // Silent — will retry on next reconnect
+      } finally {
+        running.current = false;
+      }
+    })();
+  }, [isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return null;
+}
+
+/**
+ * Automatically syncs local data to cloud whenever the user comes online.
+ * Runs silently — no popup, no confirmation. Only for paid/superadmin users.
+ * Skips if a sync or restore is already in progress.
+ * Fires once per reconnect event (wasOnline ref prevents re-firing on re-renders).
+ */
+function AutoSyncMonitor() {
+  const user      = useAuthStore(s => s.user);
+  const isOnline  = useSyncStore(s => s.isOnline);
+  const isSyncing = useSyncStore(s => s.isSyncing);
+  const isRestoring = useSyncStore(s => s.isRestoring);
+  const startSync  = useSyncStore(s => s.startSync);
+  const setProgress = useSyncStore(s => s.setProgress);
+  const finishSync = useSyncStore(s => s.finishSync);
+  const failSync   = useSyncStore(s => s.failSync);
+
+  const wasOnline = useRef(isOnline);
+  const running   = useRef(false);
+
+  const isEligible = (u) => {
+    if (!u) return false;
+    if (u.role === 'superadmin') return true;
+    const tier = u?.subscription_tier;
+    return tier && tier !== 'free';
+  };
+
+  useEffect(() => {
+    const justReconnected = !wasOnline.current && isOnline;
+    wasOnline.current = isOnline;
+
+    if (!justReconnected) return;
+    if (!isEligible(user) || isSyncing || isRestoring || running.current) return;
+
+    running.current = true;
+    (async () => {
+      try {
+        startSync();
+        const result = await syncLocalToCloud((done, total, step) => setProgress(done, total, step));
+        finishSync(new Date().toISOString());
+        if (result.synced > 0) {
+          queryClient.invalidateQueries();
+        }
+      } catch {
+        failSync(null); // silent — no error shown to user
       } finally {
         running.current = false;
       }
@@ -402,8 +454,9 @@ function NotificationPopup() {
 
 // ── Restore Cloud Data Modal ───────────────────────────────────────────────────
 //
-// Shown once per device install when local DB is empty but cloud has books.
-// User chooses "Restore" (pulls cloud → local) or "Start Fresh" (skips sync).
+// Shown on every login when local DB is empty but cloud has books.
+// User chooses "Restore from Cloud" (pulls cloud → local) or "Start Fresh" (begins
+// with an empty device; cloud data stays safe and is restorable via Backup & Sync).
 
 function RestoreCloudModal() {
   const user             = useAuthStore(s => s.user);
@@ -421,13 +474,6 @@ function RestoreCloudModal() {
 
   if (!visible) return null;
 
-  const PULL_FLAG = `cashbook_initial_pull_done_${user?.id}`;
-
-  const dismiss = () => {
-    setRestorePrompt(false);
-    SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
-  };
-
   const handleRestore = async () => {
     setLoading(true);
     startRestore();
@@ -438,7 +484,6 @@ function RestoreCloudModal() {
       finishRestore();
       setHasRestored(true);
       setRestoreJustCompleted(true);  // keep overlay until BooksView signals data is ready
-      SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
       Toast.show({
         type: 'success',
         text1: 'Data restored!',
@@ -449,7 +494,6 @@ function RestoreCloudModal() {
       router.replace(target);
     } catch (err) {
       failRestore(err?.message ?? 'Restore failed');
-      SecureStore.setItemAsync(PULL_FLAG, '1').catch(() => {});
       Toast.show({
         type: 'error',
         text1: 'Restore failed',
@@ -462,13 +506,15 @@ function RestoreCloudModal() {
   };
 
   const handleStartFresh = () => {
-    dismiss();
+    setRestorePrompt(false);
     Toast.show({
       type: 'info',
       text1: 'Starting fresh',
-      text2: 'Your cloud data is safe and can be restored anytime from Settings',
+      text2: 'Your cloud data is safe — restore anytime via Settings → Backup & Sync',
       visibilityTime: 3500,
     });
+    const target = user?.role === 'superadmin' ? '/(app)/dashboard/users' : '/(app)/books';
+    router.replace(target);
   };
 
   return (
@@ -480,13 +526,13 @@ function RestoreCloudModal() {
           </View>
 
           <Text style={[restoreStyles.title, { color: C.text, fontFamily: Font.bold }]}>
-            Cloud Data Found
+            Welcome back!
           </Text>
           <Text style={[restoreStyles.body, { color: C.textMuted, fontFamily: Font.regular }]}>
-            We found your backed-up data in the cloud. Would you like to restore it to this device?
+            We found your backed-up data in the cloud. Would you like to restore it, or start fresh on this device?
           </Text>
           <Text style={[restoreStyles.hint, { color: C.textSubtle, fontFamily: Font.regular }]}>
-            New entries will continue to sync automatically.
+            Starting fresh won't delete your cloud data — you can restore it anytime from Settings → Backup & Sync.
           </Text>
 
           <TouchableOpacity
@@ -496,7 +542,7 @@ function RestoreCloudModal() {
             disabled={loading}
           >
             <Text style={[restoreStyles.btnPrimaryText, { fontFamily: Font.bold }]}>
-              {loading ? 'Restoring…' : 'Restore Cloud Data'}
+              {loading ? 'Restoring…' : 'Restore from Cloud'}
             </Text>
           </TouchableOpacity>
 
@@ -507,7 +553,7 @@ function RestoreCloudModal() {
             disabled={loading}
           >
             <Text style={[restoreStyles.btnSecondaryText, { color: C.textMuted, fontFamily: Font.medium }]}>
-              May be later
+              Start Fresh
             </Text>
           </TouchableOpacity>
         </View>
@@ -719,6 +765,7 @@ export default function RootLayout() {
       <NetworkMonitor />
       <InitialPullMonitor />
       <AutoDeleteMonitor />
+      <AutoSyncMonitor />
       <SupabaseAuthListener />
       <AuthGuard />
       <Slot />

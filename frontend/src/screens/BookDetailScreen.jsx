@@ -21,6 +21,7 @@ import { useRealtimeEntries } from '../hooks/useRealtimeSync';
 import { useCustomers, useSuppliers } from '../hooks/useContacts';
 import SuccessDialog from '../components/ui/SuccessDialog';
 import DeleteAllEntriesSheet from '../components/ui/DeleteAllEntriesSheet';
+import DeleteEntrySheet from '../components/ui/DeleteEntrySheet';
 import { BalanceCardSkeleton, EntryGroupSkeleton } from '../components/ui/Shimmer';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -83,37 +84,40 @@ const MinusIcon = ({ color, size = 14 }) => <Feather name="minus" size={size} co
 const ChevronDownIcon = ({ color, size = 14 }) => <Feather name="chevron-down" size={size} color={color} />;
 const UserPlusIcon = ({ color, size = 20 }) => <Feather name="user-plus" size={size} color={color} />;
 
-// ── Payment mode badge colors (index by mode) ─────────────────────────────────
-
-const PAYMENT_META = {
-  cash: { bg: null, text: null },   // uses primary tint — resolved in component
-  online: { bg: '#E8F5E9', text: '#1B5E20' },
-  cheque: { bg: '#FFF8E1', text: '#F57F17' },
-  other: { bg: '#F3E5F5', text: '#7B1FA2' },
-};
-
-const PAYMENT_META_DARK = {
-  cash: { bg: null, text: null },
-  online: { bg: '#052E16', text: '#4ADE80' },
-  cheque: { bg: '#2D1F00', text: '#FCD34D' },
-  other: { bg: '#2D0A45', text: '#C084FC' },
-};
+// ── Payment mode badge colors resolved from theme at render time ──────────────
+// Keys that return null delegate to C.primaryLight / C.primary (cash).
+// Keys that return a string use a fixed accent that still reads well on both
+// light and dark theme backgrounds (cashIn/cashInLight for Online; primary for Cheque).
+function getPaymentMeta(modeKey, C) {
+  switch (modeKey) {
+    case 'online': return { bg: C.cashInLight, text: C.cashIn };
+    case 'cheque': return { bg: C.primaryLight, text: C.primary };
+    case 'other':  return { bg: C.cardAlt,      text: C.textMuted };
+    default:       return { bg: C.primaryLight,  text: C.primary };
+  }
+}
 
 // ── EntryCard ─────────────────────────────────────────────────────────────────
 
-const EntryCard = memo(({ item, onPress, onLongPress, C, Font, s, isDark, grouped, isLast }) => {
+const EntryCard = memo(({ item, onPress, onLongPress, C, Font, s, grouped, isLast, selected, selectionMode }) => {
   const modeKey = item.payment_mode?.toLowerCase();
-  const meta = isDark ? (PAYMENT_META_DARK[modeKey] ?? {}) : (PAYMENT_META[modeKey] ?? {});
-  const badgeBg = meta.bg ?? (isDark ? C.primaryLight : C.primaryLight);
-  const badgeText = meta.text ?? C.primary;
+  const { bg: badgeBg, text: badgeText } = getPaymentMeta(modeKey, C);
 
   return (
     <TouchableOpacity
-      style={grouped ? [s.entryCardGrouped, !isLast && s.entryCardDivider] : s.entryCard}
+      style={[
+        grouped ? [s.entryCardGrouped, !isLast && s.entryCardDivider] : s.entryCard,
+        selected && { backgroundColor: C.primaryLight },
+      ]}
       onPress={onPress}
       onLongPress={onLongPress}
       activeOpacity={0.75}
     >
+      {selectionMode && (
+        <View style={[s.checkbox, selected && { backgroundColor: C.primary, borderColor: C.primary }]}>
+          {selected && <Feather name="check" size={12} color="#fff" />}
+        </View>
+      )}
       <View style={[s.entryBadge, { backgroundColor: badgeBg }]}>
         <Text style={[s.entryBadgeText, { color: badgeText }]} numberOfLines={1}>
           {item.payment_mode.charAt(0).toUpperCase() + item.payment_mode.slice(1)}
@@ -291,6 +295,9 @@ export default function BookDetailScreen() {
   const [showDeleteAllSheet, setShowDeleteAllSheet] = useState(false);
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const deleteSheetCloseRef = useRef(null);
+  const [deleteEntryTarget, setDeleteEntryTarget] = useState(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
 
   const clearFilter = useCallback((key) => {
     if (key === 'date') setFilterDate(null);
@@ -384,6 +391,28 @@ export default function BookDetailScreen() {
     },
   });
 
+  const bulkDeleteEntries = useMutation({
+    mutationFn: async (ids) => {
+      for (const eid of ids) {
+        await apiDeleteEntry(id, eid);
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['entries', id] });
+      qc.invalidateQueries({ queryKey: ['summary', id] });
+      qc.invalidateQueries({ queryKey: ['books'] });
+      qc.invalidateQueries({ queryKey: ['categories', id] });
+      qc.invalidateQueries({ queryKey: ['category-entries', id] });
+      qc.invalidateQueries({ queryKey: ['report-entries', id] });
+      setDeleteEntryTarget(null);
+      setSelectedIds(new Set());
+      setSelectionMode(false);
+    },
+    onError: () => {
+      Alert.alert('Error', 'Could not delete selected entries. Please try again.');
+    },
+  });
+
   const isLoading = entriesLoading || summaryLoading;
   const isError = entriesError || summaryError;
 
@@ -437,15 +466,35 @@ export default function BookDetailScreen() {
     return { total_in, total_out, net_balance: total_in - total_out };
   }, [isFiltered, filtered, summary]);
 
-  const handleDelete = useCallback((entryId) => {
-    Alert.alert('Delete Entry', 'Delete this entry?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: () => deleteEntry.mutate(entryId),
-      },
-    ]);
-  }, [deleteEntry]);
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, []);
+
+  const handleLongPress = useCallback((entryId) => {
+    if (!canDelete) return;
+    setSelectionMode(true);
+    setSelectedIds(new Set([entryId]));
+  }, [canDelete]);
+
+  const toggleSelect = useCallback((entryId) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(entryId)) next.delete(entryId);
+      else next.add(entryId);
+      return next;
+    });
+  }, []);
+
+  const selectAll = useCallback(() => {
+    setSelectedIds(new Set(filtered.map(e => e.id)));
+  }, [filtered]);
+
+  const handleDeleteSelected = useCallback(() => {
+    if (selectedIds.size === 0) return;
+    const firstEntry = entries.find(e => e.id === [...selectedIds][0]);
+    setDeleteEntryTarget({ _bulk: true, _ids: [...selectedIds], _count: selectedIds.size, ...firstEntry });
+  }, [selectedIds, entries]);
 
   const goToReports = useCallback(() => {
     if (!canViewReports) return;
@@ -507,21 +556,25 @@ export default function BookDetailScreen() {
                 C={C}
                 Font={Font}
                 s={s}
-                isDark={isDark}
                 grouped
                 isLast={index === group.items.length - 1}
-                onPress={() => router.push({
-                  pathname: `${basePath}/[id]/entry-detail`,
-                  params: { id, eid: entry.id },
-                })}
-                onLongPress={canDelete ? () => handleDelete(entry.id) : undefined}
+                selected={selectedIds.has(entry.id)}
+                selectionMode={selectionMode}
+                onPress={selectionMode
+                  ? () => toggleSelect(entry.id)
+                  : () => router.push({
+                      pathname: `${basePath}/[id]/entry-detail`,
+                      params: { id, eid: entry.id },
+                    })
+                }
+                onLongPress={canDelete ? () => handleLongPress(entry.id) : undefined}
               />
             ))}
           </View>
         )}
       </View>
     );
-  }, [s, C, Font, isDark, id, router, handleDelete, collapsed, toggleDate, canDelete]);
+  }, [s, C, Font, isDark, id, router, handleLongPress, toggleSelect, collapsed, toggleDate, canDelete, selectionMode, selectedIds]);
 
   const ListEmpty = useCallback(() => <EmptyState C={C} Font={Font} s={s} />, [C, Font, s]);
 
@@ -533,45 +586,81 @@ export default function BookDetailScreen() {
       />
 
       {/* Header */}
-      <View style={s.header}>
-        <TouchableOpacity
-          onPress={() => router.replace(basePath)}
-          style={s.backBtn}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
-          <ChevronLeftIcon color="#fff" size={22} />
-        </TouchableOpacity>
-        <View style={s.headerCenter}>
-          <Text style={s.headerTitle} numberOfLines={1}>{name || 'Business Book'}</Text>
-          <Text style={s.headerSub}>Add Member, Book Activity etc</Text>
-        </View>
-        <View style={s.headerRight}>
-          {isOwner && (
+      {selectionMode ? (
+        <View style={s.header}>
+          <TouchableOpacity
+            onPress={exitSelectionMode}
+            style={s.backBtn}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Feather name="x" size={22} color="#fff" />
+          </TouchableOpacity>
+          <View style={s.headerCenter}>
+            <Text style={s.headerTitle}>
+              {selectedIds.size} {selectedIds.size === 1 ? 'entry' : 'entries'} selected
+            </Text>
+          </View>
+          <View style={s.headerRight}>
             <TouchableOpacity
               style={s.headerIconBtn}
-              onPress={() => {
-                if (!canShare) { router.push('/(app)/settings/subscription'); return; }
-                router.push({ pathname: `${basePath}/[id]/manage-shares`, params: { id, name } });
-              }}
+              onPress={selectedIds.size === filtered.length ? () => setSelectedIds(new Set()) : selectAll}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              {!canShare && (
-                <View style={{ position: 'absolute', top: -3, right: -3, zIndex: 10 }}>
-                  <Text style={{ fontSize: 9, lineHeight: 12 }}>👑</Text>
-                </View>
-              )}
-              <UserPlusIcon color={canShare ? 'rgba(255,255,255,0.8)' : '#F59E0B'} size={20} />
+              <Text style={{ color: '#fff', fontFamily: Font.semiBold, fontSize: 12 }}>
+                {selectedIds.size === filtered.length ? 'Deselect All' : 'Select All'}
+              </Text>
             </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={s.headerIconBtn}
-            onPress={() => setMenuVisible(true)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <DotsIcon color="rgba(255,255,255,0.8)" size={18} />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[s.headerIconBtn, { opacity: selectedIds.size === 0 ? 0.4 : 1 }]}
+              onPress={handleDeleteSelected}
+              disabled={selectedIds.size === 0}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Feather name="trash-2" size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      ) : (
+        <View style={s.header}>
+          <TouchableOpacity
+            onPress={() => router.replace(basePath)}
+            style={s.backBtn}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <ChevronLeftIcon color="#fff" size={22} />
+          </TouchableOpacity>
+          <View style={s.headerCenter}>
+            <Text style={s.headerTitle} numberOfLines={1}>{name || 'Business Book'}</Text>
+            <Text style={s.headerSub}>Add Member, Book Activity etc</Text>
+          </View>
+          <View style={s.headerRight}>
+            {isOwner && (
+              <TouchableOpacity
+                style={s.headerIconBtn}
+                onPress={() => {
+                  if (!canShare) { router.push('/(app)/settings/subscription'); return; }
+                  router.push({ pathname: `${basePath}/[id]/manage-shares`, params: { id, name } });
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                {!canShare && (
+                  <View style={{ position: 'absolute', top: -3, right: -3, zIndex: 10 }}>
+                    <Text style={{ fontSize: 9, lineHeight: 12 }}>👑</Text>
+                  </View>
+                )}
+                <UserPlusIcon color={canShare ? 'rgba(255,255,255,0.8)' : '#F59E0B'} size={20} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={s.headerIconBtn}
+              onPress={() => setMenuVisible(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <DotsIcon color="rgba(255,255,255,0.8)" size={18} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       {/* Search */}
       <View style={s.searchWrapper}>
@@ -972,6 +1061,26 @@ export default function BookDetailScreen() {
         </Pressable>
       </Modal>
 
+      {/* Delete Entry Sheet — single or bulk */}
+      <DeleteEntrySheet
+        visible={!!deleteEntryTarget}
+        entry={deleteEntryTarget}
+        bulkCount={deleteEntryTarget?._bulk ? deleteEntryTarget._count : null}
+        isLoading={deleteEntryTarget?._bulk ? bulkDeleteEntries.isPending : deleteEntry.isPending}
+        onDismiss={() => setDeleteEntryTarget(null)}
+        onConfirm={() => {
+          if (deleteEntryTarget?._bulk) {
+            bulkDeleteEntries.mutate(deleteEntryTarget._ids);
+          } else {
+            deleteEntry.mutate(deleteEntryTarget.id, {
+              onSuccess: () => setDeleteEntryTarget(null),
+            });
+          }
+        }}
+        C={C}
+        Font={Font}
+      />
+
       {/* Delete All Entries Sheet */}
       <DeleteAllEntriesSheet
         visible={showDeleteAllSheet}
@@ -1245,6 +1354,12 @@ const makeStyles = (C, Font) => StyleSheet.create({
   },
   entryCardDivider: {
     borderBottomWidth: 1, borderBottomColor: C.border,
+  },
+  checkbox: {
+    width: 20, height: 20, borderRadius: 10,
+    borderWidth: 2, borderColor: C.border,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 10,
   },
   entryBadge: {
     borderRadius: 7, paddingHorizontal: 8, paddingVertical: 4,

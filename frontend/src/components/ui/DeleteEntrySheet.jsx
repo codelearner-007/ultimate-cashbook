@@ -6,19 +6,19 @@ import {
 import { Feather } from '@expo/vector-icons';
 
 /**
- * Bottom-sheet confirmation for deleting a single entry.
- * No text-input confirmation required — simpler than DeleteBookSheet.
+ * Bottom-sheet confirmation for deleting a single entry or a bulk selection.
  *
  * Props:
  *   visible    — controls visibility
- *   entry      — { type, amount, remark, entry_date } (can be null while animating out)
+ *   entry      — { type, amount, remark } (single mode; can be null while animating out)
+ *   bulkCount  — number > 1 → bulk mode; shows count instead of entry preview
  *   isLoading  — show spinner on Delete button while mutation is pending
  *   onDismiss  — called after the sheet animates closed (cancel or backdrop tap)
  *   onConfirm  — called when the user taps Delete
  *   C, Font    — theme tokens
  */
 export default function DeleteEntrySheet({
-  visible, entry, isLoading, onDismiss, onConfirm, C, Font,
+  visible, entry, bulkCount, isLoading, onDismiss, onConfirm, C, Font,
 }) {
   const slideY    = useRef(new Animated.Value(500)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
@@ -46,6 +46,7 @@ export default function DeleteEntrySheet({
 
   if (!visible) return null;
 
+  const isBulk = !!bulkCount;
   const isIn   = entry?.type === 'in';
   const amount = entry?.amount != null
     ? Number(entry.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -71,36 +72,47 @@ export default function DeleteEntrySheet({
               <Feather name="trash-2" size={20} color="#fff" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[s.title, { color: C.text, fontFamily: Font.bold }]}>Delete Entry</Text>
+              <Text style={[s.title, { color: C.text, fontFamily: Font.bold }]}>
+                {isBulk ? `Delete ${bulkCount} Entries` : 'Delete Entry'}
+              </Text>
               <Text style={[s.subtitle, { color: C.danger, fontFamily: Font.medium }]}>
                 This cannot be undone
               </Text>
             </View>
           </View>
 
-          {/* Entry preview */}
-          <View style={[s.previewCard, { backgroundColor: C.background, borderColor: C.border }]}>
-            <View style={s.previewRow}>
-              <Text style={[s.previewLabel, { color: C.textMuted, fontFamily: Font.regular }]}>Type</Text>
-              <Text style={[s.previewValue, { color: typeColor, fontFamily: Font.semiBold }]}>{typeLabel}</Text>
+          {/* Preview — bulk count card or single entry card */}
+          {isBulk ? (
+            <View style={[s.previewCard, { backgroundColor: C.background, borderColor: C.border }]}>
+              <View style={s.previewRow}>
+                <Text style={[s.previewLabel, { color: C.textMuted, fontFamily: Font.regular }]}>Selected entries</Text>
+                <Text style={[s.previewValue, { color: C.danger, fontFamily: Font.bold }]}>{bulkCount}</Text>
+              </View>
             </View>
-            <View style={[s.previewDivider, { backgroundColor: C.border }]} />
-            <View style={s.previewRow}>
-              <Text style={[s.previewLabel, { color: C.textMuted, fontFamily: Font.regular }]}>Amount</Text>
-              <Text style={[s.previewValue, { color: C.text, fontFamily: Font.bold }]}>{amount}</Text>
+          ) : (
+            <View style={[s.previewCard, { backgroundColor: C.background, borderColor: C.border }]}>
+              <View style={s.previewRow}>
+                <Text style={[s.previewLabel, { color: C.textMuted, fontFamily: Font.regular }]}>Type</Text>
+                <Text style={[s.previewValue, { color: typeColor, fontFamily: Font.semiBold }]}>{typeLabel}</Text>
+              </View>
+              <View style={[s.previewDivider, { backgroundColor: C.border }]} />
+              <View style={s.previewRow}>
+                <Text style={[s.previewLabel, { color: C.textMuted, fontFamily: Font.regular }]}>Amount</Text>
+                <Text style={[s.previewValue, { color: C.text, fontFamily: Font.bold }]}>{amount}</Text>
+              </View>
+              {!!entry?.remark && (
+                <>
+                  <View style={[s.previewDivider, { backgroundColor: C.border }]} />
+                  <View style={s.previewRow}>
+                    <Text style={[s.previewLabel, { color: C.textMuted, fontFamily: Font.regular }]}>Note</Text>
+                    <Text style={[s.previewValue, { color: C.text, fontFamily: Font.regular }]} numberOfLines={2}>
+                      {entry.remark}
+                    </Text>
+                  </View>
+                </>
+              )}
             </View>
-            {!!entry?.remark && (
-              <>
-                <View style={[s.previewDivider, { backgroundColor: C.border }]} />
-                <View style={s.previewRow}>
-                  <Text style={[s.previewLabel, { color: C.textMuted, fontFamily: Font.regular }]}>Note</Text>
-                  <Text style={[s.previewValue, { color: C.text, fontFamily: Font.regular }]} numberOfLines={2}>
-                    {entry.remark}
-                  </Text>
-                </View>
-              </>
-            )}
-          </View>
+          )}
 
           {/* Buttons */}
           <View style={s.btnRow}>
@@ -124,7 +136,7 @@ export default function DeleteEntrySheet({
                 : <Feather name="trash-2" size={15} color="#fff" />
               }
               <Text style={[s.btnText, { color: '#fff', fontFamily: Font.bold }]}>
-                {isLoading ? 'Deleting…' : 'Delete Entry'}
+                {isLoading ? 'Deleting…' : isBulk ? `Delete ${bulkCount} Entries` : 'Delete Entry'}
               </Text>
             </TouchableOpacity>
           </View>

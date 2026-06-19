@@ -299,7 +299,6 @@ Every new or modified screen/component **must match the visual language of the e
 | `BookSettingsScreen.jsx` | `/(app)/books/[id]/book-settings` | both | ✅ Complete |
 | `SettingsScreen.jsx` | `/(app)/settings` | both | ✅ Complete |
 | `ProfileScreen.jsx` | `/(app)/settings/profile` | both | ✅ Complete |
-| `BusinessSettingsScreen.jsx` | `/(app)/settings/business` | both | ✅ Complete |
 | `LoginScreen.jsx` | `/(auth)/login` | — | ✅ Complete |
 | `DashboardScreen.jsx` | `/(app)/dashboard` | superadmin | Alias → AdminUsersScreen |
 

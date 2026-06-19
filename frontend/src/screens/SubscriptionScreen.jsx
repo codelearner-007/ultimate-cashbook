@@ -28,7 +28,7 @@ const PLANS = [
     color:        PLAN_META.free.color,
     description:  'Perfect for getting started',
     rows: [
-      { label: 'Cashbooks',           value: '3',          included: true  },
+      { label: 'Cashbooks',           value: '5',          included: true  },
       { label: 'Entries',             value: 'Unlimited',  included: true  },
       { label: 'Storage',             value: 'Local only', included: true  },
       { label: 'Multi-device',        value: 'No',         included: false },

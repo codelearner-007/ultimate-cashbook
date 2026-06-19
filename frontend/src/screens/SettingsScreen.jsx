@@ -65,15 +65,6 @@ const UserIcon = ({ color, size = 14 }) => (
   </View>
 );
 
-const BuildingIcon = ({ color, size = 14 }) => (
-  <View style={{ width: size, height: size, justifyContent: 'flex-end', alignItems: 'center' }}>
-    <View style={{ width: size * 0.78, height: size * 0.7, borderWidth: 1.5, borderColor: color, flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingHorizontal: 2 }}>
-      <View style={{ width: size * 0.18, height: size * 0.18, borderWidth: 1, borderColor: color }} />
-      <View style={{ width: size * 0.18, height: size * 0.18, borderWidth: 1, borderColor: color }} />
-      <View style={{ width: size * 0.18, height: size * 0.18, borderWidth: 1, borderColor: color }} />
-    </View>
-  </View>
-);
 
 const CurrencyIcon = ({ color, size = 14 }) => (
   <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
@@ -252,9 +243,8 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
     {
       title: 'Account',
       items: [
-        { Icon: UserIcon,     label: 'Profile',           sub: null,          route: profileRoute,               accent: null },
-        { Icon: BuildingIcon, label: 'Business Settings', sub: 'My Business', route: '/(app)/settings/business', accent: null },
-        { Icon: CurrencyIcon, label: 'Currency',          sub: currencySub,   route: '/(app)/settings/currency', accent: null },
+        { Icon: UserIcon,     label: 'Profile',  sub: null,        route: profileRoute,               accent: null },
+        { Icon: CurrencyIcon, label: 'Currency', sub: currencySub, route: '/(app)/settings/currency', accent: null },
       ],
     },
     {
@@ -273,7 +263,7 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
     {
       title: 'App',
       items: [
-        { Icon: ShareIcon,  label: 'Manage Access',      sub: 'Invitations & shared books', route: hasSharing ? '/(app)/settings/manage-access' : '/(app)/settings/subscription', accent: null, badge: hasSharing ? pendingInviteCount : 0, crown: hasSharing ? null : 'pro' },
+        { Icon: ShareIcon,  label: 'Manage Access',      sub: 'Invitations & shared books', route: '/(app)/settings/manage-access', accent: null, badge: pendingInviteCount, crown: hasSharing ? null : 'pro' },
         { Icon: BellIcon,   label: 'Notifications',      sub: 'Manage alerts',              route: '/(app)/settings/notifications', accent: null },
         { Icon: ShieldIcon, label: 'Privacy & Security', sub: 'Privacy policy',              route: '/(app)/settings/privacy-policy', accent: null },
         { Icon: CloudIcon,  label: 'Backup & Sync',      sub: hasCloud ? 'Cloud sync active' : 'Requires Pro or Business', route: hasCloud ? '/(app)/settings/backup-sync' : '/(app)/settings/subscription', accent: null, crown: hasCloud ? null : 'pro' },

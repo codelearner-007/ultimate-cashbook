@@ -275,7 +275,7 @@ No user action is needed or possible — this is fully automatic.
 | Data Type | What Happens |
 |---|---|
 | All entries | Kept — nothing is ever deleted |
-| All books | Kept in DB — books beyond the Free limit (3) become read-only |
+| All books | Kept in DB — books beyond the Free limit (5) become read-only |
 | Cloud sync | Pauses — last synced data remains accessible on that device |
 | PDF / Excel export | Locked behind paywall again |
 | Reports | View-only mode re-applied |

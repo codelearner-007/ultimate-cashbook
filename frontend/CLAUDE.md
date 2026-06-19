@@ -65,10 +65,6 @@ frontend/
 │           ├── manage-access.jsx # → ManageAccessScreen
 │           ├── subscription.jsx  # → SubscriptionScreen
 │           ├── privacy-policy.jsx # → PrivacyPolicyScreen
-│           └── business/
-│               ├── index.jsx     # → BusinessSettingsScreen
-│               ├── profile.jsx   # → BusinessProfileScreen
-│               └── delete.jsx    # → DeleteBusinessScreen
 ├── src/
 │   ├── screens/                  # All screen components (one file = one screen)
 │   ├── components/
@@ -90,7 +86,8 @@ frontend/
 │   │       ├── SyncConfirmSheet.jsx   # Confirm upload local → cloud
 │   │       ├── ClearLocalDataSheet.jsx # Confirm clear local data (cloud unaffected)
 │   │       ├── RestoreOrFreshSheet.jsx # Restore-or-Later sheet (launch + BackupSyncScreen)
-│   │       └── FreshStartSheet.jsx    # 2-step confirm: delete all cloud + local data
+│   │       ├── FreshStartSheet.jsx    # 2-step confirm: delete all cloud + local data
+│   │       └── LimitReachedSheet.jsx  # Plan-limit notification sheet (books & shares); props: visible, onDismiss, limitType ('books'|'shares'), currentLimit, currentTier
 │   ├── hooks/
 │   │   ├── useBooks.js           # useBooks, useCreateBook, useDeleteBook (React Query)
 │   │   ├── useBookSort.js        # Sort state + sorted list derivation
@@ -190,7 +187,8 @@ frontend/
 - `useBooks()` — queryKey `['books']`, staleTime 2 min, calls `GET /api/v1/books`
 - Header: total net balance (sum across all books), book count, theme toggle, avatar → settings
 - Sort modes: `updated` (default) | `created` | `alpha` | `custom` (drag-reorder)
-- FAB → "Add New Book" modal → `useCreateBook().mutate({ name })`
+- FAB → if `books.length >= getLimit(user,'books')` → `LimitReachedSheet` (limitType='books'); else "Add New Book" modal → `useCreateBook().mutate({ name })`
+- Book creation error `BOOK_LIMIT_REACHED:{n}` from backend also opens `LimitReachedSheet`
 - ⋮ on card → `BookMenu` bottom sheet → confirm delete → `useDeleteBook().mutate(id)`
 - Tap book → `/(app)/books/[id]`
 - Bottom nav: Cashbooks | Help | Settings

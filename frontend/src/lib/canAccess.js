@@ -32,7 +32,7 @@ const FEATURES = {
  */
 const LIMITS = {
   // Owned cashbooks
-  books:          { free: 3,  pro: 15, business: Infinity },
+  books:          { free: 5,  pro: 15, business: Infinity },
 
   // Invited guests per account
   guest_access:   { free: 0,  pro: 1,  business: 10 },
@@ -64,6 +64,6 @@ export function getLimit(user, feature) {
 }
 
 /** Convenience constants — use instead of magic numbers in the UI. */
-export const FREE_BOOK_LIMIT     = LIMITS.books.free;     // 3
+export const FREE_BOOK_LIMIT     = LIMITS.books.free;     // 5
 export const PRO_BOOK_LIMIT      = LIMITS.books.pro;      // 15
 export const BUSINESS_BOOK_LIMIT = LIMITS.books.business; // Infinity

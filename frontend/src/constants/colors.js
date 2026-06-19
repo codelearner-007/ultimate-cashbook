@@ -91,5 +91,15 @@ export const DarkColors = {
 // Accent palette for book cards — lives here so screens import from theme, not inline
 export const CARD_ACCENTS = ['#39AAAA', '#16A34A', '#7C3AED', '#D97706', '#DB2777'];
 
+// Super-admin gold — intentionally fixed (not theme-adaptive) so the badge always reads as "special"
+export const SUPER_ADMIN_GOLD = {
+  text:       '#FCD34D',   // amber-300
+  textDark:   '#D97706',   // amber-600 (readable on light bg)
+  bg:         'rgba(251,191,36,0.22)',
+  border:     'rgba(251,191,36,0.55)',
+  dot:        '#FCD34D',
+  spark:      ['#FCD34D', '#F59E0B', '#FDE68A', '#D97706'],
+};
+
 // Legacy alias — screens still on the old API keep working
 export const Colors = LightColors;

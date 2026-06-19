@@ -8,6 +8,9 @@ from app.utils.book_access import get_book_owner_id
 
 router = APIRouter()
 
+# Mirrors canAccess.js LIMITS.books — superadmin is handled by role check
+BOOK_LIMITS = {"free": 5, "pro": 15, "business": None}  # None = unlimited
+
 
 @router.get("/shared", response_model=List[SharedBookResponse])
 async def get_shared_books(user_id: str = Depends(get_current_user)):
@@ -94,6 +97,32 @@ async def get_books(user_id: str = Depends(get_current_user)):
 @router.post("", response_model=BookResponse, status_code=201)
 async def create_book(payload: BookCreate, user_id: str = Depends(get_current_user)):
     sb = get_supabase()
+
+    # Resolve caller's tier and role
+    profile = (
+        sb.table("profiles")
+        .select("role, subscription_tier")
+        .eq("id", user_id)
+        .single()
+        .execute()
+    ).data or {}
+
+    if profile.get("role") != "superadmin":
+        tier  = profile.get("subscription_tier") or "free"
+        limit = BOOK_LIMITS.get(tier)          # None = unlimited
+        if limit is not None:
+            count = (
+                sb.table("books")
+                .select("id", count="exact")
+                .eq("user_id", user_id)
+                .execute()
+            ).count or 0
+            if count >= limit:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"BOOK_LIMIT_REACHED:{limit}",
+                )
+
     result = sb.table("books").insert({
         "user_id": user_id,
         "name": payload.name.strip(),

@@ -19,6 +19,7 @@ import { useSyncStore } from '../../store/syncStore';
 import Toast from '../../lib/toast';
 import { getLimit } from '../../lib/canAccess';
 import { shadow } from '../../constants/shadows';
+import LimitReachedSheet from '../ui/LimitReachedSheet';
 import { CARD_ACCENTS } from '../../constants/colors';
 import SortSheet from './SortSheet';
 import DraggableList from './DraggableList';
@@ -426,7 +427,7 @@ export default function BooksView({
 
   const isSuperAdmin = user?.role === 'superadmin';
   const tier         = user?.subscription_tier ?? 'free';
-  const bookLimit    = getLimit(user, 'books');   // superadmin: Infinity | free: 3 | pro: 15 | business: Infinity
+  const bookLimit    = getLimit(user, 'books');   // superadmin: Infinity | free: 5 | pro: 15 | business: Infinity
   const canAddBook   = books.length < bookLimit;
 
   const { data: sharedBooks = [], isLoading: sharedLoading } = useSharedBooks();
@@ -491,6 +492,7 @@ export default function BooksView({
   const [deleteDialog,      setDeleteDialog]      = useState(null); // book | null
   const deleteBookSheetCloseRef = useRef(null);
   const [leaveDialog,       setLeaveDialog]       = useState(null); // book | null
+  const [showLimitSheet,   setShowLimitSheet]   = useState(false);
 
   const currency = profile?.currency ?? 'PKR';
 
@@ -568,6 +570,10 @@ export default function BooksView({
       {
         onError: (err) => {
           const detail = err?.response?.data?.detail ?? err?.message ?? 'Network error';
+          if (typeof detail === 'string' && detail.startsWith('BOOK_LIMIT_REACHED:')) {
+            setShowLimitSheet(true);
+            return;
+          }
           Alert.alert('Could not create book', detail);
         },
       },
@@ -868,7 +874,7 @@ export default function BooksView({
           style={[s.fab, { bottom: fabBottom }]}
           onPress={() => {
             if (!canAddBook) {
-              router.push('/(app)/settings/subscription');
+              setShowLimitSheet(true);
               return;
             }
             setShowModal(true);
@@ -882,7 +888,7 @@ export default function BooksView({
           <Text style={s.fabText}>
             {canAddBook
               ? 'ADD NEW BOOK'
-              : bookLimit === 3 ? 'UPGRADE — FREE LIMIT (3)' : `UPGRADE — PRO LIMIT (${bookLimit})`
+              : bookLimit === 5 ? 'UPGRADE — FREE LIMIT (5)' : `UPGRADE — PRO LIMIT (${bookLimit})`
             }
           </Text>
         </TouchableOpacity>
@@ -1020,6 +1026,15 @@ export default function BooksView({
         isLoading={leaveSharedBook.isPending}
         C={C}
         Font={Font}
+      />
+
+      {/* ── Book limit reached sheet ─────────────────────────────────────── */}
+      <LimitReachedSheet
+        visible={showLimitSheet}
+        onDismiss={() => setShowLimitSheet(false)}
+        limitType="books"
+        currentLimit={bookLimit === Infinity ? 0 : bookLimit}
+        currentTier={tier}
       />
 
       {/* ── Add book modal (slide-up, keyboard-aware) ───────────────────── */}

@@ -117,6 +117,9 @@ async function getDb() {
       'ALTER TABLE entries      ADD COLUMN attachment_url       TEXT',
       'ALTER TABLE entries      ADD COLUMN attachment_path      TEXT',
       'ALTER TABLE entries      ADD COLUMN attachment_provider  TEXT',
+      // cloud_entry_id links a local entry row to its corresponding cloud UUID.
+      // Set after a successful background push so update/delete can target the right cloud row.
+      'ALTER TABLE entries      ADD COLUMN cloud_entry_id       TEXT',
       'ALTER TABLE books        ADD COLUMN cloud_id             TEXT',
       'ALTER TABLE categories   ADD COLUMN display_order        INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE customers    ADD COLUMN display_order        INTEGER NOT NULL DEFAULT 0',
@@ -775,4 +778,19 @@ export async function localGetCloudBookId(localId) {
   const db = await getDb();
   const row = await db.getFirstAsync(`SELECT cloud_id FROM books WHERE id = ?`, [localId]);
   return row?.cloud_id ?? null;
+}
+
+// ── Entry cloud-ID bridge ──────────────────────────────────────────────────────
+// After a background push creates an entry in the cloud, we store the returned
+// cloud UUID so that subsequent updates/deletes can target the right cloud row.
+
+export async function localSetEntryCloudId(localEntryId, cloudEntryId) {
+  const db = await getDb();
+  await db.runAsync(`UPDATE entries SET cloud_entry_id = ? WHERE id = ?`, [cloudEntryId, localEntryId]);
+}
+
+export async function localGetCloudEntryId(localEntryId) {
+  const db = await getDb();
+  const row = await db.getFirstAsync(`SELECT cloud_entry_id FROM entries WHERE id = ?`, [localEntryId]);
+  return row?.cloud_entry_id ?? null;
 }

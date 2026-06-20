@@ -75,6 +75,17 @@ import {
   apiReorderSuppliers      as _apiReorderSuppliers,
 } from './api';
 
+// Convenience aliases — avoids L.* prefix for these two frequently-used helpers
+const localSetEntryCloudId = (...args) => L.localSetEntryCloudId(...args);
+const localGetCloudEntryId = (...args) => L.localGetCloudEntryId(...args);
+
+// Stamp the last-synced timestamp whenever a background push succeeds.
+// Uses stampLastSynced (not finishSync) so it never resets isSyncing or the
+// progress bar if a manual sync is running at the same time.
+function stampSyncTime() {
+  useSyncStore.getState().stampLastSynced(new Date().toISOString());
+}
+
 // Shared books exist only in the cloud — not in the local SQLite.
 // This helper routes reads to the cloud API when the book has no local record.
 async function isLocalBook(bookId) {
@@ -129,7 +140,10 @@ export const apiCreateBook = async (name, cur) => {
   if (shouldBackupToCloud()) {
     // Fire-and-forget — user never waits on this.
     _apiCreateBook(name, cur)
-      .then(cloud => L.localSetBookCloudId(localBook.id, cloud.id).catch(() => {}))
+      .then(cloud => {
+        L.localSetBookCloudId(localBook.id, cloud.id).catch(() => {});
+        stampSyncTime();
+      })
       .catch(() => {}); // silent — AutoSyncMonitor retries on reconnect
   }
 
@@ -140,13 +154,10 @@ export const apiUpdateBook = async (id, p) => {
   const result = await L.localUpdateBook(id, p);
 
   if (shouldBackupToCloud()) {
-    // id here is a local book id; look up the cloud id for the push.
     localBookForCloud(id)
       .then(local => {
-        // If id is already a cloud id (superadmin case during initial sync),
-        // fall back to using it directly.
         const cloudId = local?.cloud_id ?? id;
-        _apiUpdateBook(cloudId, p).catch(() => {});
+        _apiUpdateBook(cloudId, p).then(stampSyncTime).catch(() => {});
       })
       .catch(() => {});
   }
@@ -160,7 +171,7 @@ export const apiDeleteBook = async (id) => {
 
   const tasks = [L.localDeleteBook(id)];
   if (cloudId && shouldBackupToCloud()) {
-    tasks.push(_apiDeleteBook(cloudId).catch(() => {}));
+    tasks.push(_apiDeleteBook(cloudId).then(stampSyncTime).catch(() => {}));
   }
   await Promise.all(tasks);
 };
@@ -199,16 +210,21 @@ export const apiCreateEntry = async (bookId, p) => {
 
   if (shouldBackupToCloud()) {
     localBookForCloud(bookId)
-      .then(local => {
+      .then(async local => {
         const cloudBookId = local?.cloud_id ?? bookId;
-        _apiCreateEntry(cloudBookId, {
+        const cloudEntry = await _apiCreateEntry(cloudBookId, {
           ...p,
-          // FK IDs are local — null them out; text snapshots (category, contact_name) are preserved
+          // FK IDs are local — null them out; text snapshots are preserved
           category_id:     null,
           customer_id:     null,
           supplier_id:     null,
           payment_mode_id: null,
-        }).catch(() => {});
+        });
+        // Store the cloud UUID so update/delete can target the right cloud row.
+        if (cloudEntry?.id) {
+          localSetEntryCloudId(localEntry.id, cloudEntry.id).catch(() => {});
+        }
+        stampSyncTime();
       })
       .catch(() => {});
   }
@@ -222,12 +238,17 @@ export const apiUpdateEntry = async (bookId, id, p) => {
   const result = await L.localUpdateEntry(bookId, id, p);
 
   if (shouldBackupToCloud()) {
-    localBookForCloud(bookId)
-      .then(local => {
-        const cloudBookId = local?.cloud_id ?? bookId;
-        _apiUpdateEntry(cloudBookId, id, p).catch(() => {});
-      })
-      .catch(() => {});
+    Promise.all([
+      localBookForCloud(bookId),
+      localGetCloudEntryId(id),
+    ]).then(([local, cloudEntryId]) => {
+      // Only push to cloud if we know the cloud entry UUID.
+      // If cloud_entry_id is null the entry has never been pushed yet —
+      // AutoSyncMonitor will upload it on the next cycle via fingerprint matching.
+      if (!cloudEntryId) return;
+      const cloudBookId = local?.cloud_id ?? bookId;
+      _apiUpdateEntry(cloudBookId, cloudEntryId, p).then(stampSyncTime).catch(() => {});
+    }).catch(() => {});
   }
 
   return result;
@@ -236,13 +257,16 @@ export const apiUpdateEntry = async (bookId, id, p) => {
 export const apiDeleteEntry = async (bookId, id) => {
   if (!await isLocalBook(bookId)) return _apiDeleteEntry(bookId, id);
 
+  // Read cloud_entry_id BEFORE deleting locally (row disappears after delete)
+  const cloudEntryId = await localGetCloudEntryId(id).catch(() => null);
+
   await L.localDeleteEntry(bookId, id);
 
-  if (shouldBackupToCloud()) {
+  if (cloudEntryId && shouldBackupToCloud()) {
     localBookForCloud(bookId)
       .then(local => {
         const cloudBookId = local?.cloud_id ?? bookId;
-        _apiDeleteEntry(cloudBookId, id).catch(() => {});
+        _apiDeleteEntry(cloudBookId, cloudEntryId).then(stampSyncTime).catch(() => {});
       })
       .catch(() => {});
   }
@@ -257,7 +281,7 @@ export const apiDeleteAllEntries = async (bookId) => {
     localBookForCloud(bookId)
       .then(local => {
         const cloudBookId = local?.cloud_id ?? bookId;
-        _apiDeleteAllEntries(cloudBookId).catch(() => {});
+        _apiDeleteAllEntries(cloudBookId).then(stampSyncTime).catch(() => {});
       })
       .catch(() => {});
   }

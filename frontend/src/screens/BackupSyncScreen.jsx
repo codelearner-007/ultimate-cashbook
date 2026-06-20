@@ -17,7 +17,7 @@ import {
   getLocalStats, syncLocalToCloud, syncCloudToLocal, getCloudDeltaStats,
 } from '../lib/syncManager';
 import { localClearAll } from '../lib/localDb';
-import { apiGetBooks, apiDeleteBook } from '../lib/api';
+import { apiGetBooks, apiDeleteBook, apiGetSharedBooks } from '../lib/api';
 import { canAccess, getLimit } from '../lib/canAccess';
 import Toast from '../lib/toast';
 import SyncConfirmSheet from '../components/ui/SyncConfirmSheet';
@@ -366,10 +366,10 @@ export default function BackupSyncScreen() {
   const subscriptionTier   = user?.subscription_tier    ?? 'free';
   const cloudDataDeleteAt  = user?.cloud_data_delete_at ?? null;
   const isSuperAdmin       = user?.role === 'superadmin';
-  // User whose subscription has lapsed — grace period countdown shown
   const isLapsed           = (subscriptionStatus === 'expired' || subscriptionStatus === 'cancelled') && !!cloudDataDeleteAt;
   const hadPaidPlan        = isSuperAdmin || subscriptionTier !== 'free' || isLapsed;
   const backupDays         = hadPaidPlan ? (isSuperAdmin ? 15 : getLimit(user, 'backup_days')) : 0;
+  const isFreeUser         = !isSuperAdmin && subscriptionTier === 'free' && !isLapsed;
 
   const [stats,              setStats]              = useState(null);
   const [statsLoading,       setStatsLoading]       = useState(true);
@@ -377,6 +377,8 @@ export default function BackupSyncScreen() {
   const [delta,              setDelta]              = useState(null);
   const [deltaLoading,       setDeltaLoading]       = useState(true);
   const [cloudBookCount,     setCloudBookCount]     = useState(0);
+  // Shared books the free user has been given access to
+  const [sharedBookCount,    setSharedBookCount]    = useState(0);
 
   const [showSyncConfirm,    setShowSyncConfirm]    = useState(false);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
@@ -402,20 +404,36 @@ export default function BackupSyncScreen() {
     const [s, net, d] = await Promise.all([
       getLocalStats(),
       Network.getNetworkStateAsync().catch(() => null),
-      getCloudDeltaStats(),
+      canSync ? getCloudDeltaStats() : Promise.resolve(null),
     ]);
     setStats(s);
     setNetState(net);
     setStatsLoading(false);
-    setDelta(d);
-    setDeltaLoading(false);
-    try {
-      const cloudBooks = await apiGetBooks();
-      setCloudBookCount(cloudBooks.length);
-    } catch {
-      setCloudBookCount(d.hasCloudData ? 1 : 0);
+    if (d !== null) {
+      setDelta(d);
+      setDeltaLoading(false);
+    } else {
+      setDelta(null);
+      setDeltaLoading(false);
     }
-  }, []);
+    if (canSync) {
+      try {
+        const cloudBooks = await apiGetBooks();
+        setCloudBookCount(cloudBooks.length);
+      } catch {
+        setCloudBookCount(d?.hasCloudData ? 1 : 0);
+      }
+    }
+    // For free users: check how many shared books they have access to
+    if (isFreeUser && isOnline) {
+      try {
+        const shared = await apiGetSharedBooks();
+        setSharedBookCount(shared?.length ?? 0);
+      } catch {
+        setSharedBookCount(0);
+      }
+    }
+  }, [canSync, isFreeUser, isOnline]);
 
   useEffect(() => {
     let mounted = true;
@@ -423,32 +441,46 @@ export default function BackupSyncScreen() {
       const [s, net, d] = await Promise.all([
         getLocalStats(),
         Network.getNetworkStateAsync().catch(() => null),
-        getCloudDeltaStats(),
+        canSync ? getCloudDeltaStats() : Promise.resolve(null),
       ]);
       if (!mounted) return;
       setStats(s);
       setNetState(net);
       setStatsLoading(false);
-      setDelta(d);
+      if (d !== null) {
+        setDelta(d);
+      }
       setDeltaLoading(false);
-      try {
-        const cloudBooks = await apiGetBooks();
-        if (mounted) setCloudBookCount(cloudBooks.length);
-      } catch {
-        if (mounted) setCloudBookCount(d.hasCloudData ? 1 : 0);
+      if (canSync) {
+        try {
+          const cloudBooks = await apiGetBooks();
+          if (mounted) setCloudBookCount(cloudBooks.length);
+        } catch {
+          if (mounted) setCloudBookCount(d?.hasCloudData ? 1 : 0);
+        }
+      }
+      if (isFreeUser && isOnline) {
+        try {
+          const shared = await apiGetSharedBooks();
+          if (mounted) setSharedBookCount(shared?.length ?? 0);
+        } catch {
+          if (mounted) setSharedBookCount(0);
+        }
       }
     })();
     return () => { mounted = false; };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useFocusEffect(useCallback(() => {
     loadData();
   }, [loadData]));
 
-  const isAlreadySynced = !deltaLoading && delta !== null && delta.toUpload === 0 && (stats?.total ?? 0) > 0;
+  const isAlreadySynced = canSync && !deltaLoading && delta !== null && delta.toUpload === 0 && (stats?.total ?? 0) > 0;
   const hasCloudData    = delta?.hasCloudData ?? false;
-  const hasUnrestoredCloudData = !deltaLoading && hasCloudData &&
+  const hasUnrestoredCloudData = canSync && !deltaLoading && hasCloudData &&
     ((delta?.onlyInCloudEntries ?? 0) > 0 || (delta?.newBooks ?? 0) > 0);
+
+  const lastSyncLabel = fmtDate(lastSyncedAt);
 
   const handleSync = useCallback(() => {
     if (isSyncing) return;
@@ -530,7 +562,8 @@ export default function BackupSyncScreen() {
     }
   }, [setHasRestored, qc, loadData]);
 
-  const lastSyncLabel = fmtDate(lastSyncedAt);
+  // ── Free user with shared books: determine if their shared data is in sync ──
+  const freeHasSharedAccess = isFreeUser && sharedBookCount > 0;
 
   return (
     <SafeAreaView applyTop style={st.safe}>
@@ -555,13 +588,12 @@ export default function BackupSyncScreen() {
           style={st.scroll}
           contentContainerStyle={st.content}
           showsVerticalScrollIndicator={false}
-          // Disable scroll interaction when lapsed overlay is showing
           scrollEnabled={!isLapsed}
           pointerEvents={isLapsed ? 'none' : 'auto'}
         >
 
           {/* ── Status card ── */}
-          <View style={[st.card, { borderColor: isOnline ? C.cashIn + '66' : C.danger + '66' }]}>
+          <View style={[st.card, { marginTop: 16, borderColor: isOnline ? C.cashIn + '66' : C.danger + '66' }]}>
             <View style={st.statusRow}>
               <Animated.View style={[st.statusDot, { backgroundColor: isOnline ? C.cashIn : C.danger, opacity: dotOpacity }]} />
               <Text style={[st.statusText, { color: C.text, fontFamily: Font.semiBold }]}>
@@ -569,7 +601,7 @@ export default function BackupSyncScreen() {
               </Text>
               {netState?.type && (
                 <Text style={[st.statusSub, { color: C.textMuted, fontFamily: Font.regular }]}>
-                  {'  ·  '}{netState.type}
+                  {'  ·  '}{netState.type.toUpperCase()}
                 </Text>
               )}
             </View>
@@ -598,9 +630,11 @@ export default function BackupSyncScreen() {
             )}
           </View>
 
-          {/* ── Local data card ── */}
-          <Text style={[st.sectionLabel, { color: C.textMuted, fontFamily: Font.semiBold }]}>LOCAL DATA</Text>
-          <View style={[st.card, { padding: 0, overflow: 'hidden' }]}>
+          {/* ── Local data section ── */}
+          <Text style={[st.sectionLabel, { color: C.textMuted, fontFamily: Font.semiBold, marginTop: 24 }]}>
+            LOCAL DATA
+          </Text>
+          <View style={[st.card, { padding: 0, overflow: 'hidden', marginTop: 8 }]}>
             {statsLoading ? (
               <View style={{ padding: 20, alignItems: 'center' }}>
                 <Text style={{ color: C.textMuted, fontFamily: Font.regular, fontSize: 13 }}>Loading…</Text>
@@ -629,7 +663,7 @@ export default function BackupSyncScreen() {
               <Text style={[st.sectionLabel, { color: C.textMuted, fontFamily: Font.semiBold, marginTop: 24 }]}>
                 BACKUP DATA
               </Text>
-              <View style={[st.card, { padding: 0, overflow: 'hidden' }]}>
+              <View style={[st.card, { padding: 0, overflow: 'hidden', marginTop: 8 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16, gap: 12 }}>
                   <View style={{ width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: C.primaryLight }}>
                     <Feather name="archive" size={17} color={C.primary} />
@@ -656,25 +690,53 @@ export default function BackupSyncScreen() {
             </>
           )}
 
-          {/* ── Pro gate ── */}
-          {!canSync ? (
-            <View style={[st.gateCard, { backgroundColor: '#F59E0B14', borderColor: '#F59E0B44' }]}>
-              <Text style={{ fontSize: 28, marginBottom: 10 }}>👑</Text>
-              <Text style={[st.gateTitle, { color: C.text, fontFamily: Font.bold }]}>Pro Feature</Text>
-              <Text style={[st.gateSub, { color: C.textMuted, fontFamily: Font.regular }]}>
-                Cloud backup & sync requires a Pro or Business subscription. Your data is safe locally.
-              </Text>
-              <TouchableOpacity
-                style={[st.gateBtn, { backgroundColor: '#F59E0B' }]}
-                onPress={() => router.push('/(app)/settings/subscription')}
-                activeOpacity={0.85}
-              >
-                <Text style={[st.gateBtnText, { fontFamily: Font.bold }]}>View Plans 👑</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
+          {/* ── Shared book sync status — for free users with shared access ── */}
+          {freeHasSharedAccess && (
             <>
-              {/* ── Cloud actions ── */}
+              <Text style={[st.sectionLabel, { color: C.textMuted, fontFamily: Font.semiBold, marginTop: 24 }]}>
+                SHARED BOOKS
+              </Text>
+              <View style={[st.card, { padding: 0, overflow: 'hidden', marginTop: 8 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 16, gap: 12 }}>
+                  <View style={{ width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', backgroundColor: C.primaryLight }}>
+                    <Feather name="users" size={17} color={C.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, color: C.text, fontFamily: Font.semiBold }}>
+                      {sharedBookCount} Shared {sharedBookCount === 1 ? 'Book' : 'Books'}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: C.textMuted, fontFamily: Font.regular, marginTop: 2 }}>
+                      Shared books sync automatically from the owner's cloud.
+                    </Text>
+                  </View>
+                </View>
+                <View style={[st.rowDivider, { backgroundColor: C.border }]} />
+                {/* Sync status row */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, gap: 12 }}>
+                  <View style={{
+                    width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: isOnline ? C.cashIn + '18' : C.border,
+                  }}>
+                    <Feather name={isOnline ? 'check-circle' : 'cloud-off'} size={16} color={isOnline ? C.cashIn : C.textMuted} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, color: isOnline ? C.cashIn : C.textMuted, fontFamily: Font.semiBold }}>
+                      {isOnline ? 'Auto-Synced' : 'Sync paused (offline)'}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: C.textMuted, fontFamily: Font.regular, marginTop: 2 }}>
+                      {isOnline
+                        ? (lastSyncLabel ? `Last updated: ${lastSyncLabel}` : 'Connected — data is live from cloud')
+                        : 'Will sync automatically when internet is available'}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* ── Cloud actions (paid / superadmin) ── */}
+          {canSync ? (
+            <>
               <Text style={[st.sectionLabel, { color: C.textMuted, fontFamily: Font.semiBold, marginTop: 24 }]}>
                 CLOUD ACTIONS
               </Text>
@@ -733,6 +795,24 @@ export default function BackupSyncScreen() {
                 </TouchableOpacity>
               </View>
             </>
+          ) : (
+            /* ── Free-tier gate (shown only when user has no shared books access either) ── */
+            !freeHasSharedAccess && (
+              <View style={[st.gateCard, { backgroundColor: '#F59E0B14', borderColor: '#F59E0B44' }]}>
+                <Text style={{ fontSize: 28, marginBottom: 10 }}>👑</Text>
+                <Text style={[st.gateTitle, { color: C.text, fontFamily: Font.bold }]}>Pro Feature</Text>
+                <Text style={[st.gateSub, { color: C.textMuted, fontFamily: Font.regular }]}>
+                  Cloud backup & sync requires a Pro or Business subscription. Your data is safe locally.
+                </Text>
+                <TouchableOpacity
+                  style={[st.gateBtn, { backgroundColor: '#F59E0B' }]}
+                  onPress={() => router.push('/(app)/settings/subscription')}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[st.gateBtnText, { fontFamily: Font.bold }]}>View Plans 👑</Text>
+                </TouchableOpacity>
+              </View>
+            )
           )}
 
           {/* ── Info note ── */}
@@ -741,7 +821,9 @@ export default function BackupSyncScreen() {
             <Text style={[st.infoText, { color: C.primary, fontFamily: Font.regular }]}>
               {canSync
                 ? 'Data auto-syncs to cloud every 5 minutes and on reconnect. Use the Sync button if something seems out of date.'
-                : 'Free plan stores data on this device only. Uninstalling the app will delete all data.'
+                : freeHasSharedAccess
+                  ? 'Your shared books stay in sync automatically. Your own books are stored on this device only — upgrade to back them up.'
+                  : 'Free plan stores data on this device only. Uninstalling the app will delete all data.'
               }
             </Text>
           </View>

@@ -8,6 +8,7 @@ class ProfileResponse(BaseModel):
     email: str
     full_name: Optional[str] = None
     phone: Optional[str] = None
+    age: Optional[int] = None
     avatar_url: Optional[str] = None
     role: Literal["superadmin", "user"] = "user"
     currency: str = "PKR"
@@ -18,15 +19,18 @@ class ProfileResponse(BaseModel):
     subscription_billing_cycle: Literal["monthly", "yearly"] = "monthly"
     subscription_expires_at: Optional[datetime] = None
     subscription_cancel_at_period_end: bool = False
+    cloud_data_delete_at: Optional[datetime] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     storage_mb: float = 0.0
     entry_count: int = 0
+    shared_books_count: int = 0
 
 
 class ProfileUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None
+    age: Optional[int] = None
     avatar_url: Optional[str] = None
     currency: Optional[str] = None
     is_dark_mode: Optional[bool] = None

@@ -125,10 +125,10 @@ Three tabs rendered by `app/(app)/dashboard/_layout.jsx` (Expo Router `<Tabs>`):
 
 **Create:**
 1. User types name in modal, presses "Create"
-2. `useCreateBook().mutate({ name })` fires
+2. `createBook.mutate({ name })` fires **before** `setShowModal(false)` — critical ordering: optimistic update must land in cache before modal closes so the book appears instantly when the sheet dismisses
 3. `onMutate`: optimistically prepends a placeholder book (id `__optimistic__`) to `['books']` cache → UI updates immediately
-4. `POST /api/v1/books` → DB insert (trigger sets `net_balance = 0`)
-5. `onSuccess`: `invalidateQueries(['books'])` → `GET /api/v1/books` refetch → cache replaced with real DB row (including real UUID)
+4. `localCreateBook()` writes to SQLite instantly; cloud backup fires in background (paid/superadmin only)
+5. `onSuccess`: replaces optimistic placeholder with real local book row, then `invalidateQueries(['books'])` → refetch
 
 **Delete:**
 1. User confirms in `BookMenu`

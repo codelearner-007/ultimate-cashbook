@@ -564,7 +564,6 @@ export default function BooksView({
     const currency = profile?.currency ?? 'PKR';
     const name = newBookName.trim();
     setNewBookName('');
-    setShowModal(false);
     createBook.mutate(
       { name, currency },
       {
@@ -578,6 +577,7 @@ export default function BooksView({
         },
       },
     );
+    setShowModal(false);
   }, [newBookName, createBook]);
 
   const handleMenuSelect = useCallback((key, book) => {
@@ -871,25 +871,23 @@ export default function BooksView({
       {/* ── FAB (personal workspace only) ───────────────────────────────── */}
       {activeWorkspace === 'personal' && (
         <TouchableOpacity
-          style={[s.fab, { bottom: fabBottom }]}
+          style={[s.fab, !canAddBook && s.fabDisabled, { bottom: fabBottom }]}
           onPress={() => {
             if (!canAddBook) {
-              setShowLimitSheet(true);
+              Toast.show({
+                type: 'info',
+                text1: 'Book limit reached',
+                text2: `Your ${tier === 'pro' ? 'Pro' : 'Free'} plan allows up to ${bookLimit} book${bookLimit !== 1 ? 's' : ''}. Upgrade to add more.`,
+              });
               return;
             }
             setShowModal(true);
           }}
-          activeOpacity={0.85}
+          activeOpacity={canAddBook ? 0.85 : 1}
         >
-          {canAddBook
-            ? <PlusIcon color={C.onPrimary} size={16} />
-            : <Text style={{ fontSize: 15 }}>👑</Text>
-          }
-          <Text style={s.fabText}>
-            {canAddBook
-              ? 'ADD NEW BOOK'
-              : bookLimit === 5 ? 'UPGRADE — FREE LIMIT (5)' : `UPGRADE — PRO LIMIT (${bookLimit})`
-            }
+          <PlusIcon color={canAddBook ? C.onPrimary : C.textSubtle} size={16} />
+          <Text style={[s.fabText, !canAddBook && s.fabTextDisabled]}>
+            ADD NEW BOOK
           </Text>
         </TouchableOpacity>
       )}
@@ -1192,7 +1190,13 @@ const makeStyles = (C, Font) => StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 52,
     ...shadow(C.primary, 2, 8, 0.25),
   },
-  fabText: { color: C.onPrimary, fontFamily: Font.extraBold, fontSize: 13, letterSpacing: 0.8, lineHeight: 18 },
+  fabDisabled: {
+    backgroundColor: C.cardAlt,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  fabText:         { color: C.onPrimary,   fontFamily: Font.extraBold, fontSize: 13, letterSpacing: 0.8, lineHeight: 18 },
+  fabTextDisabled: { color: C.textSubtle },
 
   // Bottom nav
   bottomNav:      { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 40, backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 10, paddingBottom: 16, zIndex: 10, elevation: 10 },

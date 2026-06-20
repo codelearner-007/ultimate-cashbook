@@ -1,21 +1,31 @@
 /**
  * Data source router — local-always, cloud-backup architecture.
  *
- * Golden rule: Internet is NEVER required for any CRUD operation.
- * Local SQLite is the primary store for ALL users. Cloud sync is a
+ * Golden rule: Internet is NEVER required for any CRUD operation on own books.
+ * Local SQLite is the primary store for books the user owns. Cloud sync is a
  * background side-effect, never a prerequisite.
  *
- * Read routing (ALL tiers):
+ * Read routing — Own books (ALL tiers):
  *   Always → local SQLite (instant, works offline/online, no network check)
  *
- * Write routing:
+ * Read routing — Shared books (books the user does NOT own):
+ *   Always → cloud API directly. Shared books are never pulled into the
+ *   recipient's local SQLite, so isLocalBook() returns false and every read
+ *   falls through to the real backend.
+ *
+ * Write routing — Own books:
  *   Free tier          → local SQLite only (never touches cloud)
  *   Paid / Superadmin  → local SQLite first (instant, returned to caller),
  *                        then fire-and-forget background push to cloud.
  *                        If offline or push fails → silent; AutoSyncMonitor
  *                        uploads queued writes on next reconnect.
  *
- * Initial cloud → local pull:
+ * Write routing — Shared books:
+ *   Always → cloud API directly. No local SQLite write, no cloud backup
+ *   side-effect. Backend resolves the owner via book_shares and stores
+ *   entries under the owner's user_id.
+ *
+ * Initial cloud → local pull (own books only):
  *   When a paid/superadmin user logs in on a new device with no local data,
  *   syncManager.syncCloudToLocal() is triggered from _layout.jsx to
  *   download all cloud data into SQLite once.

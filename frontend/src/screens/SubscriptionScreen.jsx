@@ -30,12 +30,12 @@ const PLANS = [
     rows: [
       { label: 'Cashbooks',           value: '5',          included: true  },
       { label: 'Entries',             value: 'Unlimited',  included: true  },
+      { label: 'Reports',             value: 'View only',  included: true  },
       { label: 'Storage',             value: 'Local only', included: true  },
       { label: 'Multi-device',        value: 'No',         included: false },
       { label: 'PDF / Excel Export',  value: 'No',         included: false },
-      { label: 'Reports',             value: 'View only',  included: true  },
       { label: 'Shared Books',        value: 'No',         included: false },
-      { label: 'Backup History',      value: 'None',       included: false },
+      { label: 'Backup Data',          value: 'No',         included: false },
       { label: 'Guest Access',        value: 'No',         included: false },
     ],
   },
@@ -52,12 +52,12 @@ const PLANS = [
     rows: [
       { label: 'Cashbooks',           value: '15',             included: true  },
       { label: 'Entries',             value: 'Unlimited',      included: true  },
+      { label: 'Reports',             value: 'Full access',    included: true  },
       { label: 'Storage',             value: 'Cloud sync',     included: true  },
       { label: 'Multi-device',        value: 'Yes',            included: true  },
       { label: 'PDF / Excel Export',  value: 'Yes',            included: true  },
-      { label: 'Reports',             value: 'Full access',    included: true  },
       { label: 'Shared Books',        value: 'Yes',            included: true  },
-      { label: 'Backup History',      value: '7 days',         included: true  },
+      { label: 'Backup Data',          value: '7 days',         included: true  },
       { label: 'Guest Access',        value: '1 guest',        included: true  },
     ],
   },
@@ -74,12 +74,12 @@ const PLANS = [
     rows: [
       { label: 'Cashbooks',           value: 'Unlimited',      included: true  },
       { label: 'Entries',             value: 'Unlimited',      included: true  },
+      { label: 'Reports',             value: 'Full access',    included: true  },
       { label: 'Storage',             value: 'Cloud sync',     included: true  },
       { label: 'Multi-device',        value: 'Yes',            included: true  },
       { label: 'PDF / Excel Export',  value: 'Yes',            included: true  },
-      { label: 'Reports',             value: 'Full access',    included: true  },
       { label: 'Shared Books',        value: 'Yes',            included: true  },
-      { label: 'Backup History',      value: '30 days',        included: true  },
+      { label: 'Backup Data',          value: '15 days',        included: true  },
       { label: 'Guest Access',        value: 'Up to 10 guests', included: true  },
     ],
   },
@@ -765,10 +765,13 @@ export default function SubscriptionScreen() {
 
   const handleActivateConfirm = useCallback(() => {
     if (!pendingPlanKey) return;
-    // For activate/upgrade: open platform billing, then simulate a dev update
-    // In production this is replaced by the server notification webhook
+    // For activate/upgrade: open platform billing, then simulate a dev update.
+    // In production this is replaced by the server-side payment webhook which
+    // passes the exact expires_at from the payment processor.
     openPlatformSubscriptions();
-    // Dev convenience — update tier locally so UI reflects the change
+    // Dev convenience — update tier locally so UI reflects the change.
+    // No expires_at here: the backend calculates it from subscription_started_at
+    // + billing_cycle so the renewal time is anchored to the original purchase time.
     updateSub({
       tier: pendingPlanKey,
       subscription_status: 'active',
@@ -780,12 +783,25 @@ export default function SubscriptionScreen() {
   const accentColor = currentPlan.color ?? C.primary;
   const pendingPlan = PLANS.find(p => p.key === pendingPlanKey) ?? null;
 
-  // Timing display
-  const startedLabel  = startedAt ? fmtDate(startedAt) : null;
-  const expiresLabel  = expiresAt ? fmtDate(expiresAt) : null;
+  // Timing display — preserve exact time-of-day from expiresAt
+  const startedLabel = startedAt ? fmtDate(startedAt) : null;
+  const expiresLabel = expiresAt
+    ? new Date(expiresAt).toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit', hour12: true,
+      })
+    : null;
   let daysLeft = null;
+  let hoursLeft = null;
   if (expiresAt) {
-    daysLeft = Math.max(0, Math.ceil((new Date(expiresAt) - Date.now()) / 86400000));
+    const msLeft = new Date(expiresAt) - Date.now();
+    if (msLeft > 0) {
+      daysLeft  = Math.floor(msLeft / 86400000);
+      hoursLeft = Math.floor((msLeft % 86400000) / 3600000);
+    } else {
+      daysLeft = 0;
+      hoursLeft = 0;
+    }
   }
 
   const s = useMemo(() => makeStyles(C), [C]);
@@ -891,8 +907,10 @@ export default function SubscriptionScreen() {
                   <>
                     <View style={[s.timingDivider, { backgroundColor: accentColor + '30' }]} />
                     <View style={s.timingCell}>
-                      <Text style={[s.timingLabel, { color: C.textMuted, fontFamily: Font.medium }]}>Days left</Text>
-                      <Text style={[s.timingValue, { color: accentColor, fontFamily: Font.bold }]}>{daysLeft}</Text>
+                      <Text style={[s.timingLabel, { color: C.textMuted, fontFamily: Font.medium }]}>Time left</Text>
+                      <Text style={[s.timingValue, { color: accentColor, fontFamily: Font.bold }]}>
+                        {daysLeft > 0 ? `${daysLeft}d ${hoursLeft}h` : hoursLeft > 0 ? `${hoursLeft}h` : 'Expires soon'}
+                      </Text>
                     </View>
                   </>
                 )}

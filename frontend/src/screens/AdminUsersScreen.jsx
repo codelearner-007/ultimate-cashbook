@@ -13,6 +13,7 @@ import { useAuthStore } from '../store/authStore';
 import { useProfile, useUpdateProfile } from '../hooks/useProfile';
 import Toast from '../lib/toast';
 import { apiGetAllUsers, apiGetBooks } from '../lib/api';
+import { localGetUserStats } from '../lib/localDb';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PLAN_META, planColor, planLabel } from '../constants/plans';
 import { SUPER_ADMIN_GOLD as SAG } from '../constants/colors';
@@ -294,6 +295,13 @@ export default function AdminUsersScreen() {
     refetchOnWindowFocus: true,
   });
 
+  const { data: localStats } = useQuery({
+    queryKey: ['local-user-stats'],
+    queryFn:  localGetUserStats,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
+
   useFocusEffect(
     useCallback(() => {
       setIsFocused(true);
@@ -343,12 +351,12 @@ export default function AdminUsersScreen() {
     email:              adminProfile?.email     ?? user?.email     ?? '',
     avatar_url:         adminProfile?.avatar_url ?? null,
     isAdmin:            true,
-    book_count:         books.length,
-    storage_mb:         adminProfile?.storage_mb ?? 0,
-    entry_count:        adminProfile?.entry_count ?? 0,
-    shared_books_count: 0,
+    book_count:         books.length,                             // local SQLite (authoritative)
+    entry_count:        localStats?.entry_count ?? adminProfile?.entry_count ?? 0, // local SQLite
+    storage_mb:         adminProfile?.storage_mb ?? 0,           // cloud (accurate for admin)
+    shared_books_count: adminProfile?.shared_books_count ?? 0,   // cloud (book_shares table)
     created_at:         null,
-  }), [user, adminProfile, books.length]);
+  }), [user, adminProfile, books.length, localStats]);
 
   const listData = useMemo(() => [adminItem, ...filteredUsers], [adminItem, filteredUsers]);
 
@@ -570,45 +578,51 @@ export default function AdminUsersScreen() {
 
                 <Text style={s.modalUserName}>{selectedUser.full_name}</Text>
                 <Text style={s.modalUserEmail}>{selectedUser.email}</Text>
+                {selectedUser.isAdmin && (
+                  <View style={{ marginTop: 6 }}>
+                    <SuperAdminBadge />
+                  </View>
+                )}
               </View>
                 );
               })()}
 
               {/* Stats row — Books | Entries | Storage | Access */}
+              {(() => {
+                const isFreeUser = !selectedUser.isAdmin && (selectedUser.subscription_tier ?? 'free') === 'free';
+                const dispBooks   = isFreeUser ? 0 : (selectedUser.book_count ?? 0);
+                const dispEntries = isFreeUser ? 0 : (selectedUser.entry_count ?? 0);
+                const dispStorage = isFreeUser ? 0 : (selectedUser.storage_mb ?? 0);
+                const dispAccess  = isFreeUser ? 0 : (selectedUser.shared_books_count ?? 0);
+                return (
               <View style={s.modalStatsRow}>
                 <View style={s.modalStatItem}>
-                  <Text style={s.modalStatValue}>{selectedUser.book_count ?? 0}</Text>
+                  <Text style={s.modalStatValue}>{dispBooks}</Text>
                   <Text style={s.modalStatLabel}>Books</Text>
                 </View>
                 <View style={s.modalStatDivider} />
                 <View style={s.modalStatItem}>
-                  <Text style={s.modalStatValue}>{selectedUser.entry_count ?? 0}</Text>
+                  <Text style={s.modalStatValue}>{dispEntries}</Text>
                   <Text style={s.modalStatLabel}>Entries</Text>
                 </View>
                 <View style={s.modalStatDivider} />
                 <View style={s.modalStatItem}>
-                  <Text style={s.modalStatValue}>
-                    {(selectedUser.subscription_tier ?? 'free') === 'free'
-                      ? '0 KB'
-                      : fmtStorage(selectedUser.storage_mb)}
-                  </Text>
+                  <Text style={s.modalStatValue}>{fmtStorage(dispStorage)}</Text>
                   <Text style={s.modalStatLabel}>Storage</Text>
                 </View>
-                {!selectedUser.isAdmin && (
-                  <>
-                    <View style={s.modalStatDivider} />
-                    <View style={s.modalStatItem}>
-                      <Text style={[s.modalStatValue, { color: (selectedUser.shared_books_count ?? 0) > 0 ? C.primary : C.text }]}>
-                        {selectedUser.shared_books_count ?? 0}
-                      </Text>
-                      <Text style={s.modalStatLabel}>Access{'\n'}Given</Text>
-                    </View>
-                  </>
-                )}
+                <View style={s.modalStatDivider} />
+                <View style={s.modalStatItem}>
+                  <Text style={[s.modalStatValue, { color: dispAccess > 0 ? C.primary : C.text }]}>
+                    {dispAccess}
+                  </Text>
+                  <Text style={s.modalStatLabel}>Access{'\n'}Given</Text>
+                </View>
               </View>
+                );
+              })()}
 
-              {/* Access given info (only for regular users who have shares) */}
-              {!selectedUser.isAdmin && (selectedUser.shared_books_count ?? 0) > 0 && (
+              {/* Access given info (only for paid/admin users who have shares) */}
+              {!selectedUser.isAdmin && (selectedUser.subscription_tier ?? 'free') !== 'free' && (selectedUser.shared_books_count ?? 0) > 0 && (
                 <View style={[s.infoCard, { backgroundColor: C.primaryLight, borderColor: `${C.primary}44`, marginBottom: 8 }]}>
                   <View style={[s.infoCardIconBox, { backgroundColor: `${C.primary}22` }]}>
                     <ShareIcon color={C.primary} size={14} />

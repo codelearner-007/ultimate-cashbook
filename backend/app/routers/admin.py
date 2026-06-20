@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
+from datetime import datetime, timezone
 import httpx
 import logging
 from app.auth.jwt import get_current_user
@@ -332,3 +333,60 @@ async def list_sent_notifications(admin_id: str = Depends(require_superadmin)):
         count_map[nid] = count_map.get(nid, 0) + 1
 
     return [{**n, "recipient_count": count_map.get(n["id"], 0)} for n in notifications]
+
+
+# ── Cloud data cleanup ─────────────────────────────────────────────────────────
+
+@router.post("/cleanup-expired-cloud-data")
+async def cleanup_expired_cloud_data(admin_id: str = Depends(require_superadmin)):
+    """
+    Delete cloud books (and cascade entries) for users whose cloud_data_delete_at
+    has passed. Called by an external cron job (e.g. Render cron, GitHub Actions).
+
+    Returns a summary of what was deleted.
+    """
+    sb = get_supabase()
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Find all users whose cloud data grace period has expired
+    expired_res = (
+        sb.table("profiles")
+        .select("id, email, subscription_tier, cloud_data_delete_at")
+        .neq("role", "superadmin")
+        .lte("cloud_data_delete_at", now)
+        .not_.is_("cloud_data_delete_at", "null")
+        .execute()
+    )
+    expired_users = expired_res.data or []
+
+    deleted_summary = []
+    for user in expired_users:
+        uid = user["id"]
+        try:
+            # Fetch and delete all cloud books for this user (entries cascade)
+            books_res = sb.table("books").select("id").eq("user_id", uid).execute()
+            book_ids = [b["id"] for b in (books_res.data or [])]
+            for book_id in book_ids:
+                sb.table("books").delete().eq("id", book_id).eq("user_id", uid).execute()
+
+            # Clear cloud_data_delete_at so this user is not processed again
+            sb.table("profiles").update({"cloud_data_delete_at": None}).eq("id", uid).execute()
+
+            deleted_summary.append({
+                "user_id": uid,
+                "email": user["email"],
+                "books_deleted": len(book_ids),
+                "status": "deleted",
+            })
+        except Exception as exc:
+            deleted_summary.append({
+                "user_id": uid,
+                "email": user["email"],
+                "books_deleted": 0,
+                "status": f"error: {exc}",
+            })
+
+    return {
+        "processed": len(expired_users),
+        "details": deleted_summary,
+    }

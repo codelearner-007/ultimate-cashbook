@@ -136,9 +136,9 @@ No JWT auth required (these are the endpoints that issue the JWT).
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| GET | `` | Get authenticated user's profile (includes real `storage_mb` via RPC — falls back to 0 if migration 013 not run) | ✅ |
+| GET | `` | Get authenticated user's profile. Computes real `storage_mb` (RPC, fallback 0), `entry_count` (entries table), and `shared_books_count` (accepted book_shares where user is owner). | ✅ |
 | PUT | `` | Update own profile (full_name, phone, avatar_url) | ✅ |
-| PATCH | `/subscription` | Update subscription tier, status, billing cycle, expires_at, cancel_at_period_end | ✅ |
+| PATCH | `/subscription` | Update subscription tier, status, billing cycle, expires_at, cancel_at_period_end. Backend calculates `expires_at` from `subscription_started_at + billing_cycle` if not provided; sets `cloud_data_delete_at` on lapse; clears it on resubscribe. | ✅ |
 
 ---
 
@@ -230,10 +230,11 @@ All endpoints require `require_superadmin` dependency (403 if not superadmin).
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/users` | All non-superadmin profiles with computed stats (book_count, entry_count, storage_mb) |
+| GET | `/users` | All non-superadmin profiles with computed stats (book_count, entry_count, storage_mb, shared_books_count) |
 | GET | `/users/{user_id}/books` | Any user's books (with net_balance and last_entry_at) |
 | POST | `/notifications` | Create notification + fan-out to target users |
 | GET | `/notifications` | All notifications sent by this admin (with recipient_count) |
+| POST | `/cleanup-expired-cloud-data` | Delete cloud books for users whose `cloud_data_delete_at` has passed; called by external cron |
 
 **GET /users** — N+1 pattern: one extra query per user for book count and entry count, plus two RPC calls (`get_user_data_bytes`, `get_user_storage_bytes`) for real storage. Each RPC has a try/except fallback to 0 if migration 013 hasn't run. Acceptable for admin dashboards at current scale.
 
@@ -295,9 +296,9 @@ Query params: `?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`
 
 ### `models/profile.py`
 ```python
-class ProfileResponse:    id, email, full_name, phone, avatar_url, role, currency (default 'PKR'), is_dark_mode, subscription_tier (default 'free'), subscription_status (default 'free'), subscription_started_at?, subscription_billing_cycle (default 'monthly'), subscription_expires_at?, subscription_cancel_at_period_end (default False), created_at, updated_at, storage_mb (float, default 0.0), entry_count (int, default 0)
-class ProfileUpdate:      full_name?, phone?, avatar_url?, currency?
-class UserWithStats:      ProfileResponse + book_count, entry_count, storage_mb (overrides base)
+class ProfileResponse:    id, email, full_name, phone, age (int, optional), avatar_url, role, currency (default 'PKR'), is_dark_mode, subscription_tier (default 'free'), subscription_status (default 'free'), subscription_started_at?, subscription_billing_cycle (default 'monthly'), subscription_expires_at?, subscription_cancel_at_period_end (default False), cloud_data_delete_at? (set when subscription lapses; cleared on resubscribe), created_at, updated_at, storage_mb (float, default 0.0), entry_count (int, default 0), shared_books_count (int, default 0)
+class ProfileUpdate:      full_name?, phone?, age (int, optional)?, avatar_url?, currency?
+class UserWithStats:      ProfileResponse + book_count, entry_count, storage_mb, shared_books_count (all override base defaults)
 class SubscriptionUpdate: subscription_tier: Literal["free","pro","business"], subscription_status: Literal["free","active","cancelled","expired","past_due"] = "active", billing_cycle: Literal["monthly","yearly"] = "monthly", expires_at?: datetime, cancel_at_period_end: bool = False
 ```
 

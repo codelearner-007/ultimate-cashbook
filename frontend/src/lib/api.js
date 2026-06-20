@@ -124,11 +124,28 @@ export const apiUpdateProfile = async (payload) => {
   return (await api.put('/api/v1/profile', payload)).data;
 };
 
-/** PATCH /api/v1/profile/subscription */
-export const apiUpdateSubscription = async ({ tier, billing_cycle = 'monthly' }) => {
+/**
+ * PATCH /api/v1/profile/subscription
+ *
+ * tier              — 'free' | 'pro' | 'business'
+ * subscription_status — 'active' | 'expired' | 'cancelled' | 'free' (defaults to 'active')
+ * billing_cycle     — 'monthly' | 'yearly' (defaults to 'monthly')
+ * expires_at        — ISO string from payment processor; backend calculates if omitted
+ * cancel_at_period_end — bool; defaults to false
+ */
+export const apiUpdateSubscription = async ({
+  tier,
+  subscription_status = 'active',
+  billing_cycle = 'monthly',
+  expires_at = null,
+  cancel_at_period_end = false,
+}) => {
   return (await api.patch('/api/v1/profile/subscription', {
     subscription_tier: tier,
+    subscription_status,
     billing_cycle,
+    ...(expires_at ? { expires_at } : {}),
+    cancel_at_period_end,
   })).data;
 };
 

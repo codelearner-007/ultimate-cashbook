@@ -16,7 +16,7 @@ const FEATURES = {
   // Book sharing / collaboration
   book_sharing:    'pro',
 
-  // Guest access (pro = 1, business = 10)
+  // Guest access — limits only apply to free-tier guests; subscribed guests are always allowed
   guest_access:    'pro',
 
   // Backup history
@@ -34,11 +34,11 @@ const LIMITS = {
   // Owned cashbooks
   books:          { free: 5,  pro: 15, business: Infinity },
 
-  // Invited guests per account
+  // Free-tier guests per account (subscribed guests are not counted against this limit)
   guest_access:   { free: 0,  pro: 1,  business: 10 },
 
   // Backup history in days (0 = none)
-  backup_days:    { free: 0,  pro: 7,  business: 30 },
+  backup_days:    { free: 0,  pro: 7,  business: 15 },
 };
 
 /**

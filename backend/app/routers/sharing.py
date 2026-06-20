@@ -11,7 +11,8 @@ router = APIRouter()
 
 VALID_RIGHTS = {"view", "view_create_edit", "view_create_edit_delete"}
 
-# Mirrors canAccess.js LIMITS.guest_access — superadmin is always unlimited
+# Limits only apply when the guest is on the free tier.
+# Subscribed guests (pro / business) do not count against the owner's quota.
 GUEST_LIMITS = {"free": 0, "pro": 1, "business": 10}  # None / missing = unlimited
 
 
@@ -70,6 +71,7 @@ def _build_share_response(share: dict, profile: dict) -> ShareResponse:
             full_name=profile.get("full_name"),
             email=profile.get("email", ""),
             avatar_url=profile.get("avatar_url"),
+            subscription_tier=profile.get("subscription_tier") or "free",
         ),
         screens=share.get("screens", {}),
         rights=share["rights"],
@@ -99,7 +101,7 @@ async def list_shares(book_id: str, user_id: str = Depends(get_current_user)):
         p["id"]: p
         for p in (
             sb.table("profiles")
-            .select("id, full_name, email, avatar_url")
+            .select("id, full_name, email, avatar_url, subscription_tier")
             .in_("id", profile_ids)
             .execute()
         ).data or []
@@ -137,14 +139,32 @@ async def create_share(
         tier  = profile.get("subscription_tier") or "free"
         limit = GUEST_LIMITS.get(tier)  # None = unlimited
         if limit is not None:
-            active_count = (
+            # Only free-tier guests count against the quota.
+            # Subscribed guests (pro / business) can always be invited.
+            active_shares = (
                 sb.table("book_shares")
-                .select("id", count="exact")
+                .select("shared_with_id")
                 .eq("owner_id", user_id)
                 .in_("status", ["accepted", "pending"])
                 .execute()
-            ).count or 0
-            if active_count >= limit:
+            ).data or []
+
+            if active_shares:
+                guest_ids = list({s["shared_with_id"] for s in active_shares})
+                guest_profiles = (
+                    sb.table("profiles")
+                    .select("id, subscription_tier")
+                    .in_("id", guest_ids)
+                    .execute()
+                ).data or []
+                free_guests = sum(
+                    1 for p in guest_profiles
+                    if not p.get("subscription_tier") or p["subscription_tier"] == "free"
+                )
+            else:
+                free_guests = 0
+
+            if free_guests >= limit:
                 raise HTTPException(
                     status_code=403,
                     detail=f"SHARE_LIMIT_REACHED:{limit}",

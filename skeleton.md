@@ -203,9 +203,10 @@ App Start
 | Cancel                   | Tap    | Closes modal                                                                                 |
 
 ### FAB ("+ Add New Book")
-| Element    | Action | Result                     |
-|------------|--------|----------------------------|
-| FAB button | Tap    | Opens "Add New Book" modal |
+| Element              | State        | Appearance                                          | Action | Result                                              |
+|----------------------|--------------|-----------------------------------------------------|--------|-----------------------------------------------------|
+| FAB button           | Under limit  | Primary colour bg, white `+` icon + "ADD NEW BOOK"  | Tap    | Opens "Add New Book" modal                          |
+| FAB button (disabled)| Limit reached| Grey (`C.cardAlt`) bg, no shadow, dimmed icon+label | Tap    | `Toast.info` — "Book limit reached" with tier/limit message; no sheet or navigation |
 
 #### Add New Book Modal
 | Element          | Action | Result                                                                                    |
@@ -300,12 +301,14 @@ Each card shows: avatar (or initials), full name, **subscription plan pill** (Fr
 ### User Detail Modal
 | Element                                        | Action | Result         |
 |------------------------------------------------|--------|----------------|
-| Avatar ring, name, email                       | —      | Display only; avatar/ring/dot color driven by subscription plan color |
-| Stats row: Books / Entries / Storage / Access  | —      | Display only; "Access Given" column shows count of accepted book shares; highlighted in primary color when > 0 |
-| **Access Given info card** (only when count>0) | —      | Shows share icon + "Sharing N books with other users" |
-| **Subscription card**                          | —      | Shows tier/cycle label; styled with plan accent color |
+| Avatar ring, name, email                       | —      | Display only; ring/dot color = plan color (gold `SAG.spark[1]` for superadmin) |
+| **Super Admin badge** (superadmin only)        | —      | Animated gold "Super Admin" badge shown below email; replaces plan badge |
+| Stats row: Books / Entries / Storage / Access Given | — | Display only for **all** users including superadmin; "Access Given" column shows `shared_books_count`, highlighted in primary color when > 0; Storage shows real value for superadmin (never forced to "0 KB") |
+| **Access Given info card** (only when count>0, non-admin) | — | Shows share icon + "Sharing N books with other users" |
+| **Subscription card** (non-admin only)         | —      | Shows tier/cycle label; styled with plan accent color |
 | Close (✕) / backdrop tap                       | Tap    | Closes modal   |
 
+Superadmin `adminItem` derives `shared_books_count` from `adminProfile?.shared_books_count` (not hardcoded 0).
 No Account Status card — users are differentiated by subscription tier (Free / Pro / Business), not by `is_active`.
 
 ### Data source
@@ -805,7 +808,7 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 ### App Section
 | Row                   | Crown?             | Action | Result                                                               |
 |-----------------------|--------------------|--------|----------------------------------------------------------------------|
-| **Manage Access**     | 👑 Pro (if free)  | Tap    | Navigate to manage-access (if Pro+) OR subscription screen (if free) |
+| **Manage Access**     | 👑 Pro (if free)  | Tap    | Always navigates to `/(app)/settings/manage-access`; free users see inline paywall overlay with "Upgrade to Pro" CTA |
 | **Notifications**     | —                  | Tap    | Navigate to notifications                                            |
 | **Privacy & Security** | —                 | Tap    | Navigate to `/(app)/settings/privacy-policy` (PrivacyPolicyScreen)  |
 | **Backup & Sync**     | 👑 Pro (if free)  | Tap    | Navigate to subscription (if free), navigate to `/(app)/settings/backup-sync` (BackupSyncScreen) otherwise |
@@ -888,6 +891,31 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 
 ### Local Data Card
 - Counts: Cashbooks / Entries / Categories / Customers / Suppliers
+
+### Backup Data Section (current or lapsed paid users only)
+Shown when `subscription_tier !== 'free'` OR `subscription_status` is `'expired'` or `'cancelled'` (i.e., user currently has or previously had a paid plan):
+
+**Lapse overlay** — shown ONLY when `isLapsed === true` (status is `expired`/`cancelled`) AND `cloud_data_delete_at` is set. Covers the entire scrollable content area:
+- Dark semi-transparent backdrop (`rgba(0,0,0,0.55–0.72)`) — scroll is disabled, content is non-interactive
+- Centered card (`C.card` bg, `C.danger` border, drop shadow)
+- `cloud-off` icon in danger-tinted circle
+- "Subscription Ended" title
+- Message explaining the grace period (N days) and how to recover
+- **"CLOUD DATA DELETED IN"** label strip
+- Digital clock row: DD : HH : MM : SS — tiles with ghost-digit depth, colons flash at 1 Hz, themed in `C.danger`
+- Deadline row: calendar icon + exact datetime stamp (`fmtDeadline`)
+- **"Renew Plan to Keep Data"** full-width red button → `/(app)/settings/subscription`
+- Footer note: "Your local data on this device is safe regardless of your subscription."
+- When `timeLeft.expired`: clock hidden, message changes to "Your cloud data has been permanently deleted.", button hidden
+
+**Active paid card** (shown when NOT lapsed AND hadPaidPlan AND backupDays > 0):
+| Element | Content |
+|---|---|
+| Archive icon + "{N}-Day Backup Retention" | "Cloud backups from the last {N} days are stored and restorable." |
+| Last backup row | "Last backup: {timestamp}" or "No backup recorded yet" |
+
+Retention windows: **Pro = 7 days**, **Business = 15 days**
+`cloud_data_delete_at` is set by the backend on subscription lapse = `expires_at + backup_days`. Cleared on resubscribe.
 
 ### Cloud Actions Section (paid/superadmin only)
 | Button                  | State                                                     | Action                                                                               |
@@ -1057,6 +1085,76 @@ Triggered when a **free-tier user** activates any paid plan.
 
 ---
 
+## 17. ManageAccessScreen — `/(app)/settings/manage-access`
+
+`src/screens/ManageAccessScreen.jsx`
+
+**Navigation in:** SettingsScreen → Manage Access row (always navigates here; paywall is inline).
+
+### Free-Tier Gate (book_sharing feature)
+- Free users land on the screen but the entire content area below the header is covered by a `PaywallOverlay` (absolute, `zIndex: 10`).
+- Overlay: semi-transparent frosted backdrop (`rgba(0,0,0,0.75)` dark / `rgba(255,255,255,0.78)` light) + centered card.
+- Card contents:
+  - Lock icon (`Feather lock`, size 28) in `C.primaryLight` circle
+  - **"Pro Feature"** bold title
+  - Descriptive text: "Book sharing and collaboration is available on the Pro plan. Upgrade to invite others and manage access to your cashbooks."
+  - **"Upgrade to Pro"** button (`C.primary` bg, `Feather zap` icon) → `router.push('/(app)/settings/subscription')`
+- Back button in header remains functional (overlay does not cover header).
+- Pro/Business/Superadmin users see no overlay — full screen accessible.
+
+### Header (Pro+ users)
+- `C.primary` background, white "Manage Access" title centered
+- Back chevron (`Feather chevron-left`) → `router.back()`
+
+### Tab Bar
+| Tab | Badge |
+|---|---|
+| **Received** | Red badge showing count of pending invitations |
+| **Given** | No badge |
+
+Active tab underlined in `C.primary`; inactive label in `C.textMuted`.
+
+### Received Tab
+**Empty state:** inbox icon, "No invitations", subtitle text.
+
+**Pending banner** (shown above list when ≥1 pending): bell icon + `"{N} pending invitation(s) awaiting your response"` in `C.primaryLight` card.
+
+**ReceivedCard** — one per invitation:
+- Avatar (initials), book name, sender name, Status badge + Rights badge
+- **Pending** → "Decline" outline button (danger) + "Accept" filled button (primary)
+  - Accept → `PATCH /api/v1/books/:id/shares/:shareId/respond` `action=accept`; spinner while in-flight
+  - Decline → opens `DeclineSheet` bottom sheet (confirm required)
+- **Accepted** → "Leave Book" outline button (danger) → opens `LeaveBookSheet` bottom sheet
+
+**DeclineSheet** (bottom sheet modal):
+- Handle bar, "Decline Invitation" header, danger icon
+- Book info card (book name + owner)
+- Body text with owner name
+- "Cancel" + "Decline Invitation" (danger) buttons; spinner while declining
+
+**LeaveBookSheet** (bottom sheet modal):
+- Handle bar, "Leave Book" header, danger icon
+- Book info card (book name + owner)
+- Body text with owner name
+- "Cancel" + "Leave Book" (danger) buttons; spinner while leaving
+
+### Given Tab
+**Empty state:** share-2 icon, "No access given", "Books you share with others will appear here with their response status."
+
+**GivenCard** — one per share:
+- Avatar (initials of collaborator), collaborator name, book name, Status badge + Rights badge
+- Edit button (pencil, `C.primaryLight` bg) — only shown when status = `accepted` → opens `EditShareSheet`
+- Trash button (`C.dangerLight` bg) → Alert confirm → `DELETE /api/v1/books/:id/shares/:shareId`
+  - Alert title: "Cancel Invitation" (pending) or "Remove Access" (accepted)
+
+**EditShareSheet** — updates rights/screens for an accepted collaborator.
+
+### Real-time
+- `useRealtimeInvitations(user.id)` — live subscription for received invitations
+- `useRealtimeGivenInvitations(user.id)` — live subscription for given invitations
+
+---
+
 ## EntryForm Component (shared: AddEntry + EditEntry)
 
 `src/components/entry/EntryForm.jsx`
@@ -1097,6 +1195,7 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 | Subscription plans page           | SubscriptionScreen                        | ✅ Complete               |
 | Crown gates on locked features    | SettingsScreen, ReportsScreen, BooksView  | ✅ Complete               |
 | Invite collaborator               | BookDetailScreen user-plus icon           | Not implemented           |
+| Manage Access (free-tier paywall) | ManageAccessScreen                        | ✅ Complete (👑 Pro gate) |
 | Notifications settings            | SettingsScreen                            | Not implemented           |
 | Privacy & Security (Privacy Policy) | PrivacyPolicyScreen                     | ✅ Complete               |
 | Backup & Sync                     | BackupSyncScreen (`/(app)/settings/backup-sync`) | ✅ Complete (👑 Pro gate) |

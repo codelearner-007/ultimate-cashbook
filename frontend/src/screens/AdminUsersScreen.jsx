@@ -115,7 +115,9 @@ const getInitials = (str = '') =>
 
 const fmtStorage = (mb) => {
   if (!mb || mb === 0) return '0 KB';
-  if (mb < 1) return `${Math.round(mb * 1024)} KB`;
+  const kb = mb * 1024;
+  if (kb < 1) return '< 1 KB';
+  if (mb < 1) return `${Math.round(kb)} KB`;
   return `${mb.toFixed(1)} MB`;
 };
 

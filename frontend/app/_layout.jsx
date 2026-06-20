@@ -192,10 +192,11 @@ function AutoDeleteMonitor() {
 }
 
 /**
- * Automatically syncs local data to cloud whenever the user comes online.
+ * Automatically syncs local data to cloud:
+ *   1. Whenever the user reconnects (offline → online).
+ *   2. Every 5 minutes while the app is online and in the foreground.
  * Runs silently — no popup, no confirmation. Only for paid/superadmin users.
  * Skips if a sync or restore is already in progress.
- * Fires once per reconnect event (wasOnline ref prevents re-firing on re-renders).
  */
 function AutoSyncMonitor() {
   const user      = useAuthStore(s => s.user);
@@ -217,29 +218,42 @@ function AutoSyncMonitor() {
     return tier && tier !== 'free';
   };
 
+  const runSync = async () => {
+    const { isSyncing: syncing, isRestoring: restoring } = useSyncStore.getState();
+    const currentUser = useAuthStore.getState().user;
+    if (!isEligible(currentUser) || syncing || restoring || running.current) return;
+    if (!useSyncStore.getState().isOnline) return;
+
+    running.current = true;
+    try {
+      startSync();
+      const result = await syncLocalToCloud((done, total, step) => setProgress(done, total, step));
+      finishSync(new Date().toISOString());
+      if (result.synced > 0) {
+        queryClient.invalidateQueries();
+      }
+    } catch {
+      failSync(null); // silent — no error shown to user
+    } finally {
+      running.current = false;
+    }
+  };
+
+  // Fire on reconnect (offline → online)
   useEffect(() => {
     const justReconnected = !wasOnline.current && isOnline;
     wasOnline.current = isOnline;
-
-    if (!justReconnected) return;
-    if (!isEligible(user) || isSyncing || isRestoring || running.current) return;
-
-    running.current = true;
-    (async () => {
-      try {
-        startSync();
-        const result = await syncLocalToCloud((done, total, step) => setProgress(done, total, step));
-        finishSync(new Date().toISOString());
-        if (result.synced > 0) {
-          queryClient.invalidateQueries();
-        }
-      } catch {
-        failSync(null); // silent — no error shown to user
-      } finally {
-        running.current = false;
-      }
-    })();
+    if (justReconnected) runSync();
   }, [isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Also sync every 5 minutes while online
+  useEffect(() => {
+    const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
+    const timer = setInterval(() => {
+      if (useSyncStore.getState().isOnline) runSync();
+    }, AUTO_SYNC_INTERVAL);
+    return () => clearInterval(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;
 }
@@ -621,13 +635,22 @@ const PRIMARY_CLR = '#39AAAA';
 const BG_CLR      = '#EEF7F7';
 
 function RestoreCompletionOverlay() {
-  const show                  = useSyncStore(s => s.restoreJustCompleted);
-  const isRestoring           = useSyncStore(s => s.isRestoring);
-  const restoreProgress       = useSyncStore(s => s.restoreProgress);
+  const show                      = useSyncStore(s => s.restoreJustCompleted);
+  const setRestoreJustCompleted   = useSyncStore(s => s.setRestoreJustCompleted);
+  const isRestoring               = useSyncStore(s => s.isRestoring);
+  const restoreProgress           = useSyncStore(s => s.restoreProgress);
 
   const opacity  = useRef(new Animated.Value(0)).current;
   const dotScale = useRef(new Animated.Value(1)).current;
   const [visible, setVisible] = useState(false);
+
+  // Auto-dismiss after 2.5 s once restore is done, in case BooksView never clears it
+  // (e.g. navigation race where BooksView mounts after isLoading is already false)
+  useEffect(() => {
+    if (!show) return;
+    const t = setTimeout(() => setRestoreJustCompleted(false), 2500);
+    return () => clearTimeout(t);
+  }, [show, setRestoreJustCompleted]);
 
   // Fade in when restore is running or just completed
   useEffect(() => {

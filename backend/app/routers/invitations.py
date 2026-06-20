@@ -101,7 +101,7 @@ async def get_given_invitations(user_id: str = Depends(get_current_user)):
         p["id"]: p
         for p in (
             sb.table("profiles")
-            .select("id, full_name, email, avatar_url")
+            .select("id, full_name, email, avatar_url, subscription_tier")
             .in_("id", collaborator_ids)
             .execute()
         ).data or []
@@ -122,6 +122,7 @@ async def get_given_invitations(user_id: str = Depends(get_current_user)):
                 full_name=collab.get("full_name"),
                 email=collab.get("email", ""),
                 avatar_url=collab.get("avatar_url"),
+                subscription_tier=collab.get("subscription_tier") or "free",
             ),
             screens=share.get("screens", {}),
             rights=share["rights"],

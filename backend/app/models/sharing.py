@@ -28,10 +28,11 @@ class ShareRespondPayload(BaseModel):
 
 
 class CollaboratorProfile(BaseModel):
-    id:         str
-    full_name:  Optional[str] = None
-    email:      str
-    avatar_url: Optional[str] = None
+    id:                str
+    full_name:         Optional[str] = None
+    email:             str
+    avatar_url:        Optional[str] = None
+    subscription_tier: Optional[str] = 'free'
 
 
 class ShareResponse(BaseModel):

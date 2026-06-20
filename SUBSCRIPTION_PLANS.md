@@ -4,7 +4,7 @@
 
 | Feature                       | Free       | Pro        | Business   |
 |-------------------------------|------------|------------|------------|
-| Books                         | 3          | 15         | Unlimited  |
+| Books                         | 5          | 15         | Unlimited  |
 | Entries                       | Unlimited  | Unlimited  | Unlimited  |
 | Storage                       | Local only | Cloud sync | Cloud sync |
 | Multi-device                  | No         | Yes        | Yes        |
@@ -13,7 +13,7 @@
 | Categories                    | Full access| Full access| Full access|
 | Reports                       | View only  | Full access| Full access|
 | Shared Books                  | No         | Yes        | Yes        |
-| Backup History                | No         | 7 days     | 30 days    |
+| Backup Data                   | No         | 7 days     | 15 days    |
 | Guest Access                  | No         | 1 guest    | Up to 10 guests |
 
 ## Pricing
@@ -35,12 +35,12 @@
 ### Pro
 - Full cloud sync — data accessible across multiple devices
 - Full access to all features except unlimited Guest Access
-- 7-day backup history — can restore data from any point in the last 7 days
+- 7-day backup data — can restore data from any point in the last 7 days
 - Guest Access — invite 1 guest per account (View / Edit / Full permission)
 
 ### Business
 - Full cloud sync — data accessible across multiple devices
-- 30-day backup history — can restore data from any point in the last 30 days
+- 15-day backup data — can restore data from any point in the last 15 days
 - Guest Access — invite up to 10 guests per account
   - Owner assigns each guest a permission level: View only, Edit, or Full access
   - Guests can access the owner's cloud books based on their assigned permission

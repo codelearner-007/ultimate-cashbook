@@ -38,6 +38,8 @@ Supabase provides three things for Ultimate CashBook:
 20. `supabase/migrations/023_collaborator_entries_rls.sql` — SELECT policy on `entries` for accepted collaborators; required for Supabase Realtime events
 21. `supabase/migrations/024_realtime_book_shares.sql` — adds `book_shares`, `entries`, and `books` tables to the `supabase_realtime` publication
 22. `supabase/migrations/025_collaborator_books_rls.sql` — SELECT policy on `books` for accepted collaborators; required so Supabase Realtime delivers `books` UPDATE events (field-settings toggles) to collaborators in real time
+23. `supabase/migrations/026_add_age_to_profiles.sql` — adds nullable `age smallint CHECK (age >= 1 AND age <= 120)` column to `profiles`
+24. `supabase/migrations/011_cloud_data_expiry.sql` — adds `cloud_data_delete_at timestamptz` to `profiles`; set by backend when subscription lapses (`expires_at + backup_days`); cleared on resubscribe; used by cleanup cron to delete expired cloud data
 
 **All migrations must be run in order** before the app works correctly. Run them in the Supabase SQL Editor.
 
@@ -53,10 +55,18 @@ Supabase provides three things for Ultimate CashBook:
 | `email` | text | NOT NULL |
 | `full_name` | text | nullable |
 | `phone` | text | nullable |
+| `age` | smallint | nullable, CHECK (age >= 1 AND age <= 120) |
 | `avatar_url` | text | nullable |
 | `role` | text | NOT NULL, default `'user'`, CHECK IN (`'superadmin'`, `'user'`) |
 | `is_active` | boolean | NOT NULL, default `true` |
 | `currency` | text | NOT NULL, default `'PKR'` — user's preferred currency for new books |
+| `subscription_tier` | text | NOT NULL, default `'free'`, CHECK IN (`'free'`, `'pro'`, `'business'`) |
+| `subscription_status` | text | NOT NULL, default `'free'`, CHECK IN (`'free'`, `'active'`, `'cancelled'`, `'expired'`, `'past_due'`) |
+| `subscription_started_at` | timestamptz | nullable — set on first activation; cleared on free downgrade; preserved on renewals |
+| `subscription_billing_cycle` | text | NOT NULL, default `'monthly'`, CHECK IN (`'monthly'`, `'yearly'`) |
+| `subscription_expires_at` | timestamptz | nullable — exact renewal/expiry timestamp, anchored to original `subscription_started_at` time-of-day |
+| `subscription_cancel_at_period_end` | boolean | NOT NULL, default `false` |
+| `cloud_data_delete_at` | timestamptz | nullable — set to `subscription_expires_at + backup_days` when subscription lapses; cleared on resubscribe; cleanup cron deletes cloud books on or after this timestamp |
 | `created_at` | timestamptz | default `now()` |
 | `updated_at` | timestamptz | default `now()` (auto-updated by trigger) |
 

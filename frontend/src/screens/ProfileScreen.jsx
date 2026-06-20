@@ -328,6 +328,7 @@ export default function ProfileScreen() {
 
   const [name,           setName]          = useState('');
   const [phone,          setPhone]         = useState('');
+  const [age,            setAge]           = useState('');
   const [showSuccess,    setShowSuccess]   = useState(false);
   const [localAvatarUri, setLocalAvatarUri] = useState(null);
   const [showPhotoSheet,  setShowPhotoSheet]  = useState(false);
@@ -340,6 +341,7 @@ export default function ProfileScreen() {
     if (profile) {
       setName(profile.full_name ?? '');
       setPhone(profile.phone ?? '');
+      setAge(profile.age != null ? String(profile.age) : '');
     }
   }, [profile]);
 
@@ -349,7 +351,9 @@ export default function ProfileScreen() {
     .split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
   const isDirty = profile
-    ? name.trim() !== (profile.full_name ?? '') || phone !== (profile.phone ?? '')
+    ? name.trim() !== (profile.full_name ?? '')
+      || phone !== (profile.phone ?? '')
+      || age !== (profile.age != null ? String(profile.age) : '')
     : false;
 
   const handlePickImage = async (source) => {
@@ -386,8 +390,9 @@ export default function ProfileScreen() {
 
   const handleUpdate = () => {
     if (!name.trim()) return;
+    const parsedAge = age.trim() ? parseInt(age.trim(), 10) : null;
     updateProfile.mutate(
-      { full_name: name.trim(), phone: phone.trim() || null },
+      { full_name: name.trim(), phone: phone.trim() || null, age: parsedAge },
       {
         onSuccess: () => setShowSuccess(true),
         onError:   () => Alert.alert('Error', 'Could not save changes. Please try again.'),
@@ -482,6 +487,13 @@ export default function ProfileScreen() {
                   onChangeText={setPhone}
                   keyboardType="phone-pad"
                   placeholder="+92 300 0000000"
+                />
+                <AppInput
+                  label="Age"
+                  value={age}
+                  onChangeText={(v) => setAge(v.replace(/[^0-9]/g, ''))}
+                  keyboardType="number-pad"
+                  placeholder="e.g. 25"
                   isLast
                 />
               </View>

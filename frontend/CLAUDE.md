@@ -99,7 +99,7 @@ frontend/
 │   ├── lib/
 │   │   ├── api.js                # All Axios API calls (real backend, no mocks)
 │   │   ├── canAccess.js          # Feature-gate: canAccess(user, feature), getLimit(user, feature) — superadmin always returns true/Infinity
-│   │   ├── dataSource.js         # Data-source router: cloud API (paid/superadmin+online) vs local SQLite (free/offline)
+│   │   ├── dataSource.js         # Data-source router: own books → local SQLite (+ cloud backup for paid); shared books → cloud API directly (via isLocalBook() check)
 │   │   ├── supabase.js           # Supabase client (SecureStore / localStorage adapter)
 │   │   ├── storage.js            # Provider-agnostic attachment abstraction (uploadAttachment, removeAttachment) — superadmin always uses Supabase Storage
 │   │   └── toast.js              # Toast helper
@@ -152,11 +152,12 @@ frontend/
 - `RestoreCloudModal` — centered full-screen `Modal` (not a bottom sheet), shown when `showRestorePrompt=true`:
   - **"Restore from Cloud"** → `syncCloudToLocal()` with `setRestoreJustCompleted(true)` → toast → `router.replace(target)`
   - **"Start Fresh"** → dismisses prompt → toast → `router.replace(target)`; cloud data stays safe
+  - `target` is role-aware: `/(app)/dashboard/users` for superadmin, `/(app)/books` for regular users
 - `RestoreCompletionOverlay` — full-screen animated overlay (`zIndex: 9999`), rendered in `_layout.jsx` above `<Slot />`:
   - Active when `isRestoring === true` OR `restoreJustCompleted === true`
   - Fades in on start, shows pulsing ☁️ icon + progress bar; title changes to "Restore complete! / Loading your books…" when done
-  - Fades out (350 ms) when `restoreJustCompleted` is cleared by `BooksView`
-- `AutoSyncMonitor` — silently syncs local → cloud on reconnect (once per reconnect, paid/superadmin only, skips if sync/restore running)
+  - Fades out (350 ms) when `restoreJustCompleted` is cleared — either by `BooksView` (when `!isLoading`) or by a 2.5 s timeout fallback in the overlay itself (safety net for navigation races where `BooksView` mounts after `isLoading` is already `false`)
+- `AutoSyncMonitor` — silently syncs local → cloud on reconnect AND every 5 minutes while online (paid/superadmin only, skips if sync/restore running; reads store state directly to avoid stale closures in the interval)
 - `AutoDeleteMonitor` — on reconnect, deletes from cloud any books removed locally while offline (only runs when device has previously synced, i.e. `localCloudIds.size > 0`)
 - `NotificationPopup` — centered modal card for unread notifications; auto-shows for regular users; also shows tapped notifications from the OS tray for any logged-in user
 
@@ -203,8 +204,8 @@ frontend/
 - `useBooks()` — queryKey `['books']`, staleTime 2 min, calls `GET /api/v1/books`
 - Header: total net balance (sum across all books), book count, theme toggle, avatar → settings
 - Sort modes: `updated` (default) | `created` | `alpha` | `custom` (drag-reorder)
-- FAB → if `books.length >= getLimit(user,'books')` → `LimitReachedSheet` (limitType='books'); else "Add New Book" modal → `useCreateBook().mutate({ name })`
-- Book creation error `BOOK_LIMIT_REACHED:{n}` from backend also opens `LimitReachedSheet`
+- FAB → if limit reached: button turns grey (`C.cardAlt` bg, no shadow), icon + label dimmed (`C.textSubtle`); tapping fires a `Toast.info` ("Book limit reached" + tier/limit message) — no sheet, no navigation
+- If somehow a create request reaches the backend and returns `BOOK_LIMIT_REACHED:{n}` (403), `LimitReachedSheet` is shown as a fallback safety net
 - ⋮ on card → `BookMenu` bottom sheet → confirm delete → `useDeleteBook().mutate(id)`
 - Tap book → `/(app)/books/[id]`
 - Bottom nav: Cashbooks | Help | Settings
@@ -220,23 +221,27 @@ frontend/
 ---
 
 ### `AdminUsersScreen` → `/(app)/dashboard/users` _(superadmin)_
-- `useQuery({ queryKey: ['admin-users'], queryFn: apiGetAllUsers, refetchInterval: 10000 })`
-  - Polls every **10 seconds** so new user registrations appear near-instantly
-- `useQuery({ queryKey: ['books'], queryFn: apiGetBooks })` — admin's own books for header stats
-- Header stats: Total Users (+ active sub-count) | Total Books | Storage
-- Each user row: avatar, full name, status pill (read-only `is_active`), email, **access badge** (share icon + `shared_books_count` when > 0) — storage shown only in the detail modal, not in the row
-- **No status toggle** — `is_active` is read-only, reflects actual DB state
-- Tap user card → **User Detail Modal** (read-only):
-  - Avatar, name, email, status pill
-  - Stats row: Books / Entries / Storage / Access Given (`shared_books_count`)
-  - Account Status info card: lock icon + Active/Inactive badge — no Switch or confirm dialog
-  - Access Given info card: only shown when `shared_books_count > 0`; shows share icon + description
-- Filters (all compose client-side, horizontal scroll row):
-  - **All** chip — resets all filters
-  - **Status** dropdown → Active / Inactive
-  - **Access** dropdown → Has Shared Books / No Shared Books (filters by `shared_books_count`)
-  - **Date** dropdown → Today / Last 7 Days / This Month / This Year / All Time (filters by `created_at`)
-- The `books` stat in the header = `filteredUsers.reduce(book_count) + adminOwnBooks.length` (admin books only added when no filters active)
+- `useQuery({ queryKey: ['admin-users'], staleTime: 0, refetchOnMount: 'always', refetchInterval: isFocused ? 10000 : false })` — polls every 10 s only while tab is focused; `useFocusEffect` manages `isFocused` and also invalidates `['admin-users']` + `['books']` on every tab focus
+- `useQuery({ queryKey: ['books'], staleTime: 0, refetchOnMount: 'always' })` — admin's own books (local SQLite) for header stats and `adminItem.book_count`
+- `useQuery({ queryKey: ['local-user-stats'], queryFn: localGetUserStats, staleTime: 0 })` — `{ book_count, entry_count }` from local SQLite; authoritative source for admin's own counts
+- **Data sources by role:**
+  - **Superadmin row (`adminItem`):** `book_count` = `books.length` (local SQLite), `entry_count` = `localStats.entry_count` (local SQLite), `storage_mb` + `shared_books_count` = `adminProfile` (cloud via `GET /api/v1/profile`)
+  - **Paid subscriber rows:** all stats from `GET /admin/users` (cloud DB)
+  - **Free user rows:** all stats hard-zeroed in the modal (`isFreeUser` guard) — free users never sync to cloud
+- Header stats: Total Users | Total Books | Storage (include admin row when no filters active)
+- Admin row always first in list, gold-tinted card border + `SuperAdminBadge` in the status slot
+- Each user row: avatar (photo or initials with plan-color bg), full name, **plan pill** (color per `planColor(tier)`, label from `planLabel(tier, cycle)`), email, **access badge** (share icon + count when `shared_books_count > 0` and non-free)
+- Tap user card → **User Detail Modal** (bottom sheet, read-only):
+  - Avatar ring (plan color), name, email
+  - **Super Admin badge** (animated gold `SuperAdminBadge`) below email when `selectedUser.isAdmin === true`
+  - Stats row: Books / Entries / Storage / Access Given — free users see zeroes; Access Given highlighted `C.primary` when > 0
+  - Access Given info card: non-admin + non-free + `shared_books_count > 0`
+  - Subscription card: non-admin users only; accent = `planColor(tier, C.primary)`
+- Filters (client-side, horizontal scroll row, each picker sheet has a "Clear" row when active):
+  - **All** chip — resets `dateFilter` + `planFilter`
+  - **Plan** dropdown → Free / Pro · Monthly / Pro · Yearly / Business · Monthly / Business · Yearly
+  - **Date** dropdown → All Time / Today / Last 7 Days / This Month / This Year (filters by `created_at`)
+- Header `books` stat = `filteredUsers.reduce(book_count) + adminOwnBooks.length` (admin books included only when no filters active)
 
 ---
 
@@ -280,6 +285,7 @@ frontend/
 - Gated: paid / superadmin only (`canAccess(user, 'cloud_sync')`); free users see upgrade card
 - Status card: online dot (animated pulse), last-sync time, upload + restore progress bars
 - Local data card: counts for books / entries / categories / customers / suppliers
+- **Backup Data section** (current or lapsed paid users): shown when `subscription_tier !== 'free'` OR `subscription_status` is `'expired'`/`'cancelled'`; displays retention window (Pro=7 days, Business=15 days) and last backup timestamp; lapsed users see "Your subscription has ended. Backed-up data is still accessible."
 - **Cloud Actions** (paid only):
   - "Sync to Cloud" → `SyncConfirmSheet` → `syncLocalToCloud(onProgress)` → toast; if local empty → "Nothing to sync" modal alert
   - "Restore from Cloud" — conditional render (see logic below) → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal(onProgress)` → toast
@@ -332,13 +338,27 @@ When the button is visible, it can still be **disabled** (but shown) only while 
 
 ---
 
+### `ManageAccessScreen` → `/(app)/settings/manage-access`
+- Always navigated to from SettingsScreen (no pre-navigation gate — paywall is rendered inline)
+- `canAccess(user, 'book_sharing')` checked on mount:
+  - **Free tier** → `PaywallOverlay` covers the content area (absolute, `zIndex: 10`), header + back button remain accessible
+    - Overlay: frosted backdrop (`rgba(0,0,0,0.75)` dark / `rgba(255,255,255,0.78)` light) + centered card
+    - Card: lock icon (`Feather lock`) in `C.primaryLight` circle, "Pro Feature" title, description, "Upgrade to Pro" button → `router.push('/(app)/settings/subscription')`
+  - **Pro / Business / Superadmin** → full screen accessible, no overlay
+- Two tabs: **Received** (pending badge count) | **Given**
+- Real-time via `useRealtimeInvitations(user.id)` + `useRealtimeGivenInvitations(user.id)`
+- **Received tab:** `useReceivedInvitations()` → pending/accepted cards; Accept / Decline (→ `DeclineSheet`) / Leave Book (→ `LeaveBookSheet`)
+- **Given tab:** `useGivenInvitations()` → collaborator cards; edit (→ `EditShareSheet`) / remove (→ `Alert` confirm → `useRemoveShareByOwner()`)
+
+---
+
 ## Books CRUD — Data Flow
 
 ### Create
-1. Modal → `useCreateBook().mutate({ name })`
+1. Modal → `createBook.mutate({ name })` fires first, then `setShowModal(false)` — this ordering ensures the optimistic update lands in the cache before the modal closes, so the new book is visible the instant the sheet dismisses
 2. `onMutate`: optimistic prepend with `id: '__optimistic__'` → UI updates instantly
-3. `POST /api/v1/books` → real book inserted in DB
-4. `onSuccess`: `invalidateQueries(['books'])` → refetch → cache = real DB row with actual UUID
+3. `localCreateBook()` writes to SQLite and returns immediately; cloud backup fires in the background (paid/superadmin only)
+4. `onSuccess`: replaces optimistic placeholder with real local book, then `invalidateQueries(['books'])` → refetch
 5. `onError`: rollback to snapshot
 
 ### Delete
@@ -365,6 +385,19 @@ useEffect(() => {
 ```
 
 This ensures that after a create or delete (which invalidates `['books']` and triggers a refetch), the drag list updates to show the real DB state without requiring the user to switch sort modes.
+
+---
+
+## Data Source Layer (`src/lib/dataSource.js`)
+
+Routes every read and write through `isLocalBook(bookId)` — a fast SQLite check — before deciding where data lives:
+
+| Book type | Reads | Writes |
+|---|---|---|
+| **Own books** | Local SQLite (all tiers, works offline) | Local SQLite → cloud backup (paid/superadmin + online only) |
+| **Shared books** | Cloud API directly | Cloud API directly (backend stores under owner's `user_id`) |
+
+`isLocalBook()` calls `localBookExists(bookId)` in `localDb.js`. Shared books are never pulled into the recipient's SQLite, so the check returns `false` and the cloud path is taken automatically — no screen or hook changes needed.
 
 ---
 
@@ -443,7 +476,8 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `bookFieldsStore` | Zustand | Empty store (stub); field visibility is persisted as individual boolean columns on `books` (DB) and read from `['books']` React Query cache as `show_customer`, `show_supplier`, `show_category`, `show_attachment` |
 | `syncStore` | Zustand | `isOnline`, `isSyncing`, `isRestoring`, `progress { done, total, step }`, `restoreProgress { done, total, step }`, `lastSyncedAt`, `syncError`, `restoreError`, `showRestorePrompt`; actions: `startSync`, `finishSync`, `failSync`, `startRestore`, `finishRestore`, `failRestore`, `setProgress`, `setRestoreProgress` |
 | `['books']` | React Query | All books for current user; staleTime 2 min |
-| `['admin-users']` | React Query | All non-admin users; refetchInterval 10 s |
+| `['admin-users']` | React Query | All non-admin users; polls every 10 s while Users tab is focused (refetchInterval disabled when tab is not focused) |
+| `['local-user-stats']` | React Query | Local SQLite counts: `{ book_count, entry_count }` for the superadmin row in AdminUsersScreen; staleTime 0, refetchOnMount always |
 | `['entries', bookId]` | React Query | Entries for a specific book; staleTime 2 min |
 | `['summary', bookId]` | React Query | Balance summary for a specific book; staleTime 2 min |
 | `['profile']` | React Query | Current user profile; staleTime 5 min |
@@ -534,6 +568,7 @@ Before writing any new screen or component, open a similar existing screen and m
 |---|---|---|---|
 | `['books']` | 2 min | — | Books list |
 | `['admin-users']` | 0 | 10 s | All non-admin users |
+| `['local-user-stats']` | 0 | — | Local SQLite book + entry counts for superadmin row; refetchOnMount always |
 | `['entries', bookId]` | 2 min | — | Book entries |
 | `['summary', bookId]` | 2 min | — | Book balance summary |
 | `['profile']` | 5 min | — | User profile |

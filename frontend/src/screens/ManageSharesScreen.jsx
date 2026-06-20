@@ -115,9 +115,11 @@ export default function ManageSharesScreen() {
   useRealtimeCollaborators(id);
   useRealtimeGivenInvitations(user?.id);
 
-  // Count active + pending (rejected rows are deleted from DB)
-  const activeGuestCount = shares.length;
-  const isAtGuestLimit   = guestLimit !== Infinity && activeGuestCount >= guestLimit;
+  // Only free-tier guests count against the quota; subscribed guests are unlimited.
+  const freeGuestCount = shares.filter(
+    s => !s.shared_with?.subscription_tier || s.shared_with.subscription_tier === 'free'
+  ).length;
+  const isAtGuestLimit = guestLimit !== Infinity && freeGuestCount >= guestLimit;
 
   const [editShare, setEditShare]     = useState(null);
   const [removeShare, setRemoveShare] = useState(null);

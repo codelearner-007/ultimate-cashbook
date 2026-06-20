@@ -20,7 +20,7 @@
 | Categories | Full access | Full access | Full access |
 | Reports | View only (no download / share) | Full access | Full access |
 | Shared Books (Team) | No | Yes | Yes |
-| Backup History | No | 7 days | 30 days |
+| Backup Data | No | 7 days | 15 days |
 | Guest Access | No | 1 guest (View / Edit / Full) | Up to 10 guests (View / Edit / Full — owner sets per guest) |
 | Receive Shared Access | Yes (cloud for shared books only — own books stay local) | Yes | Yes |
 
@@ -180,7 +180,7 @@ Reads `subscription_tier` from `authStore` synchronously — no network call, no
 | `export_pdf_excel` | ❌ | ✅ | ✅ |
 | `reports_download_share` | ❌ | ✅ | ✅ |
 | `shared_books` | ❌ | ✅ | ✅ |
-| `backup_history` | ❌ | ✅ (7 days) | ✅ (30 days) |
+| `backup_history` | ❌ | ✅ (7 days) | ✅ (15 days) |
 | `guest_access` | ❌ | ✅ 1 guest | ✅ up to 10 |
 | `manage_access` | ❌ | ✅ (1 guest limit) | ✅ (10 guest limit) |
 
@@ -436,20 +436,41 @@ Added to backend **after** Phase 4 frontend is complete. Never trust the client 
 
 ---
 
-### Phase 7 — Backup History
+### Phase 7 — Backup Data
 
-- [ ] **Backend:**
-  - Pro: expose last 7 days of entry history with restore option
-  - Business: expose last 30 days
+- [x] **Database (migration 011):**
+  - `cloud_data_delete_at timestamptz` added to `profiles`
+  - Set by backend on lapse: `subscription_expires_at + backup_days` (exact time-of-day preserved)
+  - Cleared on resubscribe
+
+- [x] **Backend — subscription lifecycle (`PATCH /profile/subscription`):**
+  - On lapse (`expired`/`cancelled`/free downgrade): sets `cloud_data_delete_at` from prior tier retention (Pro=7 days, Business=15 days)
+  - On resubscribe (`active`): clears `cloud_data_delete_at`
+  - `subscription_expires_at` calculated from `subscription_started_at + billing_cycle` using `python-dateutil.relativedelta` — exact time-of-day preserved across renewals
+  - `subscription_started_at` preserved on renewals; only set on first activation
+
+- [x] **Backend — cleanup cron (`POST /api/v1/admin/cleanup-expired-cloud-data`):**
+  - Deletes cloud books (entries cascade) for all users where `cloud_data_delete_at <= now()`
+  - Clears `cloud_data_delete_at` after deletion so user is not reprocessed
+  - Called by external cron (Render cron / GitHub Actions) — not auto-triggered
+
+- [x] **Frontend — BackupSyncScreen lapse overlay:**
+  - Shown only when `subscription_status` is `expired`/`cancelled` AND `cloud_data_delete_at` is set
+  - Full-screen dark overlay covers and disables all scroll content
+  - Digital countdown clock (DD:HH:MM:SS) with themed tiles, glow, flashing colons — ticks every second
+  - "Renew Plan to Keep Data" red button → `/(app)/settings/subscription`
+  - When timer hits zero: clock hidden, message "Your cloud data has been permanently deleted."
+
+- [x] **Frontend — Backup Data info card (active paid/superadmin):**
+  - Shows retention window and last backup timestamp when subscription is active
+
+- [ ] **Backend — restore points API (future):**
   - `GET /api/v1/books/:id/backups` — list available restore points
   - `POST /api/v1/books/:id/backups/restore` — restore to a specific point
 
-- [ ] **Frontend — Backup & Sync screen** (Settings → Backup & Sync):
-  - Currently a TODO row in SettingsScreen — implement it
-  - Shows last backup time
-  - List of restore points (7 or 30 days depending on plan)
+- [ ] **Frontend — Full restore UI (future):**
+  - List of restore points (7 or 15 days depending on plan)
   - "Restore" button per restore point with confirmation sheet
-  - Free users see locked state + upgrade prompt
 
 ---
 

@@ -29,12 +29,13 @@ export default function AddCollaboratorScreen() {
   const canShare = canAccess(authUser, 'book_sharing');
   const shareLimit = getLimit(authUser, 'guest_access'); // Infinity for superadmin / business
 
-  // Count accepted + pending shares the owner already has across all books
+  // Only free-tier guests count against the quota; subscribed guests are unlimited.
   const { data: givenInvitations = [] } = useGivenInvitations();
-  const activeShareCount = givenInvitations.filter(
-    i => i.status === 'accepted' || i.status === 'pending'
+  const freeGuestCount = givenInvitations.filter(
+    i => (i.status === 'accepted' || i.status === 'pending') &&
+         (!i.collaborator?.subscription_tier || i.collaborator.subscription_tier === 'free')
   ).length;
-  const atShareLimit = isFinite(shareLimit) && activeShareCount >= shareLimit;
+  const atShareLimit = isFinite(shareLimit) && freeGuestCount >= shareLimit;
 
   const [searchInput,   setSearchInput]   = useState('');
   const [selectedUser,  setSelectedUser]  = useState(null);

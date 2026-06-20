@@ -5,11 +5,10 @@ const BOOKS_KEY = ['books'];
 
 export function useBooks() {
   return useQuery({
-    queryKey:        BOOKS_KEY,
-    queryFn:         apiGetBooks,
-    staleTime:       0,
-    refetchOnFocus:  true,
-    refetchInterval: 5000,  // fallback poll — realtime handles balance updates instantly when available
+    queryKey:       BOOKS_KEY,
+    queryFn:        apiGetBooks,
+    staleTime:      30_000,
+    refetchOnFocus: true,
   });
 }
 
@@ -39,13 +38,12 @@ export function useCreateBook() {
       }
     },
     onSuccess: (newBook) => {
-      // Replace the optimistic placeholder with the real book immediately —
-      // avoids a visible delay for superadmin (cloud backup fires async, but
-      // the local SQLite result is already in `newBook`).
+      // Replace the optimistic placeholder with the real local book row.
+      // No invalidate/refetch needed — local SQLite already has the book and
+      // the cache is correct. A background refetch would only cause a flash.
       qc.setQueryData(BOOKS_KEY, (prev = []) =>
         prev.map(b => b.id === '__optimistic__' ? newBook : b)
       );
-      qc.invalidateQueries({ queryKey: BOOKS_KEY });
     },
   });
 }
@@ -75,12 +73,17 @@ export function useDeleteBook() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (bookId) => apiDeleteBook(bookId),
-    onSuccess: (_data, bookId) => {
+    onMutate: async (bookId) => {
+      await qc.cancelQueries({ queryKey: BOOKS_KEY });
+      const snapshot = qc.getQueryData(BOOKS_KEY);
       qc.setQueryData(BOOKS_KEY, (prev = []) => prev.filter(b => b.id !== bookId));
-      qc.invalidateQueries({ queryKey: BOOKS_KEY });
+      return { snapshot };
     },
-    onError: () => {
-      qc.invalidateQueries({ queryKey: BOOKS_KEY });
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot !== undefined) qc.setQueryData(BOOKS_KEY, ctx.snapshot);
+    },
+    onSuccess: () => {
+      // Cache is already correct from onMutate; no refetch needed.
     },
   });
 }

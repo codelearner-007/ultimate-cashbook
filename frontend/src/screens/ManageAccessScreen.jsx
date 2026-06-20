@@ -547,11 +547,8 @@ const es = StyleSheet.create({
 
 // ── Paywall overlay ────────────────────────────────────────────────────────────
 
-const PaywallOverlay = ({ onUpgrade, C, Font, isDark }) => (
-  <View style={pw.wrap} pointerEvents="box-none">
-    {/* Frosted-glass blur layer */}
-    <View style={[pw.blur, { backgroundColor: isDark ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.78)' }]} />
-
+const PaywallOverlay = ({ onUpgrade, C, Font }) => (
+  <View style={pw.wrap}>
     {/* Card */}
     <View style={[pw.card, { backgroundColor: C.card, borderColor: C.border }]}>
       <View style={[pw.iconCircle, { backgroundColor: C.primaryLight }]}>
@@ -579,14 +576,10 @@ const PaywallOverlay = ({ onUpgrade, C, Font, isDark }) => (
 
 const pw = StyleSheet.create({
   wrap: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
-    zIndex: 10,
-  },
-  blur: {
-    ...StyleSheet.absoluteFillObject,
   },
   card: {
     width: '100%',
@@ -777,6 +770,12 @@ export default function ManageAccessScreen() {
             }
           />
         )
+      ) : !hasAccess ? (
+        <PaywallOverlay
+          onUpgrade={() => router.push('/(app)/settings/subscription')}
+          C={C}
+          Font={Font}
+        />
       ) : (
         given.length === 0 ? (
           <EmptyState
@@ -839,15 +838,6 @@ export default function ManageAccessScreen() {
         Font={Font}
       />
 
-      {/* Paywall — rendered on top for free-tier users */}
-      {!hasAccess && (
-        <PaywallOverlay
-          onUpgrade={() => router.push('/(app)/settings/subscription')}
-          C={C}
-          Font={Font}
-          isDark={isDark}
-        />
-      )}
     </SafeAreaView>
   );
 }

@@ -228,7 +228,11 @@ function AutoSyncMonitor() {
     try {
       startSync();
       const result = await syncLocalToCloud((done, total, step) => setProgress(done, total, step));
+      // Always stamp the time so BackupSyncScreen shows an up-to-date "last synced" value,
+      // even when everything was already in sync (result.synced === 0).
       finishSync(new Date().toISOString());
+      // Only invalidate React Query caches when new items were actually uploaded,
+      // to avoid unnecessary re-renders when nothing changed.
       if (result.synced > 0) {
         queryClient.invalidateQueries();
       }

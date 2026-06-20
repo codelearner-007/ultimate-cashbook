@@ -877,25 +877,37 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 ## 13b. BackupSyncScreen — `/(app)/settings/backup-sync`
 
 **Component:** `BackupSyncScreen.jsx`
-**Access:** Paid tier / superadmin only (free tier sees upgrade gate)
+**Access:** All users can open the screen. Content varies by tier (see sections below).
 
 ### Header
 - Primary-color bg, "Backup & Sync" title, back button
 
-### Status Card
-- Animated dot: green (online) / red (offline), connection type label
-- Last synced timestamp (or "Never synced")
+### Status Card (always shown — all users)
+- Animated dot: green (online) / red (offline), connection type label (e.g. WIFI, CELLULAR)
+- Last synced timestamp from `syncStore.lastSyncedAt` (or "Never synced")
+  - Updates automatically after every background cloud push (book/entry create, update, delete) via `stampSyncTime()` in `dataSource.js`
+  - Updates after every `AutoSyncMonitor` cycle (every 5 min while online) — always stamped even when 0 new items
+  - Updates after a manual sync via the Sync button
 - Upload progress bar (while syncing)
-- Restore progress bar (while restoring) in green
+- Restore progress bar (while restoring) in green (`C.cashIn`)
 - Error message if last sync/restore failed
 
-### Local Data Card
-- Counts: Cashbooks / Entries / Categories / Customers / Suppliers
+### LOCAL DATA Section (always shown — all users)
+- Section label **"LOCAL DATA"** rendered as a separate `sectionLabel` above the card (not inside it), with `marginTop: 24` gap
+- Card (`marginTop: 8`) shows counts: Cashbooks / Entries / Categories / Customers / Suppliers
+- Data sourced from local SQLite via `getLocalStats()`
 
-### Backup Data Section (current or lapsed paid users only)
-Shown when `subscription_tier !== 'free'` OR `subscription_status` is `'expired'` or `'cancelled'` (i.e., user currently has or previously had a paid plan):
+### Backup Data Section (paid / superadmin only — when NOT lapsed)
+Shown when `hadPaidPlan === true` AND `!isLapsed` AND `backupDays > 0`:
 
-**Lapse overlay** — shown ONLY when `isLapsed === true` (status is `expired`/`cancelled`) AND `cloud_data_delete_at` is set. Covers the entire scrollable content area:
+| Element | Content |
+|---|---|
+| Archive icon + "{N}-Day Backup Retention" | "Cloud backups from the last {N} days are stored and restorable." |
+| Last backup row | "Last backup: {timestamp}" or "No backup recorded yet" |
+
+Retention windows: **Pro = 7 days**, **Business = 15 days**, **Superadmin = 15 days**
+
+**Lapse overlay** — shown ONLY when `isLapsed === true` (status `expired`/`cancelled`) AND `cloud_data_delete_at` is set. Covers the entire scrollable content area:
 - Dark semi-transparent backdrop (`rgba(0,0,0,0.55–0.72)`) — scroll is disabled, content is non-interactive
 - Centered card (`C.card` bg, `C.danger` border, drop shadow)
 - `cloud-off` icon in danger-tinted circle
@@ -908,16 +920,18 @@ Shown when `subscription_tier !== 'free'` OR `subscription_status` is `'expired'
 - Footer note: "Your local data on this device is safe regardless of your subscription."
 - When `timeLeft.expired`: clock hidden, message changes to "Your cloud data has been permanently deleted.", button hidden
 
-**Active paid card** (shown when NOT lapsed AND hadPaidPlan AND backupDays > 0):
+### SHARED BOOKS Section (free users with shared access only)
+Shown when `isFreeUser === true` AND `sharedBookCount > 0` (fetched via `apiGetSharedBooks()`):
+
 | Element | Content |
 |---|---|
-| Archive icon + "{N}-Day Backup Retention" | "Cloud backups from the last {N} days are stored and restorable." |
-| Last backup row | "Last backup: {timestamp}" or "No backup recorded yet" |
+| Users icon + "{N} Shared Book(s)" | "Shared books sync automatically from the owner's cloud." |
+| Sync status row (online) | check-circle (green) + "Auto-Synced" + last updated timestamp or "Connected — data is live from cloud" |
+| Sync status row (offline) | cloud-off icon (muted) + "Sync paused (offline)" + "Will sync automatically when internet is available" |
 
-Retention windows: **Pro = 7 days**, **Business = 15 days**
-`cloud_data_delete_at` is set by the backend on subscription lapse = `expires_at + backup_days`. Cleared on resubscribe.
+This section is shown because free users with shared book access need visibility into whether their shared data is current, even though they have no cloud sync for their own books.
 
-### Cloud Actions Section (paid/superadmin only)
+### CLOUD ACTIONS Section (paid / superadmin only)
 | Button                  | State                                                     | Action                                                                               |
 |-------------------------|-----------------------------------------------------------|--------------------------------------------------------------------------------------|
 | **Sync to Cloud**       | Default                                                   | Tap → `SyncConfirmSheet` → `syncLocalToCloud()` with progress                       |
@@ -928,19 +942,13 @@ Retention windows: **Pro = 7 days**, **Business = 15 days**
 | **Restore from Cloud**  | Offline / syncing / restoring                             | Disabled (still visible)                                                             |
 
 #### "Restore from Cloud" button — visibility logic
-
-The button is **hidden** (not rendered) unless all of the following are true:
-
-1. `hasRestoredFromCloud === false` — user has not completed a restore this session
-2. `hasCloudData === true` — the cloud account has at least one book
-3. `delta.onlyInCloudEntries > 0` OR `delta.newBooks > 0` — cloud contains books or entries that are not yet present locally (i.e. local and cloud are **not** in sync)
+Hidden unless ALL are true:
+1. `hasRestoredFromCloud === false` — no restore has completed this session
+2. `hasCloudData === true` — cloud account has at least one book
+3. `delta.onlyInCloudEntries > 0` OR `delta.newBooks > 0` — cloud has data not yet on device
 4. `deltaLoading === false` — delta comparison has finished loading
 
-If local already contains everything that cloud has (all books and entries match), the button is hidden because restoring would have no effect. It also hides immediately after a successful restore (`hasRestoredFromCloud` is set to `true` in `syncStore`).
-
-When visible, the button is **disabled** (but still shown) only while offline (`!isOnline`), syncing, or restoring.
-
-### Danger Zone Card
+### DANGER ZONE Card (paid / superadmin only)
 | Element                   | State   | Action | Result                                                               |
 |---------------------------|---------|--------|----------------------------------------------------------------------|
 | **Start Fresh** button    | Online  | Tap    | Opens `FreshStartSheet` (2-step confirm)                             |
@@ -956,8 +964,22 @@ When visible, the button is **disabled** (but still shown) only while offline (`
 - Buttons: Go Back / Delete Everything (red)
 - On confirm: deletes all cloud books via `apiDeleteBook()` for each, then `localClearAll()`
 
-### Free-Tier Gate
+### Free-Tier Gate (free users WITHOUT any shared book access)
 - Shows upgrade card with crown emoji, description, "View Plans 👑" button → subscription screen
+- Hidden when free user has shared book access (SHARED BOOKS section shown instead)
+
+### Info Note (always shown — all users)
+- Blue info box at the bottom of the scroll
+- Paid/superadmin: "Data auto-syncs to cloud every 5 minutes and on reconnect. Use the Sync button if something seems out of date."
+- Free with shared access: "Your shared books stay in sync automatically. Your own books are stored on this device only — upgrade to back them up."
+- Free with no shared access: "Free plan stores data on this device only. Uninstalling the app will delete all data."
+
+### Auto-Sync Behaviour (no manual action required — all eligible users)
+- `AutoSyncMonitor` fires on reconnect and every 5 min (paid/superadmin only); always stamps `lastSyncedAt` after every cycle
+- Each write (create/update/delete) in `dataSource.js` fires a background cloud push and stamps `lastSyncedAt` on success via `stampSyncTime()`
+- Shared book writes go directly to cloud; realtime subscriptions deliver changes to all book members instantly when online; queued offline when not
+- Offline writes queue locally; `AutoSyncMonitor` uploads them on next reconnect — no manual action needed
+- No duplicate data: entries matched by fingerprint (`date|time|type|amount|remark`), books by name — re-running sync is always safe
 
 ### Sheets used
 | Sheet                | Purpose                                      |

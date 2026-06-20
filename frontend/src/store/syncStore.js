@@ -31,6 +31,14 @@ export const useSyncStore = create((set) => ({
   },
   failSync: (msg) => set({ isSyncing: false, syncError: msg, progress: { done: 0, total: 0, step: '' } }),
 
+  // Only stamps the timestamp — does NOT touch isSyncing or progress.
+  // Used by background fire-and-forget pushes in dataSource.js so they cannot
+  // accidentally reset a manual sync that is still running.
+  stampLastSynced: (isoTimestamp) => {
+    if (isoTimestamp) SecureStore.setItemAsync(LAST_SYNC_KEY, isoTimestamp).catch(() => {});
+    set({ lastSyncedAt: isoTimestamp });
+  },
+
   // Set to true when restore finishes; cleared by BooksView once books have loaded
   restoreJustCompleted: false,
 

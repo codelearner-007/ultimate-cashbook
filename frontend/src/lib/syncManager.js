@@ -13,7 +13,7 @@
  */
 
 import * as L from './localDb';
-import { localSetBookCloudId } from './localDb';
+import { localSetBookCloudId, localSetEntryCloudId } from './localDb';
 import {
   apiGetBooks,
   apiCreateBook,
@@ -105,26 +105,34 @@ export async function getCloudDeltaStats() {
     );
 
     // ── Diff local entries against cloud ──────────────────────────────────────
-    let newEntries          = 0;
-    let alreadySyncedEntries = 0;
-    const matchedFPs = {};  // cloudBookId → Set<fingerprint> (cloud FPs we found locally)
+    let newEntries           = 0;  // new entries + offline-edited entries (need push)
+    let alreadySyncedEntries = 0;  // fingerprint exact match — nothing to do
+    const matchedFPs = {};         // cloudBookId → Set<fingerprint> (cloud FPs matched locally)
     for (const cid of uniqueCloudIds) matchedFPs[cid] = new Set();
 
     for (const entry of data.entries) {
       const cloudBookId = bookIdMap[entry.book_id];
-      if (!cloudBookId) { newEntries++; continue; }  // book not in cloud → entry is new
+      if (!cloudBookId) { newEntries++; continue; }
 
-      const fp = entryFingerprint(entry);
-      if ((cloudFPSet[cloudBookId] ?? new Set()).has(fp)) {
+      const fp  = entryFingerprint(entry);
+      const fps = cloudFPSet[cloudBookId] ?? new Set();
+
+      if (fps.has(fp)) {
+        // Exact fingerprint match — already in cloud
         alreadySyncedEntries++;
         matchedFPs[cloudBookId].add(fp);
+      } else if (entry.cloud_entry_id) {
+        // Has a cloud ID but fingerprint changed — edited offline, needs update push
+        newEntries++;
       } else {
+        // No cloud ID, no fingerprint match — genuinely new
         newEntries++;
       }
     }
 
     // ── Count cloud entries with no local match ────────────────────────────────
-    // These were either deleted locally, or are old versions of edited entries.
+    // These are old versions of edited entries (replaced by the update above) or
+    // entries deleted locally while offline. Both need attention.
     let onlyInCloudEntries = 0;
     for (const [cloudBookId, fps] of Object.entries(cloudFPSet)) {
       const matched = matchedFPs[cloudBookId] ?? new Set();
@@ -166,7 +174,7 @@ const entryFingerprint = (e) =>
  * Uploads all local SQLite data to the cloud, skipping anything already there.
  *
  * @param {(done: number, total: number, step: string) => void} onProgress
- * @returns {{ synced: number, skipped: number, alreadySynced: number, total: number }}
+ * @returns {Promise<{ synced: number, skipped: number, alreadySynced: number, total: number }>}
  */
 export async function syncLocalToCloud(onProgress) {
   const data = await L.localGetAllDataForMigration();
@@ -235,10 +243,12 @@ export async function syncLocalToCloud(onProgress) {
 
   // ── Prefetch cloud state for all matched books ───────────────────────────────
   // Runs in parallel per book so we don't hammer the API sequentially.
-  const cloudCats   = {};   // cloudBookId → [categories]
-  const cloudCusts  = {};   // cloudBookId → [customers]
-  const cloudSupps  = {};   // cloudBookId → [suppliers]
-  const cloudEntryFP = {};  // cloudBookId → Set<fingerprint>
+  const cloudCats    = {};   // cloudBookId → [categories]
+  const cloudCusts   = {};   // cloudBookId → [customers]
+  const cloudSupps   = {};   // cloudBookId → [suppliers]
+  const cloudEntryFP = {};   // cloudBookId → Map<fingerprint, cloudEntryId>
+  // Also index cloud entries by their own ID for O(1) lookup during update reconciliation.
+  const cloudEntryById = {}; // cloudBookId → Map<cloudEntryId, cloudEntry>
 
   const uniqueCloudIds = [...new Set(Object.values(bookIdMap))];
   await Promise.all(
@@ -249,10 +259,18 @@ export async function syncLocalToCloud(onProgress) {
         apiGetSuppliers(cloudBookId).catch(() => []),
         apiGetEntries(cloudBookId).catch(() => []),
       ]);
-      cloudCats[cloudBookId]    = cats;
-      cloudCusts[cloudBookId]   = custs;
-      cloudSupps[cloudBookId]   = supps;
-      cloudEntryFP[cloudBookId] = new Set(entries.map(entryFingerprint));
+      cloudCats[cloudBookId]     = cats;
+      cloudCusts[cloudBookId]    = custs;
+      cloudSupps[cloudBookId]    = supps;
+      // Map fingerprint → cloud entry ID so we can detect exact matches
+      const fpMap  = new Map();
+      const idMap  = new Map();
+      for (const e of entries) {
+        fpMap.set(entryFingerprint(e), e.id);
+        idMap.set(e.id, e);
+      }
+      cloudEntryFP[cloudBookId]   = fpMap;
+      cloudEntryById[cloudBookId] = idMap;
     })
   );
 
@@ -338,30 +356,66 @@ export async function syncLocalToCloud(onProgress) {
   }
 
   // ── 6. Entries ────────────────────────────────────────────────────────────────
+  // Three cases for each local entry:
+  //   A) Fingerprint matches a cloud entry exactly → already synced, skip.
+  //   B) Entry has a cloud_entry_id but fingerprint differs → edited offline, update the cloud row.
+  //   C) No fingerprint match and no cloud_entry_id → genuinely new, create in cloud.
   for (const entry of data.entries) {
     const cloudBookId = bookIdMap[entry.book_id];
     if (!cloudBookId) { skip('Skipped entry (book not synced)'); continue; }
 
-    const fp = entryFingerprint(entry);
-    if ((cloudEntryFP[cloudBookId] ?? new Set()).has(fp)) {
+    const fp    = entryFingerprint(entry);
+    const fpMap = cloudEntryFP[cloudBookId] ?? new Map();
+
+    // Case A — exact fingerprint match: already in cloud, nothing to do
+    if (fpMap.has(fp)) {
+      // Back-fill cloud_entry_id if it wasn't stored yet (e.g. entry was created
+      // before cloud_entry_id tracking was introduced, or the first push happened
+      // while offline and the link was never written).
+      if (!entry.cloud_entry_id) {
+        const cloudId = fpMap.get(fp);
+        localSetEntryCloudId(entry.id, cloudId).catch(() => {});
+      }
       already('Entry already synced');
       continue;
     }
 
+    const payload = {
+      type:         entry.type,
+      amount:       entry.amount,
+      remark:       entry.remark      ?? null,
+      category:     entry.category    ?? null,
+      category_id:  catIdMap[entry.category_id]  ?? null,
+      payment_mode: entry.payment_mode ?? 'cash',
+      contact_name: entry.contact_name ?? null,
+      customer_id:  custIdMap[entry.customer_id] ?? null,
+      supplier_id:  suppIdMap[entry.supplier_id] ?? null,
+      entry_date:   entry.entry_date,
+      entry_time:   entry.entry_time  ?? '00:00',
+    };
+
+    // Case B — has a known cloud ID but fingerprint changed: update the existing cloud row
+    if (entry.cloud_entry_id && (cloudEntryById[cloudBookId] ?? new Map()).has(entry.cloud_entry_id)) {
+      try {
+        await apiUpdateEntry(cloudBookId, entry.cloud_entry_id, payload);
+        // Update the fpMap so subsequent entries in the same book don't see a stale state
+        fpMap.set(fp, entry.cloud_entry_id);
+        tick('Updating entry…');
+      } catch {
+        skip('Skipped entry update');
+      }
+      continue;
+    }
+
+    // Case C — genuinely new entry: create in cloud
     try {
-      const cloudEntry = await apiCreateEntry(cloudBookId, {
-        type:         entry.type,
-        amount:       entry.amount,
-        remark:       entry.remark      ?? null,
-        category:     entry.category    ?? null,
-        category_id:  catIdMap[entry.category_id]  ?? null,
-        payment_mode: entry.payment_mode ?? 'cash',
-        contact_name: entry.contact_name ?? null,
-        customer_id:  custIdMap[entry.customer_id] ?? null,
-        supplier_id:  suppIdMap[entry.supplier_id] ?? null,
-        entry_date:   entry.entry_date,
-        entry_time:   entry.entry_time  ?? '00:00',
-      });
+      const cloudEntry = await apiCreateEntry(cloudBookId, payload);
+
+      // Store cloud ID for future update/delete targeting
+      if (cloudEntry?.id) {
+        localSetEntryCloudId(entry.id, cloudEntry.id).catch(() => {});
+        fpMap.set(fp, cloudEntry.id);
+      }
 
       // Upload local attachment to cloud storage
       if (entry.attachment_provider === 'local' && entry.attachment_path && cloudEntry?.id) {
@@ -399,7 +453,7 @@ export async function syncLocalToCloud(onProgress) {
  * are skipped — safe to re-run without creating duplicates.
  *
  * @param {(done: number, total: number, step: string) => void} onProgress
- * @returns {{ synced: number, skipped: number, alreadySynced: number, total: number }}
+ * @returns {Promise<{ synced: number, skipped: number, alreadySynced: number, total: number }>}
  */
 export async function syncCloudToLocal(onProgress) {
   let done          = 0;

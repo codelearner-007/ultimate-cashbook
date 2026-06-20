@@ -99,7 +99,7 @@ frontend/
 │   ├── lib/
 │   │   ├── api.js                # All Axios API calls (real backend, no mocks)
 │   │   ├── canAccess.js          # Feature-gate: canAccess(user, feature), getLimit(user, feature) — superadmin always returns true/Infinity
-│   │   ├── dataSource.js         # Data-source router: own books → local SQLite (+ cloud backup for paid); shared books → cloud API directly (via isLocalBook() check)
+│   │   ├── dataSource.js         # Data-source router: own books → local SQLite (+ cloud backup for paid); shared books → cloud API directly (via isLocalBook() check). Background pushes stamp lastSyncedAt via stampSyncTime() → stampLastSynced() (never resets isSyncing). Entry update/delete use cloud_entry_id for correct cloud targeting.
 │   │   ├── supabase.js           # Supabase client (SecureStore / localStorage adapter)
 │   │   ├── storage.js            # Provider-agnostic attachment abstraction (uploadAttachment, removeAttachment) — superadmin always uses Supabase Storage
 │   │   └── toast.js              # Toast helper
@@ -107,7 +107,7 @@ frontend/
 │   │   ├── authStore.js          # Zustand: user, session, setUser, clearUser
 │   │   ├── themeStore.js         # Zustand: isDark, toggle
 │   │   ├── bookFieldsStore.js    # Zustand: per-book field visibility toggles
-│   │   └── syncStore.js          # Zustand: isOnline, isSyncing, isRestoring, progress, restoreProgress, lastSyncedAt
+│   │   └── syncStore.js          # Zustand: isOnline, isSyncing, isRestoring, progress, restoreProgress, lastSyncedAt; actions: startSync, finishSync, failSync, stampLastSynced (timestamp-only, never resets isSyncing), startRestore, finishRestore, failRestore
 │   └── constants/
 │       ├── colors.js             # LightColors, DarkColors, CARD_ACCENTS
 │       ├── currencies.js         # CURRENCIES list (160+ ISO 4217), getCurrency(code) helper
@@ -282,32 +282,26 @@ frontend/
 ---
 
 ### `BackupSyncScreen` → `/(app)/settings/backup-sync`
-- Gated: paid / superadmin only (`canAccess(user, 'cloud_sync')`); free users see upgrade card
-- Status card: online dot (animated pulse), last-sync time, upload + restore progress bars
-- Local data card: counts for books / entries / categories / customers / suppliers
-- **Backup Data section** (current or lapsed paid users): shown when `subscription_tier !== 'free'` OR `subscription_status` is `'expired'`/`'cancelled'`; displays retention window (Pro=7 days, Business=15 days) and last backup timestamp; lapsed users see "Your subscription has ended. Backed-up data is still accessible."
-- **Cloud Actions** (paid only):
+- Open to all users; content varies by tier
+- **Status card** (all users): online dot (animated pulse), last-sync time, upload + restore progress bars
+  - `lastSyncedAt` is stamped automatically after every background cloud push (`stampSyncTime()` in `dataSource.js`) and after every `AutoSyncMonitor` cycle (even when 0 new items)
+- **LOCAL DATA section** (all users): section label separated above card with `marginTop: 24`; card with `marginTop: 8` shows counts for books / entries / categories / customers / suppliers
+- **Backup Data section** (paid / superadmin, not lapsed): retention window (Pro=7 days, Business/Superadmin=15 days) and last backup timestamp
+- **SHARED BOOKS section** (free users with `sharedBookCount > 0` only): shows count of accepted shared books and online/offline sync status row — lets free users confirm their shared data is current
+- **CLOUD ACTIONS** (paid / superadmin only):
   - "Sync to Cloud" → `SyncConfirmSheet` → `syncLocalToCloud(onProgress)` → toast; if local empty → "Nothing to sync" modal alert
-  - "Restore from Cloud" — conditional render (see logic below) → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal(onProgress)` → toast
-- **Danger Zone**: "Start Fresh" → `FreshStartSheet` (2-step confirm) → `apiGetBooks()` → `apiDeleteBook()` for each cloud book → `localClearAll()` → toast
+  - "Restore from Cloud" — conditional render → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal(onProgress)` → toast
+- **Danger Zone** (paid / superadmin only): "Start Fresh" → `FreshStartSheet` (2-step confirm) → `apiGetBooks()` → `apiDeleteBook()` for each → `localClearAll()` → toast
+- **Free-tier gate**: shown only when `!canSync && !freeHasSharedAccess`; shows upgrade card; hidden if free user has shared access (shared books section shown instead)
+- **Info note** (all users): text varies by canSync state and whether user has shared access
 - All sync/restore state in `useSyncStore`: `isSyncing`, `isRestoring`, `progress`, `restoreProgress`
 
 #### "Restore from Cloud" button — visibility logic
-Computed variable `hasUnrestoredCloudData` (derived from `delta` returned by `getCloudDeltaStats()`):
 ```js
-const hasUnrestoredCloudData = !deltaLoading && hasCloudData &&
+const hasUnrestoredCloudData = canSync && !deltaLoading && hasCloudData &&
   ((delta?.onlyInCloudEntries ?? 0) > 0 || (delta?.newBooks ?? 0) > 0);
 ```
-The button renders only when **both** conditions are met:
-- `!hasRestoredFromCloud` — no restore has completed this session (set to `true` by `finishRestore()` in syncStore)
-- `hasUnrestoredCloudData === true` — cloud has books or entries that are not yet present on device
-
-This means the button is **hidden** when:
-- There is no cloud data at all (`hasCloudData === false`)
-- Local already has everything cloud has — i.e. `delta.onlyInCloudEntries === 0 && delta.newBooks === 0` (local and cloud are in sync, so restoring would do nothing)
-- A restore was already completed this session (`hasRestoredFromCloud === true`)
-
-When the button is visible, it can still be **disabled** (but shown) only while offline, syncing, or restoring in progress.
+Button renders only when `!hasRestoredFromCloud && hasUnrestoredCloudData`. Hidden when local already matches cloud, no cloud data exists, or restore already ran this session. Disabled (but shown) when offline, syncing, or restoring.
 
 ---
 
@@ -397,7 +391,16 @@ Routes every read and write through `isLocalBook(bookId)` — a fast SQLite chec
 | **Own books** | Local SQLite (all tiers, works offline) | Local SQLite → cloud backup (paid/superadmin + online only) |
 | **Shared books** | Cloud API directly | Cloud API directly (backend stores under owner's `user_id`) |
 
-`isLocalBook()` calls `localBookExists(bookId)` in `localDb.js`. Shared books are never pulled into the recipient's SQLite, so the check returns `false` and the cloud path is taken automatically — no screen or hook changes needed.
+`isLocalBook()` calls `localBookExists(bookId)` in `localDb.js`. Shared books are never pulled into the recipient's SQLite, so the check returns `false` and the cloud path is taken automatically.
+
+### Entry cloud-ID tracking (`cloud_entry_id`)
+When a background push creates an entry in the cloud, the returned cloud UUID is stored in the local `entries.cloud_entry_id` column via `localSetEntryCloudId()`. This enables:
+- **Update:** `apiUpdateEntry` reads `cloud_entry_id` before sending to cloud — targets the exact cloud row instead of sending a wrong local ID.
+- **Delete:** `apiDeleteEntry` reads `cloud_entry_id` before the local row is deleted, then deletes the correct cloud row.
+- **Offline edits reconciled by bulk sync:** `syncLocalToCloud` in `syncManager.js` detects entries where fingerprint changed but `cloud_entry_id` is known → sends an update to the existing cloud row instead of creating a duplicate.
+
+### `stampSyncTime()` helper
+Called after every successful background push. Calls `stampLastSynced()` on `syncStore` (not `finishSync`) — updates only `lastSyncedAt` without touching `isSyncing` or `progress`, so a running manual sync is never interrupted.
 
 ---
 
@@ -474,7 +477,7 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `authStore` | Zustand | `user`, `session`, `setUser(user, session)`, `clearUser()` |
 | `themeStore` | Zustand | `isDark`, `toggle()` |
 | `bookFieldsStore` | Zustand | Empty store (stub); field visibility is persisted as individual boolean columns on `books` (DB) and read from `['books']` React Query cache as `show_customer`, `show_supplier`, `show_category`, `show_attachment` |
-| `syncStore` | Zustand | `isOnline`, `isSyncing`, `isRestoring`, `progress { done, total, step }`, `restoreProgress { done, total, step }`, `lastSyncedAt`, `syncError`, `restoreError`, `showRestorePrompt`; actions: `startSync`, `finishSync`, `failSync`, `startRestore`, `finishRestore`, `failRestore`, `setProgress`, `setRestoreProgress` |
+| `syncStore` | Zustand | `isOnline`, `isSyncing`, `isRestoring`, `progress { done, total, step }`, `restoreProgress { done, total, step }`, `lastSyncedAt`, `syncError`, `restoreError`, `showRestorePrompt`; actions: `startSync`, `finishSync`, `failSync`, `stampLastSynced` (timestamp only — never resets isSyncing/progress, used by background fire-and-forget pushes), `startRestore`, `finishRestore`, `failRestore`, `setProgress`, `setRestoreProgress` |
 | `['books']` | React Query | All books for current user; staleTime 2 min |
 | `['admin-users']` | React Query | All non-admin users; polls every 10 s while Users tab is focused (refetchInterval disabled when tab is not focused) |
 | `['local-user-stats']` | React Query | Local SQLite counts: `{ book_count, entry_count }` for the superadmin row in AdminUsersScreen; staleTime 0, refetchOnMount always |

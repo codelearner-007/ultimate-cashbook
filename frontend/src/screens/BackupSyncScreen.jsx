@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity,
   StatusBar, ScrollView, Alert, Animated, Modal, Platform,
 } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import * as Network from 'expo-network';
 import { Feather } from '@expo/vector-icons';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
@@ -439,6 +440,10 @@ export default function BackupSyncScreen() {
     })();
     return () => { mounted = false; };
   }, []);
+
+  useFocusEffect(useCallback(() => {
+    loadData();
+  }, [loadData]));
 
   const isAlreadySynced = !deltaLoading && delta !== null && delta.toUpload === 0 && (stats?.total ?? 0) > 0;
   const hasCloudData    = delta?.hasCloudData ?? false;

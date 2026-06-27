@@ -16,6 +16,7 @@ import { apiGetEntries, apiGetSummary, apiDeleteEntry, apiDeleteAllEntries } fro
 import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
 import { useAuthStore } from '../store/authStore';
+import { useSyncStore } from '../store/syncStore';
 import { canAccess } from '../lib/canAccess';
 import { useRealtimeEntries } from '../hooks/useRealtimeSync';
 import { useCustomers, useSuppliers } from '../hooks/useContacts';
@@ -279,6 +280,7 @@ export default function BookDetailScreen() {
   const { C, Font, isDark } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
   const qc = useQueryClient();
+  const isOnline = useSyncStore(s => s.isOnline);
   useRealtimeEntries(id);
 
   const [search, setSearch] = useState('');
@@ -971,10 +973,31 @@ export default function BookDetailScreen() {
         </>
       ) : isError ? (
         <View style={s.errorBox}>
-          <Text style={s.errorTitle}>Failed to load entries</Text>
-          <TouchableOpacity style={s.retryBtn} onPress={() => { refetch(); refetchSummary(); }}>
-            <Text style={s.retryText}>Retry</Text>
-          </TouchableOpacity>
+          {!isOwner && !isOnline ? (
+            <>
+              <View style={s.offlineIconBox}>
+                <Feather name="wifi-off" size={36} color={C.textMuted} />
+              </View>
+              <Text style={s.offlineTitle}>You're offline</Text>
+              <Text style={s.offlineSub}>
+                Shared books need an internet connection.{'\n'}Go back and reconnect to view this book.
+              </Text>
+              <TouchableOpacity
+                style={s.retryBtn}
+                onPress={() => router.replace(basePath)}
+                activeOpacity={0.85}
+              >
+                <Text style={s.retryText}>Go Back</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={s.errorTitle}>Failed to load entries</Text>
+              <TouchableOpacity style={s.retryBtn} onPress={() => { refetch(); refetchSummary(); }}>
+                <Text style={s.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       ) : (
         <>
@@ -1102,8 +1125,8 @@ export default function BookDetailScreen() {
         subtitle={`"${name}" has been cleared successfully`}
       />
 
-      {/* Action Buttons — hidden for view-only collaborators */}
-      {canCreate && (
+      {/* Action Buttons — hidden for view-only collaborators and when collaborator is offline */}
+      {canCreate && (isOwner || isOnline) && (
         <View style={s.actionRow}>
           <TouchableOpacity
             style={[s.actionBtn, { backgroundColor: C.cashIn }]}
@@ -1406,9 +1429,19 @@ const makeStyles = (C, Font) => StyleSheet.create({
     lineHeight: 20, textAlign: 'center',
   },
 
-  // Error
-  errorBox: { alignItems: 'center', paddingTop: 60, gap: 16 },
+  // Error / Offline
+  errorBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, paddingHorizontal: 36 },
   errorTitle: { fontSize: 15, fontFamily: Font.medium, color: C.textMuted },
+  offlineIconBox: {
+    width: 80, height: 80, borderRadius: 24,
+    backgroundColor: C.cardAlt,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 4,
+  },
+  offlineTitle: { fontSize: 17, fontFamily: Font.bold, color: C.text, lineHeight: 24 },
+  offlineSub: {
+    fontSize: 13, fontFamily: Font.regular, color: C.textMuted,
+    lineHeight: 20, textAlign: 'center',
+  },
   retryBtn: {
     backgroundColor: C.primary, borderRadius: 12,
     paddingHorizontal: 24, paddingVertical: 12, minHeight: 44, justifyContent: 'center',

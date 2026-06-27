@@ -484,7 +484,7 @@ export default function BackupSyncScreen() {
 
   const handleSync = useCallback(() => {
     if (isSyncing) return;
-    if (isAlreadySynced) { Toast.show({ type: 'success', text1: 'Already synced', text2: 'All local data is up to date in the cloud.' }); return; }
+    if (isAlreadySynced) { Toast.show({ type: 'success', text1: 'Already uploaded', text2: 'All local data is already in the cloud.' }); return; }
     if (!isOnline) { Alert.alert('No connection', 'Please connect to the internet to sync your data.'); return; }
     if (!canSync)  { Alert.alert('Pro feature', 'Cloud backup & sync requires a Pro or Business plan.'); return; }
     if (!stats || stats.total === 0) { setShowEmptyAlert(true); return; }
@@ -743,8 +743,8 @@ export default function BackupSyncScreen() {
               <View style={st.actionsCol}>
                 <ActionBtn
                   icon={isSyncing ? 'loader' : isAlreadySynced ? 'check-circle' : 'upload-cloud'}
-                  label={isSyncing ? 'Syncing…' : isAlreadySynced ? 'All Data Synced' : 'Sync to Cloud'}
-                  sublabel={!isOnline ? 'No internet connection' : isAlreadySynced ? 'Local and cloud are in sync' : 'Tap to sync now — auto-syncs every 5 min'}
+                  label={isSyncing ? 'Syncing…' : isAlreadySynced ? 'All Data Synced' : 'Upload to Cloud'}
+                  sublabel={!isOnline ? 'No internet connection' : isAlreadySynced ? 'Local and cloud are in sync' : 'Tap to manually upload your data to cloud'}
                   onPress={handleSync}
                   variant="primary"
                   disabled={!isOnline || isSyncing || isRestoring}
@@ -820,7 +820,7 @@ export default function BackupSyncScreen() {
             <Feather name="info" size={14} color={C.primary} />
             <Text style={[st.infoText, { color: C.primary, fontFamily: Font.regular }]}>
               {canSync
-                ? 'Data auto-syncs to cloud every 5 minutes and on reconnect. Use the Sync button if something seems out of date.'
+                ? 'Cloud upload is manual. Tap "Upload to Cloud" whenever you want to back up new data. Your data is always saved locally first.'
                 : freeHasSharedAccess
                   ? 'Your shared books stay in sync automatically. Your own books are stored on this device only — upgrade to back them up.'
                   : 'Free plan stores data on this device only. Uninstalling the app will delete all data.'

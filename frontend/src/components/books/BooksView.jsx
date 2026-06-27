@@ -442,6 +442,7 @@ export default function BooksView({
   const activeWorkspace    = useWorkspaceStore((s) => s.activeWorkspace);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
   const isSyncing                = useSyncStore((s) => s.isSyncing);
+  const isOnline                 = useSyncStore((s) => s.isOnline);
   const restoreJustCompleted     = useSyncStore((s) => s.restoreJustCompleted);
   const setRestoreJustCompleted  = useSyncStore((s) => s.setRestoreJustCompleted);
   const [showWorkspaceSwitcher, setShowWorkspaceSwitcher] = useState(false);
@@ -536,12 +537,12 @@ export default function BooksView({
     });
   }, [leaveDialog, leaveSharedBook]);
 
-  // Auto-reset to personal when the last shared book disappears
+  // Auto-reset to personal when the last shared book disappears or device goes offline
   useEffect(() => {
-    if (sharedBooks.length === 0 && activeWorkspace === 'shared') {
+    if ((sharedBooks.length === 0 || !isOnline) && activeWorkspace === 'shared') {
       setActiveWorkspace('personal');
     }
-  }, [sharedBooks.length, activeWorkspace]);
+  }, [sharedBooks.length, isOnline, activeWorkspace]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -731,7 +732,7 @@ export default function BooksView({
                   </Text>
                 </TouchableOpacity>
               </View>
-              {sharedBooks.length > 0 ? (
+              {sharedBooks.length > 0 && isOnline ? (
                 <TouchableOpacity onPress={() => setShowWorkspaceSwitcher(true)} activeOpacity={0.7}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                     <Text style={s.bizSub}>

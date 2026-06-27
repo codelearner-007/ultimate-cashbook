@@ -27,7 +27,7 @@ import {
   registerPushToken,
   addNotificationTapListener,
 } from '../src/lib/pushNotifications';
-import { syncCloudToLocal, syncLocalToCloud } from '../src/lib/syncManager';
+import { syncCloudToLocal } from '../src/lib/syncManager';
 import { localGetBooks } from '../src/lib/localDb';
 import { apiGetBooks as apiGetCloudBooks, apiDeleteBook as apiDeleteCloudBook } from '../src/lib/api';
 import * as SecureStore from 'expo-secure-store';
@@ -191,76 +191,6 @@ function AutoDeleteMonitor() {
   return null;
 }
 
-/**
- * Automatically syncs local data to cloud:
- *   1. Whenever the user reconnects (offline → online).
- *   2. Every 5 minutes while the app is online and in the foreground.
- * Runs silently — no popup, no confirmation. Only for paid/superadmin users.
- * Skips if a sync or restore is already in progress.
- */
-function AutoSyncMonitor() {
-  const user      = useAuthStore(s => s.user);
-  const isOnline  = useSyncStore(s => s.isOnline);
-  const isSyncing = useSyncStore(s => s.isSyncing);
-  const isRestoring = useSyncStore(s => s.isRestoring);
-  const startSync  = useSyncStore(s => s.startSync);
-  const setProgress = useSyncStore(s => s.setProgress);
-  const finishSync = useSyncStore(s => s.finishSync);
-  const failSync   = useSyncStore(s => s.failSync);
-
-  const wasOnline = useRef(isOnline);
-  const running   = useRef(false);
-
-  const isEligible = (u) => {
-    if (!u) return false;
-    if (u.role === 'superadmin') return true;
-    const tier = u?.subscription_tier;
-    return tier && tier !== 'free';
-  };
-
-  const runSync = async () => {
-    const { isSyncing: syncing, isRestoring: restoring } = useSyncStore.getState();
-    const currentUser = useAuthStore.getState().user;
-    if (!isEligible(currentUser) || syncing || restoring || running.current) return;
-    if (!useSyncStore.getState().isOnline) return;
-
-    running.current = true;
-    try {
-      startSync();
-      const result = await syncLocalToCloud((done, total, step) => setProgress(done, total, step));
-      // Always stamp the time so BackupSyncScreen shows an up-to-date "last synced" value,
-      // even when everything was already in sync (result.synced === 0).
-      finishSync(new Date().toISOString());
-      // Only invalidate React Query caches when new items were actually uploaded,
-      // to avoid unnecessary re-renders when nothing changed.
-      if (result.synced > 0) {
-        queryClient.invalidateQueries();
-      }
-    } catch {
-      failSync(null); // silent — no error shown to user
-    } finally {
-      running.current = false;
-    }
-  };
-
-  // Fire on reconnect (offline → online)
-  useEffect(() => {
-    const justReconnected = !wasOnline.current && isOnline;
-    wasOnline.current = isOnline;
-    if (justReconnected) runSync();
-  }, [isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Also sync every 5 minutes while online
-  useEffect(() => {
-    const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
-    const timer = setInterval(() => {
-      if (useSyncStore.getState().isOnline) runSync();
-    }, AUTO_SYNC_INTERVAL);
-    return () => clearInterval(timer);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return null;
-}
 
 function AuthGuard() {
   const user     = useAuthStore((s) => s.user);
@@ -322,9 +252,10 @@ async function resolveProfile(session) {
 }
 
 function SupabaseAuthListener() {
-  const setUser   = useAuthStore((s) => s.setUser);
-  const clearUser = useAuthStore((s) => s.clearUser);
-  const setIsDark = useThemeStore((s) => s.setIsDark);
+  const setUser      = useAuthStore((s) => s.setUser);
+  const clearUser    = useAuthStore((s) => s.clearUser);
+  const setAuthReady = useAuthStore((s) => s.setAuthReady);
+  const setIsDark    = useThemeStore((s) => s.setIsDark);
 
   useEffect(() => {
     // Restore session on app start
@@ -335,6 +266,9 @@ function SupabaseAuthListener() {
         if (profile.is_dark_mode !== undefined) setIsDark(!!profile.is_dark_mode);
         // Register push token after restoring session
         registerPushToken();
+      } else {
+        // No session — mark auth as resolved so the splash doesn't wait forever
+        setAuthReady();
       }
     });
 
@@ -792,7 +726,6 @@ export default function RootLayout() {
       <NetworkMonitor />
       <InitialPullMonitor />
       <AutoDeleteMonitor />
-      <AutoSyncMonitor />
       <SupabaseAuthListener />
       <AuthGuard />
       <Slot />

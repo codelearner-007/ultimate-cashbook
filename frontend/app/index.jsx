@@ -68,7 +68,7 @@ function BackgroundBlobs() {
 export default function Index() {
   const router = useRouter();
   const qc     = useQueryClient();
-  const user   = useAuthStore((s) => s.user);
+  const authReady = useAuthStore((s) => s.authReady);
 
   const {
     restoreProgress,
@@ -91,63 +91,85 @@ export default function Index() {
     ]).start();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // After splash (min 1800ms) AND auth state is resolved, decide where to go
+  const splashDone  = useRef(false);
+  const authReadyRef = useRef(authReady);
+
+  // Keep ref in sync so the timer callback sees the latest value
+  useEffect(() => { authReadyRef.current = authReady; }, [authReady]);
+
+  const navigate = useCallback(async () => {
+    const seen = await getOnboardingSeen();
+    if (!seen) {
+      setShowOnboarding(true);
+      return;
+    }
+
+    const currentUser = useAuthStore.getState().user;
+    if (!currentUser) {
+      router.replace('/(auth)/login');
+      return;
+    }
+
+    const target = currentUser.role === 'superadmin'
+      ? '/(app)/dashboard/users'
+      : '/(app)/books';
+
+    // Check for cloud restore prompt (paid users / superadmin only)
+    const userCanSync = canAccess(currentUser, 'cloud_sync');
+    if (userCanSync) {
+      try {
+        const [localStats, delta] = await Promise.all([
+          getLocalStats(),
+          getCloudDeltaStats(),
+        ]);
+        if (localStats.books === 0 && delta.hasCloudData) {
+          setCloudBookCount(delta.newBooks > 0 ? delta.newBooks : 1);
+          setNavigateTarget(target);
+          setShowRestoreSheet(true);
+          return;
+        }
+      } catch {
+        // Offline or error — just navigate normally
+      }
+    }
+
+    router.replace(target);
+  }, [router]);
+
   // After splash, decide where to go
   useEffect(() => {
-    const timer = setTimeout(async () => {
-      // First launch: show onboarding before anything else
-      const seen = await getOnboardingSeen();
-      if (!seen) {
-        setShowOnboarding(true);
-        return;
+    const timer = setTimeout(() => {
+      splashDone.current = true;
+      if (authReadyRef.current) {
+        navigate();
       }
-
-      if (!user) {
-        router.replace('/(auth)/login');
-        return;
-      }
-
-      const target = user.role === 'superadmin'
-        ? '/(app)/dashboard/users'
-        : '/(app)/books';
-
-      // Check for cloud restore prompt (paid users / superadmin only)
-      const userCanSync = canAccess(user, 'cloud_sync');
-      if (userCanSync) {
-        try {
-          const [localStats, delta] = await Promise.all([
-            getLocalStats(),
-            getCloudDeltaStats(),
-          ]);
-          // Show prompt only when: local is empty AND cloud has books
-          if (localStats.books === 0 && delta.hasCloudData) {
-            setCloudBookCount(delta.newBooks > 0 ? delta.newBooks : 1);
-            setNavigateTarget(target);
-            setShowRestoreSheet(true);
-            return;
-          }
-        } catch {
-          // Offline or error — just navigate normally
-        }
-      }
-
-      router.replace(target);
+      // else: wait for authReady effect below to trigger navigate
     }, 1800);
 
     return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // When authReady arrives after the splash timer has already fired, navigate immediately
+  useEffect(() => {
+    if (authReady && splashDone.current) {
+      navigate();
+    }
+  }, [authReady, navigate]);
+
   const handleOnboardingFinish = useCallback(async () => {
     await setOnboardingSeen();
     setShowOnboarding(false);
-    if (!user) {
+    const currentUser = useAuthStore.getState().user;
+    if (!currentUser) {
       router.replace('/(auth)/login');
       return;
     }
-    const target = user.role === 'superadmin'
+    const target = currentUser.role === 'superadmin'
       ? '/(app)/dashboard/users'
       : '/(app)/books';
     router.replace(target);
-  }, [user, router]);
+  }, [router]);
 
   // Restore: download cloud → local, stay on this screen (with overlay) until done
   const doRestore = useCallback(async () => {

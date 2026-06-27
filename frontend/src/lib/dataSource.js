@@ -31,9 +31,7 @@
  *   download all cloud data into SQLite once.
  */
 
-import { useAuthStore } from '../store/authStore';
 import { useSyncStore }  from '../store/syncStore';
-import { DEV_TIER, DEV_OVERRIDE_LOCAL } from './devConfig';
 import * as L from './localDb';
 import {
   apiGetBooks              as _apiGetBooks,
@@ -93,20 +91,12 @@ async function isLocalBook(bookId) {
 }
 
 /**
- * Returns true when this user/session is eligible for background cloud push.
- * Used ONLY to decide whether to fire a side-effect — never to block a write.
- *   - Must be paid tier or superadmin
- *   - Must currently be online
- *   - DEV_OVERRIDE_LOCAL disables cloud push for testing
+ * Background cloud push is disabled — all cloud uploads are manual only.
+ * The owner must go to Backup & Sync and press "Sync to Cloud" to upload data.
+ * This function always returns false so no write ever triggers an automatic push.
  */
 function shouldBackupToCloud() {
-  if (DEV_OVERRIDE_LOCAL) return false;
-  const state    = useAuthStore.getState();
-  const isOnline = useSyncStore.getState().isOnline;
-  if (!isOnline) return false;
-  if (state.user?.role === 'superadmin') return true;
-  const tier = DEV_TIER ?? state.user?.subscription_tier ?? 'free';
-  return tier !== 'free';
+  return false;
 }
 
 /**

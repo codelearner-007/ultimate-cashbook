@@ -11,24 +11,24 @@ export const RIGHTS = [
     light:     '#E0F2FE',
     darkLight: '#0C2A3E',
   },
-  {
-    key:       'view_create_edit',
-    icon:      'edit-3',
-    title:     'View & Edit',
-    desc:      'Can also add and edit entries',
-    color:     '#D97706',
-    light:     '#FEF3C7',
-    darkLight: '#2D1A00',
-  },
-  {
-    key:       'view_create_edit_delete',
-    icon:      'unlock',
-    title:     'Full Access',
-    desc:      'Can also permanently delete entries',
-    color:     '#059669',
-    light:     '#D1FAE5',
-    darkLight: '#022C22',
-  },
+  // {
+  //   key:       'view_create_edit',
+  //   icon:      'edit-3',
+  //   title:     'View & Edit',
+  //   desc:      'Can also add and edit entries',
+  //   color:     '#D97706',
+  //   light:     '#FEF3C7',
+  //   darkLight: '#2D1A00',
+  // },
+  // {
+  //   key:       'view_create_edit_delete',
+  //   icon:      'unlock',
+  //   title:     'Full Access',
+  //   desc:      'Can also permanently delete entries',
+  //   color:     '#059669',
+  //   light:     '#D1FAE5',
+  //   darkLight: '#022C22',
+  // },
 ];
 
 export const RIGHTS_MAP = Object.fromEntries(RIGHTS.map(r => [r.key, r]));

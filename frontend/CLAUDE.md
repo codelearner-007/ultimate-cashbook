@@ -99,7 +99,7 @@ frontend/
 │   ├── lib/
 │   │   ├── api.js                # All Axios API calls (real backend, no mocks)
 │   │   ├── canAccess.js          # Feature-gate: canAccess(user, feature), getLimit(user, feature) — superadmin always returns true/Infinity
-│   │   ├── dataSource.js         # Data-source router: own books → local SQLite (+ cloud backup for paid); shared books → cloud API directly (via isLocalBook() check). Background pushes stamp lastSyncedAt via stampSyncTime() → stampLastSynced() (never resets isSyncing). Entry update/delete use cloud_entry_id for correct cloud targeting.
+│   │   ├── dataSource.js         # Data-source router: own books → local SQLite only (no background cloud push — manual upload only via BackupSyncScreen); shared books → cloud API directly (via isLocalBook() check). Entry update/delete use cloud_entry_id for correct cloud targeting.
 │   │   ├── supabase.js           # Supabase client (SecureStore / localStorage adapter)
 │   │   ├── storage.js            # Provider-agnostic attachment abstraction (uploadAttachment, removeAttachment) — superadmin always uses Supabase Storage
 │   │   └── toast.js              # Toast helper
@@ -157,7 +157,7 @@ frontend/
   - Active when `isRestoring === true` OR `restoreJustCompleted === true`
   - Fades in on start, shows pulsing ☁️ icon + progress bar; title changes to "Restore complete! / Loading your books…" when done
   - Fades out (350 ms) when `restoreJustCompleted` is cleared — either by `BooksView` (when `!isLoading`) or by a 2.5 s timeout fallback in the overlay itself (safety net for navigation races where `BooksView` mounts after `isLoading` is already `false`)
-- `AutoSyncMonitor` — silently syncs local → cloud on reconnect AND every 5 minutes while online (paid/superadmin only, skips if sync/restore running; reads store state directly to avoid stale closures in the interval)
+- ~~`AutoSyncMonitor`~~ — **removed**; cloud upload is now **manual only**. The owner must go to Backup & Sync and press "Upload to Cloud". No automatic background pushes occur.
 - `AutoDeleteMonitor` — on reconnect, deletes from cloud any books removed locally while offline (only runs when device has previously synced, i.e. `localCloudIds.size > 0`)
 - `NotificationPopup` — centered modal card for unread notifications; auto-shows for regular users; also shows tapped notifications from the OS tray for any logged-in user
 
@@ -284,12 +284,12 @@ frontend/
 ### `BackupSyncScreen` → `/(app)/settings/backup-sync`
 - Open to all users; content varies by tier
 - **Status card** (all users): online dot (animated pulse), last-sync time, upload + restore progress bars
-  - `lastSyncedAt` is stamped automatically after every background cloud push (`stampSyncTime()` in `dataSource.js`) and after every `AutoSyncMonitor` cycle (even when 0 new items)
+  - `lastSyncedAt` is stamped after every **manual** "Upload to Cloud" action from BackupSyncScreen (`finishSync` in `BackupSyncScreen.jsx`)
 - **LOCAL DATA section** (all users): section label separated above card with `marginTop: 24`; card with `marginTop: 8` shows counts for books / entries / categories / customers / suppliers
 - **Backup Data section** (paid / superadmin, not lapsed): retention window (Pro=7 days, Business/Superadmin=15 days) and last backup timestamp
 - **SHARED BOOKS section** (free users with `sharedBookCount > 0` only): shows count of accepted shared books and online/offline sync status row — lets free users confirm their shared data is current
 - **CLOUD ACTIONS** (paid / superadmin only):
-  - "Sync to Cloud" → `SyncConfirmSheet` → `syncLocalToCloud(onProgress)` → toast; if local empty → "Nothing to sync" modal alert
+  - "Upload to Cloud" → `SyncConfirmSheet` → `syncLocalToCloud(onProgress)` → toast; if local empty → "Nothing to sync" modal alert. **Manual only — no auto-upload happens.** Owner must come here to push new data.
   - "Restore from Cloud" — conditional render → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal(onProgress)` → toast
 - **Danger Zone** (paid / superadmin only): "Start Fresh" → `FreshStartSheet` (2-step confirm) → `apiGetBooks()` → `apiDeleteBook()` for each → `localClearAll()` → toast
 - **Free-tier gate**: shown only when `!canSync && !freeHasSharedAccess`; shows upgrade card; hidden if free user has shared access (shared books section shown instead)
@@ -388,19 +388,20 @@ Routes every read and write through `isLocalBook(bookId)` — a fast SQLite chec
 
 | Book type | Reads | Writes |
 |---|---|---|
-| **Own books** | Local SQLite (all tiers, works offline) | Local SQLite → cloud backup (paid/superadmin + online only) |
+| **Own books** | Local SQLite (all tiers, works offline) | Local SQLite only — **no automatic cloud push** |
 | **Shared books** | Cloud API directly | Cloud API directly (backend stores under owner's `user_id`) |
+
+**Manual upload rule:** `shouldBackupToCloud()` in `dataSource.js` always returns `false`. Own-book writes go to SQLite only. The owner must go to Settings → Backup & Sync and tap "Upload to Cloud" to push data to the cloud. `syncLocalToCloud()` in `syncManager.js` handles the full upload when triggered manually.
 
 `isLocalBook()` calls `localBookExists(bookId)` in `localDb.js`. Shared books are never pulled into the recipient's SQLite, so the check returns `false` and the cloud path is taken automatically.
 
 ### Entry cloud-ID tracking (`cloud_entry_id`)
-When a background push creates an entry in the cloud, the returned cloud UUID is stored in the local `entries.cloud_entry_id` column via `localSetEntryCloudId()`. This enables:
-- **Update:** `apiUpdateEntry` reads `cloud_entry_id` before sending to cloud — targets the exact cloud row instead of sending a wrong local ID.
-- **Delete:** `apiDeleteEntry` reads `cloud_entry_id` before the local row is deleted, then deletes the correct cloud row.
-- **Offline edits reconciled by bulk sync:** `syncLocalToCloud` in `syncManager.js` detects entries where fingerprint changed but `cloud_entry_id` is known → sends an update to the existing cloud row instead of creating a duplicate.
+When a manual upload sends an entry to the cloud, the returned cloud UUID is stored in the local `entries.cloud_entry_id` column via `localSetEntryCloudId()`. This enables:
+- **Update reconciliation:** `syncLocalToCloud` detects entries where fingerprint changed but `cloud_entry_id` is known → sends an update to the existing cloud row instead of creating a duplicate.
+- **Delete reconciliation:** entries deleted locally while offline are detected during the next manual upload via the `AutoDeleteMonitor` book-level logic.
 
 ### `stampSyncTime()` helper
-Called after every successful background push. Calls `stampLastSynced()` on `syncStore` (not `finishSync`) — updates only `lastSyncedAt` without touching `isSyncing` or `progress`, so a running manual sync is never interrupted.
+No longer used for background pushes (those are removed). Still present in `dataSource.js` but `shouldBackupToCloud()` always returns `false` so the branches that call it never execute. `lastSyncedAt` is now only updated by `finishSync()` in `BackupSyncScreen` after a manual upload completes.
 
 ---
 
@@ -477,7 +478,7 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `authStore` | Zustand | `user`, `session`, `setUser(user, session)`, `clearUser()` |
 | `themeStore` | Zustand | `isDark`, `toggle()` |
 | `bookFieldsStore` | Zustand | Empty store (stub); field visibility is persisted as individual boolean columns on `books` (DB) and read from `['books']` React Query cache as `show_customer`, `show_supplier`, `show_category`, `show_attachment` |
-| `syncStore` | Zustand | `isOnline`, `isSyncing`, `isRestoring`, `progress { done, total, step }`, `restoreProgress { done, total, step }`, `lastSyncedAt`, `syncError`, `restoreError`, `showRestorePrompt`; actions: `startSync`, `finishSync`, `failSync`, `stampLastSynced` (timestamp only — never resets isSyncing/progress, used by background fire-and-forget pushes), `startRestore`, `finishRestore`, `failRestore`, `setProgress`, `setRestoreProgress` |
+| `syncStore` | Zustand | `isOnline`, `isSyncing`, `isRestoring`, `progress { done, total, step }`, `restoreProgress { done, total, step }`, `lastSyncedAt`, `syncError`, `restoreError`, `showRestorePrompt`; actions: `startSync`, `finishSync`, `failSync`, `stampLastSynced` (timestamp only — never resets isSyncing/progress), `startRestore`, `finishRestore`, `failRestore`, `setProgress`, `setRestoreProgress` |
 | `['books']` | React Query | All books for current user; staleTime 2 min |
 | `['admin-users']` | React Query | All non-admin users; polls every 10 s while Users tab is focused (refetchInterval disabled when tab is not focused) |
 | `['local-user-stats']` | React Query | Local SQLite counts: `{ book_count, entry_count }` for the superadmin row in AdminUsersScreen; staleTime 0, refetchOnMount always |

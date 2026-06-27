@@ -7,6 +7,7 @@ import { useFocusEffect } from 'expo-router';
 import * as Network from 'expo-network';
 import { Feather } from '@expo/vector-icons';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
+import { LocalDataSkeleton } from '../components/ui/Shimmer';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../hooks/useTheme';
@@ -636,9 +637,7 @@ export default function BackupSyncScreen() {
           </Text>
           <View style={[st.card, { padding: 0, overflow: 'hidden', marginTop: 8 }]}>
             {statsLoading ? (
-              <View style={{ padding: 20, alignItems: 'center' }}>
-                <Text style={{ color: C.textMuted, fontFamily: Font.regular, fontSize: 13 }}>Loading…</Text>
-              </View>
+              <LocalDataSkeleton />
             ) : (
               <>
                 {[

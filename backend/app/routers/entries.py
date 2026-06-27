@@ -7,6 +7,23 @@ from app.utils.book_access import get_book_owner_id, get_book_access, require_ri
 
 router = APIRouter()
 
+SIGNED_URL_TTL = 60 * 60 * 24 * 7  # 7 days
+
+
+def _refresh_attachment_urls(sb, entries: list) -> list:
+    """Regenerate signed URLs for entries that have an attachment_path stored."""
+    result = []
+    for entry in entries:
+        path = entry.get("attachment_path")
+        if path:
+            try:
+                signed = sb.storage.from_("attachments").create_signed_url(path, SIGNED_URL_TTL)
+                entry = {**entry, "attachment_url": signed.get("signedURL") or entry.get("attachment_url")}
+            except Exception:
+                pass  # Keep existing URL if refresh fails
+        result.append(entry)
+    return result
+
 
 @router.get("/{book_id}/entries", response_model=List[EntryResponse])
 async def get_entries(
@@ -33,7 +50,8 @@ async def get_entries(
         q = q.eq("type", type)
 
     result = q.order("entry_date", desc=True).order("entry_time", desc=True).execute()
-    return result.data or []
+    entries = result.data or []
+    return _refresh_attachment_urls(sb, entries)
 
 
 @router.post("/{book_id}/entries", response_model=EntryResponse, status_code=201)

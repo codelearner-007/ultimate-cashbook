@@ -193,7 +193,7 @@ No JWT auth required (these are the endpoints that issue the JWT).
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| GET | `/{book_id}/entries` | List entries (optional: date_from, date_to, type filters) | ✅ |
+| GET | `/{book_id}/entries` | List entries (optional: date_from, date_to, type filters); regenerates fresh 7-day signed URLs for any entry with `attachment_path` so collaborators always see valid image links | ✅ |
 | POST | `/{book_id}/entries` | Create an entry | ✅ |
 | PUT | `/{book_id}/entries/{entry_id}` | Update an entry | ✅ |
 | DELETE | `/{book_id}/entries/{entry_id}` | Delete an entry | ✅ |

@@ -255,6 +255,27 @@ export function ReportsSkeleton() {
   );
 }
 
+// Local data stats skeleton (BackupSyncScreen — 5 stat rows matching StatRow layout)
+export function LocalDataSkeleton() {
+  const { C } = useTheme();
+  const rows = [0, 1, 2, 3, 4];
+  return (
+    <>
+      {rows.map((i) => (
+        <View key={i}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 16 }}>
+            <ShimmerBox width={32} height={32} borderRadius={10} style={{ marginRight: 12 }} />
+            <ShimmerBox width={90} height={13} borderRadius={5} style={{ flex: 0 }} />
+            <View style={{ flex: 1 }} />
+            <ShimmerBox width={24} height={14} borderRadius={5} />
+          </View>
+          {i < rows.length - 1 && <View style={{ height: 1, backgroundColor: C.border }} />}
+        </View>
+      ))}
+    </>
+  );
+}
+
 // ─── Shared style values ──────────────────────────────────────────────────────
 
 const skeletonStyles = StyleSheet.create({

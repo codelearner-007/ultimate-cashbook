@@ -8,6 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import SafeAreaView from '../ui/AppSafeAreaView';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
+import { useQueryClient } from '@tanstack/react-query';
 import { useBooks, useCreateBook, useRenameBook, useDeleteBook } from '../../hooks/useBooks';
 import { useBookSort } from '../../hooks/useBookSort';
 import { useAuthStore } from '../../store/authStore';
@@ -17,7 +18,8 @@ import { useRealtimeInvitations, useRealtimeBooks } from '../../hooks/useRealtim
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useSyncStore } from '../../store/syncStore';
 import Toast from '../../lib/toast';
-import { getLimit } from '../../lib/canAccess';
+import { getLimit, canAccess } from '../../lib/canAccess';
+import { syncLocalToCloud } from '../../lib/syncManager';
 import { shadow } from '../../constants/shadows';
 import LimitReachedSheet from '../ui/LimitReachedSheet';
 import { CARD_ACCENTS } from '../../constants/colors';
@@ -416,6 +418,7 @@ export default function BooksView({
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
 
   const user = useAuthStore((st) => st.user);
+  const qc   = useQueryClient();
 
   const { data: profile } = useProfile();
   const updateProfile = useUpdateProfile();
@@ -445,6 +448,12 @@ export default function BooksView({
   const isOnline                 = useSyncStore((s) => s.isOnline);
   const restoreJustCompleted     = useSyncStore((s) => s.restoreJustCompleted);
   const setRestoreJustCompleted  = useSyncStore((s) => s.setRestoreJustCompleted);
+  const startSync                = useSyncStore((s) => s.startSync);
+  const finishSync               = useSyncStore((s) => s.finishSync);
+  const failSync                 = useSyncStore((s) => s.failSync);
+  const setProgress              = useSyncStore((s) => s.setProgress);
+  const canSync                  = canAccess(user, 'cloud_sync');
+  const [syncedBookId, setSyncedBookId] = useState(null);
   const [showWorkspaceSwitcher, setShowWorkspaceSwitcher] = useState(false);
 
   // Dismiss the restore-completion overlay once books have finished loading
@@ -581,10 +590,26 @@ export default function BooksView({
     setShowModal(false);
   }, [newBookName, createBook]);
 
-  const handleMenuSelect = useCallback((key, book) => {
-    setMenuState(null);
+  const handleMenuSelect = useCallback(async (key, book) => {
     if (!book) return;
+    if (key !== 'sync') setMenuState(null);
     switch (key) {
+      case 'sync': {
+        if (!isOnline) { setMenuState(null); Alert.alert('No connection', 'Please connect to the internet to sync.'); return; }
+        if (!canSync)  { setMenuState(null); Alert.alert('Pro feature', 'Cloud backup requires a Pro or Business plan.'); return; }
+        if (isSyncing) return;
+        startSync();
+        try {
+          await syncLocalToCloud((done, total, step) => setProgress(done, total, step));
+          finishSync(new Date().toISOString());
+          setSyncedBookId(book.id);
+          qc.invalidateQueries();
+        } catch (err) {
+          failSync(err?.message ?? 'Sync failed. Please try again.');
+          setMenuState(null);
+        }
+        break;
+      }
       case 'rename':
         setRenameDialog(book);
         setRenameText(book.name);
@@ -596,7 +621,7 @@ export default function BooksView({
         setDeleteDialog(book);
         break;
     }
-  }, [router, bookBasePath]);
+  }, [router, bookBasePath, isOnline, canSync, isSyncing, startSync, setProgress, finishSync, failSync, qc]);
 
   const handleRenameSubmit = useCallback(() => {
     if (!renameText.trim() || !renameDialog) return;
@@ -918,6 +943,9 @@ export default function BooksView({
           Font={Font}
           onClose={() => setMenuState(null)}
           onSelect={handleMenuSelect}
+          canSync={canSync}
+          isSyncing={isSyncing}
+          syncedBookId={syncedBookId}
         />
       )}
 

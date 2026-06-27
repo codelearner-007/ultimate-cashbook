@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  StatusBar, ScrollView, Switch, ActivityIndicator, Alert, Keyboard,
+  StatusBar, ScrollView, Switch, ActivityIndicator, Modal, Keyboard,
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import SearchBar from '../components/ui/SearchBar';
@@ -17,6 +17,8 @@ import LimitReachedSheet from '../components/ui/LimitReachedSheet';
 import { RIGHTS, SCREENS, DEFAULT_SCREENS, getInitials } from '../constants/sharing';
 import { useAuthStore } from '../store/authStore';
 import { canAccess, getLimit } from '../lib/canAccess';
+import { syncLocalToCloud } from '../lib/syncManager';
+import { useSyncStore } from '../store/syncStore';
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -40,10 +42,16 @@ export default function AddCollaboratorScreen() {
   const [searchInput,   setSearchInput]   = useState('');
   const [selectedUser,  setSelectedUser]  = useState(null);
   const [rights,        setRights]        = useState('view');
-  const [showSuccess,   setShowSuccess]   = useState(false);
-  const [successMsg,    setSuccessMsg]    = useState('');
-  const [screens,       setScreens]       = useState({ ...DEFAULT_SCREENS });
+  const [showSuccess,    setShowSuccess]    = useState(false);
+  const [successMsg,     setSuccessMsg]     = useState('');
+  const [screens,        setScreens]        = useState({ ...DEFAULT_SCREENS });
   const [showLimitSheet, setShowLimitSheet] = useState(false);
+  const [showSyncModal,  setShowSyncModal]  = useState(false);
+  const [isSyncingNow,   setIsSyncingNow]   = useState(false);
+  const [syncDone,       setSyncDone]       = useState(false);
+  const [isBookNotFound, setIsBookNotFound] = useState(false);
+
+  const { startSync, finishSync, failSync } = useSyncStore();
 
   const addCollaborator = useAddCollaborator(id);
 
@@ -99,11 +107,35 @@ export default function AddCollaboratorScreen() {
             setShowLimitSheet(true);
             return;
           }
-          Alert.alert('Could not add', detail);
+          if (typeof detail === 'string' &&
+              (detail.toLowerCase().includes('book not found') || detail.toLowerCase().includes('not found'))) {
+            setIsBookNotFound(true);
+            setSyncDone(false);
+            setShowSyncModal(true);
+            return;
+          }
+          setIsBookNotFound(false);
+          setSyncDone(false);
+          setShowSyncModal(true);
         },
       },
     );
   }, [selectedUser, rights, screens, addCollaborator, name, atShareLimit]);
+
+  const handleSyncNow = useCallback(async () => {
+    setIsSyncingNow(true);
+    startSync();
+    try {
+      await syncLocalToCloud(() => {});
+      finishSync(new Date().toISOString());
+      setSyncDone(true);
+    } catch {
+      failSync('Sync failed. Please try again.');
+      setSyncDone(false);
+    } finally {
+      setIsSyncingNow(false);
+    }
+  }, [startSync, finishSync, failSync]);
 
   const canSubmit = !!selectedUser && !addCollaborator.isPending && !atShareLimit;
 
@@ -177,8 +209,8 @@ export default function AddCollaboratorScreen() {
               { color: atShareLimit ? C.danger : C.primary, fontFamily: Font.medium },
             ]}>
               {atShareLimit
-                ? `Guest limit reached (${activeShareCount}/${shareLimit}) — upgrade to add more`
-                : `${activeShareCount}/${shareLimit} guests used on your plan`
+                ? `Guest limit reached (${freeGuestCount}/${shareLimit}) — upgrade to add more`
+                : `${freeGuestCount}/${shareLimit} guests used on your plan`
               }
             </Text>
           </View>
@@ -379,6 +411,93 @@ export default function AddCollaboratorScreen() {
         <View style={{ height: 40 }} />
       </ScrollView>
 
+      {/* ── Book Not Synced Modal ────────────────────────────────────────── */}
+      <Modal
+        transparent
+        visible={showSyncModal}
+        animationType="fade"
+        onRequestClose={() => { if (!isSyncingNow) setShowSyncModal(false); }}
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.syncModal, { backgroundColor: C.card }]}>
+
+            {/* Icon */}
+            <View style={[
+              styles.syncIconBox,
+              { backgroundColor: syncDone ? '#22C55E1A' : isBookNotFound ? C.primaryLight : C.dangerLight },
+            ]}>
+              <Feather
+                name={syncDone ? 'check-circle' : isBookNotFound ? 'cloud-off' : 'alert-circle'}
+                size={32}
+                color={syncDone ? '#22C55E' : isBookNotFound ? C.primary : C.danger}
+              />
+            </View>
+
+            {/* Title & message */}
+            {syncDone ? (
+              <>
+                <Text style={[styles.syncTitle, { color: C.text, fontFamily: Font.bold }]}>
+                  Book Synced!
+                </Text>
+                <Text style={[styles.syncBody, { color: C.textMuted, fontFamily: Font.regular }]}>
+                  Your book is now available in the cloud. Tap "Grant Access" to invite your collaborator.
+                </Text>
+              </>
+            ) : isBookNotFound ? (
+              <>
+                <Text style={[styles.syncTitle, { color: C.text, fontFamily: Font.bold }]}>
+                  Book Not Synced
+                </Text>
+                <Text style={[styles.syncBody, { color: C.textMuted, fontFamily: Font.regular }]}>
+                  This book only exists on your device. To add a collaborator, the book must be uploaded to the cloud first.
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.syncTitle, { color: C.text, fontFamily: Font.bold }]}>
+                  Could Not Add
+                </Text>
+                <Text style={[styles.syncBody, { color: C.textMuted, fontFamily: Font.regular }]}>
+                  Something went wrong while adding the collaborator. Please try again.
+                </Text>
+              </>
+            )}
+
+            {/* Sync Now button — only for unsynced books */}
+            {!syncDone && isBookNotFound && (
+              <TouchableOpacity
+                style={[styles.syncBtn, { backgroundColor: C.primary }, isSyncingNow && { opacity: 0.7 }]}
+                onPress={handleSyncNow}
+                disabled={isSyncingNow}
+                activeOpacity={0.85}
+              >
+                {isSyncingNow ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Feather name="upload-cloud" size={17} color="#fff" />
+                    <Text style={[styles.syncBtnText, { fontFamily: Font.bold }]}>Sync Now</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+
+            {/* Dismiss / Done */}
+            <TouchableOpacity
+              style={[styles.syncDismiss, { borderColor: C.border }]}
+              onPress={() => setShowSyncModal(false)}
+              disabled={isSyncingNow}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.syncDismissText, { color: C.textMuted, fontFamily: Font.medium }]}>
+                {syncDone ? 'Done' : 'Cancel'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <LimitReachedSheet
         visible={showLimitSheet}
         onDismiss={() => setShowLimitSheet(false)}
@@ -480,4 +599,31 @@ const styles = StyleSheet.create({
     marginTop: 28, paddingVertical: 17, minHeight: 56,
   },
   addBtnText: { fontSize: 15, color: '#fff', lineHeight: 22 },
+
+  // Book not synced modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
+  },
+  syncModal: {
+    width: '100%', borderRadius: 24,
+    paddingHorizontal: 24, paddingTop: 32, paddingBottom: 24,
+    alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.22, shadowRadius: 28, elevation: 24,
+  },
+  syncIconBox: {
+    width: 72, height: 72, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 20,
+  },
+  syncTitle: { fontSize: 18, lineHeight: 26, marginBottom: 10, textAlign: 'center' },
+  syncBody:  { fontSize: 14, lineHeight: 21, textAlign: 'center', marginBottom: 24 },
+  syncBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, borderRadius: 32, width: '100%',
+    paddingVertical: 15, marginBottom: 10, minHeight: 52,
+  },
+  syncBtnText:     { fontSize: 15, color: '#fff', lineHeight: 22 },
+  syncDismiss:     { borderRadius: 32, width: '100%', paddingVertical: 13, alignItems: 'center', borderWidth: 1.5 },
+  syncDismissText: { fontSize: 14, lineHeight: 20 },
 });

@@ -13,6 +13,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { apiGetEntries, apiGetSummary, apiDeleteEntry, apiDeleteAllEntries } from '../lib/dataSource';
+import { syncLocalToCloud } from '../lib/syncManager';
 import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
 import { useAuthStore } from '../store/authStore';
@@ -132,7 +133,7 @@ const EntryCard = memo(({ item, onPress, onLongPress, C, Font, s, grouped, isLas
           <Text style={s.entryCategory} numberOfLines={1}>{item.category}</Text>
         ) : null}
         <View style={s.entryMetaRow}>
-          <Text style={s.entryMeta}>Entry by You  ·  {fmt12h(item.entry_time)}</Text>
+          <Text style={s.entryMeta}>Entry by Owner  ·  {fmt12h(item.entry_time)}</Text>
           {item.attachment_url ? (
             <View style={[s.attachDot, { backgroundColor: C.primaryLight }]}>
               <Feather name="paperclip" size={9} color={C.primary} />
@@ -281,6 +282,12 @@ export default function BookDetailScreen() {
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
   const qc = useQueryClient();
   const isOnline = useSyncStore(s => s.isOnline);
+  const { isSyncing, startSync, finishSync, failSync, setProgress } = useSyncStore(s => ({
+    isSyncing: s.isSyncing, startSync: s.startSync, finishSync: s.finishSync,
+    failSync: s.failSync, setProgress: s.setProgress,
+  }));
+  const canSync = canAccess(authUser, 'cloud_sync');
+  const [syncedThisSession, setSyncedThisSession] = useState(false);
   useRealtimeEntries(id);
 
   const [search, setSearch] = useState('');
@@ -515,6 +522,22 @@ export default function BookDetailScreen() {
     setMenuVisible(false);
     router.push({ pathname: `${basePath}/[id]/book-settings`, params: { id, name } });
   }, [router, basePath, id, name]);
+
+  const handleSync = useCallback(async () => {
+    if (!isOnline) { setMenuVisible(false); Alert.alert('No connection', 'Please connect to the internet to sync.'); return; }
+    if (!canSync)  { setMenuVisible(false); Alert.alert('Pro feature', 'Cloud backup requires a Pro or Business plan.'); return; }
+    if (isSyncing) return;
+    startSync();
+    try {
+      await syncLocalToCloud((done, total, step) => setProgress(done, total, step));
+      finishSync(new Date().toISOString());
+      setSyncedThisSession(true);
+      qc.invalidateQueries();
+    } catch (err) {
+      failSync(err?.message ?? 'Sync failed. Please try again.');
+      setMenuVisible(false);
+    }
+  }, [isOnline, canSync, isSyncing, startSync, setProgress, finishSync, failSync, qc]);
 
   const renderItem = useCallback(({ item: group }) => {
     const isCollapsed = !!collapsed[group.date];
@@ -1060,6 +1083,12 @@ export default function BookDetailScreen() {
         <Pressable style={s.menuOverlay} onPress={() => setMenuVisible(false)}>
           <View style={[s.menuCard, { backgroundColor: C.card, borderColor: C.border }]}>
             {[
+              ...(canSync ? [{
+                label: isSyncing ? 'Syncing…' : syncedThisSession ? 'Synced' : 'Sync',
+                icon: syncedThisSession ? 'check-circle' : 'upload-cloud',
+                onPress: handleSync,
+                synced: syncedThisSession,
+              }] : []),
               { label: 'Book Settings', icon: 'settings', onPress: goToBookSettings },
               ...(canDelete ? [{
                 label: 'Delete All Entries', icon: 'trash-2', danger: true,
@@ -1072,8 +1101,8 @@ export default function BookDetailScreen() {
                   onPress={item.onPress}
                   activeOpacity={0.7}
                 >
-                  <Feather name={item.icon} size={16} color={item.danger ? C.danger : C.textMuted} />
-                  <Text style={[s.menuItemText, { color: item.danger ? C.danger : C.text, fontFamily: Font.medium }]}>
+                  <Feather name={item.icon} size={16} color={item.danger ? C.danger : item.synced ? C.cashIn : C.textMuted} />
+                  <Text style={[s.menuItemText, { color: item.danger ? C.danger : item.synced ? C.cashIn : C.text, fontFamily: Font.medium }]}>
                     {item.label}
                   </Text>
                 </TouchableOpacity>

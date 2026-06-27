@@ -5,18 +5,19 @@ import { Feather } from '@expo/vector-icons';
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const POPUP_W = 220;
 
-// ── Menu items config ─────────────────────────────────────────────────────────
-
-const ITEMS = [
-  { key: 'rename',   label: 'Rename',        icon: 'edit-2',   danger: false },
-  { key: 'settings', label: 'Book Settings', icon: 'settings', danger: false },
-  { key: 'delete',   label: 'Delete Book',   icon: 'trash-2',  danger: true  },
-];
-
 // ── Popup menu ────────────────────────────────────────────────────────────────
 
-const BookMenu = memo(({ book, anchor, onClose, onSelect, C, Font }) => {
+const BookMenu = memo(({ book, anchor, onClose, onSelect, canSync, isSyncing, syncedBookId, C, Font }) => {
   if (!book) return null;
+
+  const isSynced = syncedBookId === book.id;
+
+  const ITEMS = [
+    { key: 'rename',   label: 'Rename',        icon: 'edit-2',   danger: false },
+    ...(canSync ? [{ key: 'sync', label: isSyncing ? 'Syncing…' : isSynced ? 'Synced' : 'Sync', icon: isSynced ? 'check-circle' : 'upload-cloud', danger: false, synced: isSynced }] : []),
+    { key: 'settings', label: 'Book Settings', icon: 'settings', danger: false },
+    { key: 'delete',   label: 'Delete Book',   icon: 'trash-2',  danger: true  },
+  ];
 
   const ITEM_H  = 48;
   const PAD_V   = 6;
@@ -71,8 +72,8 @@ const BookMenu = memo(({ book, anchor, onClose, onSelect, C, Font }) => {
               }}
               activeOpacity={0.7}
             >
-              <Feather name={item.icon} size={16} color={item.danger ? C.danger : C.textMuted} />
-              <Text style={{ fontSize: 14, fontFamily: Font.medium, color: item.danger ? C.danger : C.text, lineHeight: 20 }}>
+              <Feather name={item.icon} size={16} color={item.danger ? C.danger : item.synced ? C.cashIn : C.textMuted} />
+              <Text style={{ fontSize: 14, fontFamily: Font.medium, color: item.danger ? C.danger : item.synced ? C.cashIn : C.text, lineHeight: 20 }}>
                 {item.label}
               </Text>
             </TouchableOpacity>

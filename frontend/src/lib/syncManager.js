@@ -617,6 +617,21 @@ export async function syncCloudToLocal(onProgress) {
       }
     }
 
+    // ── Resolve local IDs for entries (re-read after categories/contacts/modes are created) ─
+    const freshCats  = await L.localGetCategories(localBookId).catch(() => []);
+    const freshCusts = await L.localGetCustomers(localBookId).catch(() => []);
+    const freshSupps = await L.localGetSuppliers(localBookId).catch(() => []);
+    const freshPms   = await L.localGetPaymentModes(localBookId).catch(() => []);
+
+    const catIdByName  = {};
+    for (const c of freshCats)  catIdByName[key(c.name)]  = c.id;
+    const custIdByName = {};
+    for (const c of freshCusts) custIdByName[key(c.name)] = c.id;
+    const suppIdByName = {};
+    for (const s of freshSupps) suppIdByName[key(s.name)] = s.id;
+    const pmIdByName   = {};
+    for (const p of freshPms)   pmIdByName[key(p.name)]   = p.id;
+
     // ── Entries ───────────────────────────────────────────────────────────────
     const localFPs = localEntryFPByBook[localBookId] ?? new Set();
 
@@ -627,18 +642,24 @@ export async function syncCloudToLocal(onProgress) {
         continue;
       }
 
+      const resolvedCategoryId  = entry.category     ? (catIdByName[key(entry.category)]          ?? null) : null;
+      const resolvedCustomerId  = entry.contact_name ? (custIdByName[key(entry.contact_name)]     ?? null) : null;
+      const resolvedSupplierId  = entry.contact_name ? (suppIdByName[key(entry.contact_name)]     ?? null) : null;
+      const resolvedPaymentMode = entry.payment_mode ?? 'Cash';
+      const resolvedPmId        = pmIdByName[key(resolvedPaymentMode)] ?? null;
+
       try {
         await L.localCreateEntry(localBookId, {
           type:            entry.type,
           amount:          entry.amount,
           remark:          entry.remark       ?? null,
           category:        entry.category     ?? null,
-          category_id:     null,   // local IDs differ from cloud IDs
-          payment_mode:    entry.payment_mode ?? 'cash',
-          payment_mode_id: null,
+          category_id:     resolvedCategoryId,
+          payment_mode:    resolvedPaymentMode,
+          payment_mode_id: resolvedPmId,
           contact_name:    entry.contact_name ?? null,
-          customer_id:     null,
-          supplier_id:     null,
+          customer_id:     resolvedCustomerId,
+          supplier_id:     resolvedSupplierId,
           entry_date:      entry.entry_date,
           entry_time:      entry.entry_time   ?? '00:00',
           attachment_url:  entry.attachment_url  ?? null,

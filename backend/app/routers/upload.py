@@ -10,9 +10,6 @@ router = APIRouter()
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"}
 ALLOWED_TYPES = ALLOWED_IMAGE_TYPES | {"application/pdf"}
 MAX_SIZE_BYTES = 6 * 1024 * 1024  # 6 MB
-SIGNED_URL_TTL = 60 * 60 * 24 * 7  # 7 days
-
-
 @router.post("/attachment")
 async def upload_attachment(
     file: UploadFile = File(...),
@@ -33,7 +30,7 @@ async def upload_attachment(
     sb = get_supabase()
 
     try:
-        sb.storage.create_bucket("attachments", options={"public": False})
+        sb.storage.create_bucket("attachments", options={"public": True})
     except Exception:
         pass  # Already exists
 
@@ -54,9 +51,12 @@ async def upload_attachment(
         {"content-type": content_type, "upsert": "true"},
     )
 
-    signed = sb.storage.from_("attachments").create_signed_url(path, SIGNED_URL_TTL)
+    public_url = sb.storage.from_("attachments").get_public_url(path)
+    if isinstance(public_url, dict):
+        public_url = public_url.get("publicURL") or public_url.get("publicUrl", "")
+
     return {
-        "attachment_url": signed["signedURL"],
+        "attachment_url": public_url,
         "path": path,
         "provider": "supabase",
     }

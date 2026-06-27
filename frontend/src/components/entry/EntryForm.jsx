@@ -14,8 +14,9 @@ import CategoryPickerModal from './CategoryPickerModal';
 import { ChevronDownIcon, CloseIcon } from '../ui/Icons';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../../hooks/useTheme';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { usePaymentModes } from '../../hooks/usePaymentModes';
+import { apiGetCategories, apiGetCustomers, apiGetSuppliers } from '../../lib/dataSource';
 import { uploadAttachment } from '../../lib/storage';
 
 const MAX_FILE_MB = 6;  // max file size accepted from device (images compressed after; PDFs sent as-is)
@@ -104,6 +105,52 @@ const EntryForm = forwardRef(function EntryForm(
     setPaymentModeId(resolved.id);
     setPaymentMode(resolved.name);
   }, [paymentModes, paymentModeId, paymentMode]);
+
+  // Resolve missing IDs for entries restored from cloud (contact_name / category text preserved
+  // but IDs set to null during restore). Fetch lists only when IDs are actually missing.
+  const needsContactResolve = contactName !== '' && !customerId && !supplierId;
+  const needsCategoryResolve = category !== '' && !categoryId;
+
+  const { data: allCategories = [] } = useQuery({
+    queryKey: ['categories', bookId],
+    queryFn:  () => apiGetCategories(bookId),
+    staleTime: 1000 * 60 * 2,
+    enabled:  !!bookId && needsCategoryResolve,
+  });
+
+  const { data: allCustomers = [] } = useQuery({
+    queryKey: ['customers', bookId],
+    queryFn:  () => apiGetCustomers(bookId),
+    staleTime: 1000 * 60 * 2,
+    enabled:  !!bookId && needsContactResolve,
+  });
+
+  const { data: allSuppliers = [] } = useQuery({
+    queryKey: ['suppliers', bookId],
+    queryFn:  () => apiGetSuppliers(bookId),
+    staleTime: 1000 * 60 * 2,
+    enabled:  !!bookId && needsContactResolve,
+  });
+
+  // Auto-resolve category ID when missing but name is present (cloud-restored entry)
+  useEffect(() => {
+    if (!needsCategoryResolve || !allCategories.length) return;
+    const match = allCategories.find(c => c.name.toLowerCase() === category.toLowerCase());
+    if (match) setCategoryId(match.id);
+  }, [needsCategoryResolve, allCategories, category]);
+
+  // Auto-resolve contact IDs when missing but name is present (cloud-restored entry)
+  useEffect(() => {
+    if (!needsContactResolve) return;
+    if (allCustomers.length) {
+      const match = allCustomers.find(c => c.name.toLowerCase() === contactName.toLowerCase());
+      if (match) { setCustomerId(match.id); return; }
+    }
+    if (allSuppliers.length) {
+      const match = allSuppliers.find(s => s.name.toLowerCase() === contactName.toLowerCase());
+      if (match) { setSupplierId(match.id); return; }
+    }
+  }, [needsContactResolve, allCustomers, allSuppliers, contactName]);
 
   const contactDeleted = contactName !== '' && !customerId && !supplierId;
   const categoryDeleted = category !== '' && !categoryId;

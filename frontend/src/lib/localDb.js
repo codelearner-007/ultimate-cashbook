@@ -789,6 +789,7 @@ export async function localSetEntryCloudId(localEntryId, cloudEntryId) {
   await db.runAsync(`UPDATE entries SET cloud_entry_id = ? WHERE id = ?`, [cloudEntryId, localEntryId]);
 }
 
+
 export async function localGetCloudEntryId(localEntryId) {
   const db = await getDb();
   const row = await db.getFirstAsync(`SELECT cloud_entry_id FROM entries WHERE id = ?`, [localEntryId]);

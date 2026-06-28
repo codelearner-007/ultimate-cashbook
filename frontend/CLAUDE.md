@@ -73,8 +73,9 @@ frontend/
 │   │   │   ├── DraggableList.jsx # Custom drag-reorder list for books
 │   │   │   └── SortSheet.jsx     # Sort-mode picker bottom sheet
 │   │   ├── entry/
-│   │   │   ├── EntryForm.jsx         # Shared form for add/edit entry
-│   │   │   └── ContactPickerModal.jsx # Bottom sheet: search customers/suppliers, create new, import from phone
+│   │   │   ├── EntryForm.jsx         # Shared form for add/edit entry (see EntryForm section below)
+│   │   │   ├── ContactPickerModal.jsx # Bottom sheet: search customers/suppliers, create new, import from phone
+│   │   │   └── CategoryPickerModal.jsx # Bottom sheet: select or create a category for an entry
 │   │   ├── notifications/
 │   │   │   └── NotificationInbox.jsx # Shared inbox used by NotificationsScreen + AdminNotificationsInboxScreen
 │   │   └── ui/
@@ -246,24 +247,113 @@ frontend/
 ---
 
 ### `BookDetailScreen` → `/(app)/books/[id]`
-- Fetches entries (`['entries', bookId]`) and summary (`['summary', bookId]`)
-- Search bar (client-side), filter chips (client-side)
-- Entries grouped by date; long-press entry → delete
-- "Cash In" / "Cash Out" → `add-entry?type=in|out`
-- Reports icon → `/(app)/books/[id]/reports`
-- Settings icon → `/(app)/books/[id]/book-settings`
+
+**Data fetching:**
+- `useBooks()` + `useSharedBooks()` to determine `isOwner`; ownership is gate on `bookOwnershipKnown` (`!booksLoading`) so shared-book vs owned-book path resolves correctly before queries fire
+- `['entries', bookId]` — `staleTime:0`; polls every 5 s for shared books, disabled for owned books (local SQLite)
+- `['summary', bookId]` — same poll / disable pattern
+- `useRealtimeEntries(bookId)` — Supabase Realtime subscription for shared-book live updates
+- Error state: only shown for collaborators whose cloud fetch fails (owners never error — they read from local SQLite); offline collaborators see a dedicated offline state with "Go Back" button
+
+**Header (two modes):**
+- **Normal:** back chevron, book name + "Add Member, Book Activity etc" subtitle, share icon (owner only; 👑 badge + amber color when canShare is false), dots menu
+- **Selection mode:** X close button, "N entries selected" title, "Select All / Deselect All" text button, trash icon (disabled when 0 selected)
+
+**Search + Filters:**
+- Full-width search bar (remark, amount, contact_name, category)
+- Filter chip bar: "All" chip (always left-anchored, resets all filters) + scrollable chips: Date | Entry Type | Cust. & Supp. | Category | Payment
+- Each chip opens a bottom-sheet picker modal (slide-up); active chip shows selected value + × clear button
+- Date picker: Today / Yesterday / This Week / This Month (2×2 grid)
+- Entry Type: Cash In / Cash Out (2-column card buttons)
+- Customers & Suppliers: tabbed list with search bar; avatars with first-letter initial; green/red accent per tab
+- Category: scrollable list of categories used in this book's entries
+- Payment: grid of payment modes used in this book's entries
+- `activeFilterCount` drives the "All" chip active state and entry count label ("filtered" vs "total")
+- When filters or search are active, `displaySummary` is recomputed client-side from the filtered entries; otherwise shows full DB summary
+
+**Balance Card (`BalanceCard`):**
+- Net balance (large, green/red), Total In (+), Total Out (−)
+- "VIEW REPORTS ›" button visible when `canViewReports`; tapping navigates to ReportsScreen, forwarding all active filters as `initialDate`, `initialType`, `initialContact`, `initialCategory`, `initialPayment` params
+
+**Entry List:**
+- Entries grouped by date (`groupByDate`); each group has a collapsible header (day name, date, count, day net)
+- `EntryCard` shows: payment mode badge (colored per mode), remark, category, "Entry by Owner · HH:MM AM/PM", paperclip dot when attachment exists, amount (green/red)
+- Entry count row with "filtered" / "total" label + "Clear" button when filters active
+
+**Selection mode (bulk delete):**
+- Long-pressing any entry (requires `canDelete`) enters selection mode
+- Checkbox appears on each card; tap to toggle; "Select All / Deselect All" in header
+- Trash icon → `DeleteEntrySheet` with bulk count; `bulkDeleteEntries` mutation calls `apiDeleteEntry` sequentially
+- Exits selection mode on successful bulk delete or pressing X
+
+**Single-entry delete:**
+- `DeleteEntrySheet` (bottom sheet) shown for single entry delete; `deleteEntry` mutation
+- Entry target set via `setDeleteEntryTarget`; sheet resolves single vs bulk via `deleteEntryTarget._bulk`
+
+**Delete All Entries:**
+- Dots menu → "Delete All Entries" → `DeleteAllEntriesSheet` (bottom sheet with animated close callback via `closeRef`)
+- `deleteAllEntries` mutation; `SuccessDialog` shown after sheet closes
+
+**Dots menu:**
+- Sync (shown only when `canSync`; label changes: Syncing… / Synced / Sync; icon: check-circle when synced)
+- Book Settings
+- Delete All Entries (shown only when `canDelete`)
+
+**Action Buttons:**
+- "CASH IN" (green) and "CASH OUT" (red) always side-by-side at the bottom
+- Hidden when `!canCreate` OR when collaborator is offline (`!isOwner && !isOnline`)
+
+**Loading state:** `BalanceCardSkeleton` + three `EntryGroupSkeleton` shimmer placeholders
+**Empty state (`EmptyState`):** animated cascading chevrons pointing down + "start here" hint (nudge + cascade loop using `Animated.loop` with `useNativeDriver`)
+
+**Rights resolution:**
+- Owner (`isOwner`): `rights = 'view_create_edit_delete'`; `canCreate = true`; `canDelete = true`; `canViewReports = true`
+- Collaborator: rights from `sharedBook.rights`; `canCreate`, `canDelete`, `canViewReports` derived from rights + screens JSONB
+
+---
+
+### `EntryForm` component (`components/entry/EntryForm.jsx`)
+
+Shared `forwardRef` component used by both `AddEntryScreen` and `EditEntryScreen`. Exposes `{ getValues(), validate() }` via `ref`.
+
+**Fields rendered (conditional on book field-settings):**
+- **Type toggle** (`showTypeToggle` prop) — Cash In / Cash Out buttons
+- **Date + Time** — two side-by-side pickers; opens `DatePickerModal` / `TimePickerModal`
+- **Amount** — decimal-pad input, required; `autoFocusAmount` prop available
+- **Contact** (shown when `showCustomer || showSupplier`) — opens `ContactPickerModal`; label adapts to Customer/Supplier/Both; amber warning when contact was deleted (ID gone but name still set); × clears
+- **Remark** — multiline text input with 🎤 emoji decoration
+- **Attachment** (shown when `showAttachment`) — three states: empty (dashed button), uploading (spinner), preview (thumb + "Tap to change"); opens animated bottom sheet with Camera / Gallery / PDF options + Remove row when file exists; inline error card on upload failure; image compressed to 1200px wide JPEG (72% quality) via `expo-image-manipulator` before upload; PDFs capped at 6 MB and sent as-is; full-screen image viewer modal on eye-icon tap
+- **Category** (shown when `showCategory`) — opens `CategoryPickerModal`; amber warning when category deleted; × clears
+- **Payment Mode** — chip row fetched from DB via `usePaymentModes(bookId)`; required field; auto-selects first mode if current selection no longer exists
+
+**ID resolution for restored entries:**
+- Cloud-restored entries have `contact_name` / `category` text but `null` IDs (IDs are local)
+- Form lazy-fetches `['customers', bookId]`, `['suppliers', bookId]`, `['categories', bookId]` only when the ID is missing but the name is present
+- On fetch: auto-matches by name and sets the correct ID so edits save correctly
+
+**Deleted-contact / deleted-category warnings:**
+- If name is present but ID is still `null` after resolution → `contactDeleted` / `categoryDeleted = true`
+- Parent screens receive callbacks via `onContactDeletedChange` / `onCategoryDeletedChange` props to show a warning banner
+
+**`getValues()` output:** `type, amount, remark, category, category_id, payment_mode, payment_mode_id, contact_name, customer_id, supplier_id, attachment_url, attachment_path, attachment_provider, entry_date (YYYY-MM-DD), entry_time (HH:MM)` — nulls set for deleted contacts/categories
+
+**`validate()`:** returns `'amount'` if empty/zero/NaN, `'payment_mode'` if no mode selected, `null` if valid
 
 ---
 
 ### `AddEntryScreen` → `/(app)/books/[id]/add-entry`
 - `type` param from query string (`'in'` or `'out'`)
+- Renders `<EntryForm>` with `initialType={type}` and `autoFocusAmount`
 - On save: `apiCreateEntry(bookId, payload)` → invalidates `['entries', bookId]`, `['summary', bookId]`, `['books']`
 
 ---
 
 ### `EditEntryScreen` → `/(app)/books/[id]/edit-entry`
-- Toggle type allowed; delete button → confirm → pop
-- On save: `apiUpdateEntry` → invalidates entries, summary, books
+- Loads existing entry via `useQuery(['entries', bookId])` and finds by `eid` param
+- Renders `<EntryForm showTypeToggle initialValues={entry}>`; type toggle always visible
+- Shows deleted-contact / deleted-category warning banners driven by `EntryForm` callbacks
+- Delete button → confirm → `apiDeleteEntry` → pop
+- On save: `apiUpdateEntry` → invalidates entries, summary, books, categories, category-entries, report-entries
 
 ---
 

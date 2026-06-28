@@ -363,11 +363,31 @@ async def cleanup_expired_cloud_data(admin_id: str = Depends(require_superadmin)
     for user in expired_users:
         uid = user["id"]
         try:
+            # Collect Supabase attachment paths before deleting rows
+            attach_res = (
+                sb.table("entries")
+                .select("attachment_path, attachment_provider")
+                .eq("user_id", uid)
+                .not_.is_("attachment_path", "null")
+                .execute()
+            )
+            supabase_paths = [
+                r["attachment_path"] for r in (attach_res.data or [])
+                if r.get("attachment_provider", "supabase") == "supabase"
+            ]
+
             # Fetch and delete all cloud books for this user (entries cascade)
             books_res = sb.table("books").select("id").eq("user_id", uid).execute()
             book_ids = [b["id"] for b in (books_res.data or [])]
             for book_id in book_ids:
                 sb.table("books").delete().eq("id", book_id).eq("user_id", uid).execute()
+
+            # Remove attachment files from Supabase Storage
+            if supabase_paths:
+                try:
+                    sb.storage.from_("attachments").remove(supabase_paths)
+                except Exception:
+                    pass
 
             # Clear cloud_data_delete_at so this user is not processed again
             sb.table("profiles").update({"cloud_data_delete_at": None}).eq("id", uid).execute()
@@ -376,6 +396,7 @@ async def cleanup_expired_cloud_data(admin_id: str = Depends(require_superadmin)
                 "user_id": uid,
                 "email": user["email"],
                 "books_deleted": len(book_ids),
+                "attachments_deleted": len(supabase_paths),
                 "status": "deleted",
             })
         except Exception as exc:
@@ -383,6 +404,7 @@ async def cleanup_expired_cloud_data(admin_id: str = Depends(require_superadmin)
                 "user_id": uid,
                 "email": user["email"],
                 "books_deleted": 0,
+                "attachments_deleted": 0,
                 "status": f"error: {exc}",
             })
 

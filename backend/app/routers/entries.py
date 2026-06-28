@@ -111,19 +111,30 @@ async def update_entry(
     elif update_data.get("supplier_id"):
         update_data["customer_id"] = None
 
-    check = (
+    existing = (
         sb.table("entries")
-        .select("id")
+        .select("id, attachment_path, attachment_provider")
         .eq("id", entry_id)
         .eq("book_id", book_id)
         .eq("user_id", owner_id)
         .limit(1)
         .execute()
     )
-    if not check.data:
+    if not existing.data:
         raise HTTPException(status_code=404, detail="Entry not found")
 
+    old_path = existing.data[0].get("attachment_path")
+    old_provider = existing.data[0].get("attachment_provider", "supabase")
+
     sb.table("entries").update(update_data).eq("id", entry_id).eq("book_id", book_id).eq("user_id", owner_id).execute()
+
+    # Delete old storage file when attachment was replaced or cleared
+    new_path = update_data.get("attachment_path", old_path)
+    if old_path and old_path != new_path and old_provider == "supabase":
+        try:
+            sb.storage.from_("attachments").remove([old_path])
+        except Exception:
+            pass
 
     result = (
         sb.table("entries")
@@ -144,7 +155,28 @@ async def delete_all_entries(
     sb = get_supabase()
     owner_id, rights = get_book_access(sb, book_id, user_id)
     require_rights(rights, "view_create_edit_delete")
+
+    # Collect Supabase attachment paths before deleting rows
+    paths_res = (
+        sb.table("entries")
+        .select("attachment_path, attachment_provider")
+        .eq("book_id", book_id)
+        .eq("user_id", owner_id)
+        .not_.is_("attachment_path", "null")
+        .execute()
+    )
+    supabase_paths = [
+        r["attachment_path"] for r in (paths_res.data or [])
+        if r.get("attachment_provider", "supabase") == "supabase"
+    ]
+
     sb.table("entries").delete().eq("book_id", book_id).eq("user_id", owner_id).execute()
+
+    if supabase_paths:
+        try:
+            sb.storage.from_("attachments").remove(supabase_paths)
+        except Exception:
+            pass
 
 
 @router.delete("/{book_id}/entries/{entry_id}", status_code=204)
@@ -157,18 +189,28 @@ async def delete_entry(
     owner_id, rights = get_book_access(sb, book_id, user_id)
     require_rights(rights, "view_create_edit_delete")
 
-    check = (
+    existing = (
         sb.table("entries")
-        .select("id")
+        .select("id, attachment_path, attachment_provider")
         .eq("id", entry_id)
         .eq("book_id", book_id)
         .eq("user_id", owner_id)
         .limit(1)
         .execute()
     )
-    if not check.data:
+    if not existing.data:
         raise HTTPException(status_code=404, detail="Entry not found")
+
+    attachment_path = existing.data[0].get("attachment_path")
+    attachment_provider = existing.data[0].get("attachment_provider", "supabase")
+
     sb.table("entries").delete().eq("id", entry_id).eq("book_id", book_id).eq("user_id", owner_id).execute()
+
+    if attachment_path and attachment_provider == "supabase":
+        try:
+            sb.storage.from_("attachments").remove([attachment_path])
+        except Exception:
+            pass
 
 
 @router.get("/{book_id}/summary", response_model=BookSummary)

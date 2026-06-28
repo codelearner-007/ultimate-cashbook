@@ -329,85 +329,111 @@ No Account Status card — users are differentiated by subscription tier (Free /
 
 ## 5. BookDetailScreen — `/(app)/books/[id]`
 
-**Purpose:** View and manage all entries in a single book.
+**Purpose:** View and manage all entries in a single book. Works for both owned books (local SQLite) and shared/collaborator books (cloud API).
 
-### Header Row
-| Element            | Action | Result                                            |
-|--------------------|--------|---------------------------------------------------|
-| Back (←)           | Tap    | Navigate back to BooksScreen                      |
-| Book name (title)  | —      | Display only                                      |
-| User-plus icon     | Tap    | (TODO — invite collaborator, not yet implemented) |
-| ⋮ (3-dot menu)    | Tap    | Opens dropdown menu                               |
+### Header — Normal Mode
+| Element                    | Action | Result                                                                                                         |
+|----------------------------|--------|----------------------------------------------------------------------------------------------------------------|
+| Back (←)                   | Tap    | `router.replace(basePath)` — back to BooksScreen or AdminBooksScreen depending on route                        |
+| Book name (title)          | —      | Display only; subtitle "Add Member, Book Activity etc"                                                          |
+| User-plus icon (owner only)| Tap    | If `canShare`: navigate to `/(app)/books/[id]/manage-shares`. If not: navigate to subscription screen. Shows 👑 amber badge when locked. |
+| ⋮ (3-dot menu)            | Tap    | Opens dropdown menu                                                                                            |
 
-### Dropdown Menu
-| Option                  | Action | Result                                           |
-|-------------------------|--------|--------------------------------------------------|
-| **Book Settings**       | Tap    | Navigate to `/(app)/books/[id]/book-settings`    |
-| **Delete All Entries**  | Tap    | Opens `DeleteAllEntriesSheet` confirmation sheet |
+### Header — Selection Mode (entered by long-pressing an entry)
+| Element                    | Action | Result                                          |
+|----------------------------|--------|-------------------------------------------------|
+| ✕ close                    | Tap    | Exit selection mode, clear selection            |
+| "N entries selected" title | —      | Display only                                    |
+| "Select All / Deselect All"| Tap    | Selects all visible filtered entries / clears   |
+| Trash icon                 | Tap    | Opens `DeleteEntrySheet` for bulk delete        |
+
+### Dropdown Menu (⋮)
+| Option                  | Shown when              | Action | Result                                               |
+|-------------------------|-------------------------|--------|------------------------------------------------------|
+| **Sync**                | `canSync` is true       | Tap    | Triggers `syncLocalToCloud()`; label shows Syncing… / Synced / Sync; icon check-circle when synced |
+| **Book Settings**       | Always                  | Tap    | Navigate to `/(app)/books/[id]/book-settings`        |
+| **Delete All Entries**  | `canDelete` is true     | Tap    | Opens `DeleteAllEntriesSheet` (200 ms delay after menu close) |
 
 ### DeleteAllEntriesSheet
-| Element               | Action | Result                                                    |
-|-----------------------|--------|-----------------------------------------------------------|
-| Entry count display   | —      | Shows "X entries will be deleted"                         |
-| "Delete All" confirm  | Tap    | `DELETE /api/v1/books/:id/entries` (all) → success dialog |
-| Cancel / drag down    | —      | Closes sheet                                              |
+| Element               | Action | Result                                                                            |
+|-----------------------|--------|-----------------------------------------------------------------------------------|
+| Book name + count     | —      | Shows book name and "X entries" that will be deleted                              |
+| "Delete All" confirm  | Tap    | `DELETE /api/v1/books/:id/entries` → animated sheet close → `SuccessDialog`       |
+| Cancel / drag down    | —      | Closes sheet                                                                      |
+
+### DeleteEntrySheet (single or bulk)
+| Element               | Action | Result                                                              |
+|-----------------------|--------|---------------------------------------------------------------------|
+| Entry info / count    | —      | Shows remark + amount for single; "X entries" for bulk              |
+| Confirm delete        | Tap    | Single: `DELETE /api/v1/books/:id/entries/:id`; Bulk: sequential deletes |
+| Cancel                | —      | Closes sheet, clears selection mode                                 |
 
 ### Search Bar
-| Element       | Action | Result                                             |
-|---------------|--------|----------------------------------------------------|
-| Search input  | Type   | Filters entries by remark or amount (client-side)  |
-| Clear (✕)     | Tap    | Clears search                                      |
+| Element       | Action | Result                                                                       |
+|---------------|--------|------------------------------------------------------------------------------|
+| Search input  | Type   | Client-side filter by remark, amount, contact_name, category                 |
+| Clear (✕)     | Tap    | Clears search                                                                |
 
 ### Filter Chips Row
-Each chip shows the active filter (or default label). Tap to open picker.
+Left-anchored "All" chip (always visible) + scrollable chips with right-side fade gradient.
 
-| Chip              | Picker Options                                             | Applies                                    |
-|-------------------|------------------------------------------------------------|--------------------------------------------|
-| **Date**          | Today / Yesterday / This Week / This Month / Custom range  | Filters by `entry_date`                    |
-| **Entry Type**    | Cash In / Cash Out                                         | Filters by `type`                          |
-| **Contact**       | List of Customers & Suppliers                              | Filters by `customer_id` or `supplier_id`  |
-| **Category**      | List of book categories                                    | Filters by `category_id`                   |
-| **Payment Mode**  | Cash / Online / Cheque / Other                             | Filters by `payment_mode`                  |
+| Chip              | Picker Options (bottom-sheet modal)                              | Filters by                                |
+|-------------------|------------------------------------------------------------------|-------------------------------------------|
+| **All**           | Tapping resets all active filters                                | —                                         |
+| **Date**          | Today / Yesterday / This Week / This Month (2×2 icon grid)      | `entry_date` range                        |
+| **Entry Type**    | Cash In / Cash Out (2-column card buttons, green/red)            | `type = 'in'` or `'out'`                  |
+| **Cust. & Supp.** | Tabbed Customers / Suppliers list with search bar; avatar initials | `contact_name`                          |
+| **Category**      | Scrollable list of categories used in this book's entries        | `category`                               |
+| **Payment**       | Grid of payment modes used in this book's entries                | `payment_mode`                           |
 
-Active filter chips show a colored indicator. Tap active chip → clears that filter.
+Active chips show selected value + × to clear inline. Inactive chips show label + chevron-down. "All" chip is highlighted when no filters are active.
 
 ### Balance Summary Card
-| Element              | Action | Result                                      |
-|----------------------|--------|---------------------------------------------|
-| Net Balance          | —      | Display only (from `books.net_balance`)     |
-| Total In             | —      | Display only (from summary)                 |
-| Total Out            | —      | Display only (from summary)                 |
-| **"VIEW REPORTS"** button | Tap | Navigate to `/(app)/books/[id]/reports`  |
+| Element                | Action | Result                                                                   |
+|------------------------|--------|--------------------------------------------------------------------------|
+| Net Balance (large)    | —      | Color: green (`C.cashIn`) when ≥ 0, red (`C.danger`) when < 0           |
+| Total In (+)           | —      | Recomputed client-side from filtered entries when any filter is active   |
+| Total Out (−)          | —      | Same as above                                                            |
+| **"VIEW REPORTS ›"**   | Tap    | Navigate to `reports` screen; forwards all active filters as route params |
+
+### Entry Count Row
+| Element              | Action | Result                                       |
+|----------------------|--------|----------------------------------------------|
+| "N entries · total"  | —      | Count of displayed entries; "filtered" when filters active |
+| "Clear" button       | Tap    | Clears all filters AND search simultaneously |
 
 ### Entry List (grouped by date)
-Sections collapsed/expanded per date.
-
-| Element              | Action      | Result                                                                               |
-|----------------------|-------------|--------------------------------------------------------------------------------------|
-| Date section header  | Tap         | Toggles collapse/expand for that date group                                          |
-| Entry card           | Tap         | Navigate to `/(app)/books/[id]/entry-detail` with entry data                         |
-| Entry card           | Long press  | Alert: "Delete this entry?" → confirm → `DELETE /api/v1/books/:id/entries/:entry_id` |
+| Element              | Action      | Result                                                                                                  |
+|----------------------|-------------|---------------------------------------------------------------------------------------------------------|
+| Date group header    | Tap         | Collapse / expand that date's entries; collapsed header shows day net balance                           |
+| Entry card (normal)  | Tap         | Navigate to `/(app)/books/[id]/entry-detail`                                                            |
+| Entry card (normal)  | Long press  | Enters selection mode (if `canDelete`); selects that entry                                              |
+| Entry card (selection) | Tap       | Toggle selection checkbox                                                                               |
 
 #### Entry Card displays:
-- Payment mode badge (Cash / Online / Cheque / Other)
-- Remark text
-- Category name (if set)
-- Time
+- Checkbox (selection mode only)
+- Payment mode badge (colored per mode: Online = green, Cheque = primary, Other = muted, default = primary)
+- Remark (or "No remark")
+- Category name (if set, muted below remark)
+- "Entry by Owner · HH:MM AM/PM" + paperclip dot when attachment exists
 - Amount (green = Cash In, red = Cash Out)
 
 ### Sticky Action Buttons (bottom)
-| Button       | Action | Result                                                |
-|--------------|--------|-------------------------------------------------------|
-| **CASH IN**  | Tap    | Navigate to `/(app)/books/[id]/add-entry?type=in`     |
-| **CASH OUT** | Tap    | Navigate to `/(app)/books/[id]/add-entry?type=out`    |
+Shown only when `canCreate && (isOwner || isOnline)`.
+
+| Button       | Action | Result                                              |
+|--------------|--------|-----------------------------------------------------|
+| **CASH IN**  | Tap    | Navigate to `/(app)/books/[id]/add-entry?type=in`   |
+| **CASH OUT** | Tap    | Navigate to `/(app)/books/[id]/add-entry?type=out`  |
 
 ### Loading / Error / Empty States
-| State                | Display                                                    |
-|----------------------|------------------------------------------------------------|
-| Loading entries      | Skeleton list                                              |
-| Error                | Error message + retry                                      |
-| Empty book           | "No entries yet. Add your first entry."                    |
-| Empty filter result  | "No entries match your filters" with clear-filters button  |
+| State                                     | Display                                                                                   |
+|-------------------------------------------|-------------------------------------------------------------------------------------------|
+| Loading (books + entries + summary)       | `BalanceCardSkeleton` + 3× `EntryGroupSkeleton` shimmer rows                             |
+| Error — collaborator, online              | "Failed to load entries" + Retry button                                                   |
+| Error — collaborator, offline             | Wi-Fi off icon + "You're offline" + "Go Back" button                                      |
+| Empty book (no entries)                   | Inbox icon box + "No entries yet" + "Tap Cash In or Cash Out below" + animated cascading chevrons |
+| Empty filter result                       | Entry count shows 0 + "Clear" button; no special empty-state card (FlatList renders empty) |
 
 ---
 

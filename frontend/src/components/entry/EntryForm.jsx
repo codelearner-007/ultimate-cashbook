@@ -17,9 +17,9 @@ import { useTheme } from '../../hooks/useTheme';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { usePaymentModes } from '../../hooks/usePaymentModes';
 import { apiGetCategories, apiGetCustomers, apiGetSuppliers } from '../../lib/dataSource';
-import { uploadAttachment } from '../../lib/storage';
+import { uploadAttachment, removeAttachment } from '../../lib/storage';
 
-const MAX_FILE_MB = 6;  // max file size accepted from device (images compressed after; PDFs sent as-is)
+const MAX_FILE_MB = 5;  // max file size: images checked before compression, PDFs sent as-is
 
 const getErrorMessage = (err) => {
   if (err?.response?.data?.detail) return err.response.data.detail;
@@ -241,9 +241,11 @@ const EntryForm = forwardRef(function EntryForm(
   };
 
   const processAndUpload = async (uri, type, name = null) => {
-    const prevLocalUri = attachmentLocalUri;
-    const prevType     = attachmentType;
-    const prevName     = attachmentName;
+    const prevLocalUri  = attachmentLocalUri;
+    const prevType      = attachmentType;
+    const prevName      = attachmentName;
+    const prevPath      = attachmentPath;
+    const prevProvider  = attachmentProvider;
 
     setAttachmentUploading(true);
     setAttachmentLocalUri(uri);
@@ -273,6 +275,11 @@ const EntryForm = forwardRef(function EntryForm(
         filename: finalName,
       });
 
+      // Delete the previously stored file now that the new one is safely uploaded
+      if (prevPath && prevPath !== path && prevProvider) {
+        removeAttachment({ path: prevPath, provider: prevProvider }).catch(() => {});
+      }
+
       setAttachmentUrl(url);
       setAttachmentPath(path);
       setAttachmentProvider(provider);
@@ -295,7 +302,12 @@ const EntryForm = forwardRef(function EntryForm(
       }
       const result = await ImagePicker.launchCameraAsync({ quality: 1, exif: false, base64: false });
       if (!result.canceled && result.assets?.[0]) {
-        await processAndUpload(result.assets[0].uri, 'image');
+        const asset = result.assets[0];
+        if (asset.fileSize && asset.fileSize > MAX_FILE_MB * 1024 * 1024) {
+          setAttachError(`Image is ${(asset.fileSize / (1024 * 1024)).toFixed(1)} MB — maximum allowed is ${MAX_FILE_MB} MB.`);
+          return;
+        }
+        await processAndUpload(asset.uri, 'image');
       }
     });
   };
@@ -309,7 +321,12 @@ const EntryForm = forwardRef(function EntryForm(
       }
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 1, exif: false, base64: false });
       if (!result.canceled && result.assets?.[0]) {
-        await processAndUpload(result.assets[0].uri, 'image');
+        const asset = result.assets[0];
+        if (asset.fileSize && asset.fileSize > MAX_FILE_MB * 1024 * 1024) {
+          setAttachError(`Image is ${(asset.fileSize / (1024 * 1024)).toFixed(1)} MB — maximum allowed is ${MAX_FILE_MB} MB.`);
+          return;
+        }
+        await processAndUpload(asset.uri, 'image');
       }
     });
   };
@@ -329,6 +346,9 @@ const EntryForm = forwardRef(function EntryForm(
   };
 
   const handleRemove = () => {
+    if (attachmentPath && attachmentProvider) {
+      removeAttachment({ path: attachmentPath, provider: attachmentProvider }).catch(() => {});
+    }
     setAttachmentLocalUri(null);
     setAttachmentUrl(null);
     setAttachmentPath(null);

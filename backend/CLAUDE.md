@@ -193,13 +193,13 @@ No JWT auth required (these are the endpoints that issue the JWT).
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| GET | `/{book_id}/entries` | List entries (optional: date_from, date_to, type filters); regenerates fresh 7-day signed URLs for any entry with `attachment_path` so collaborators always see valid image links | ✅ |
+| GET | `/{book_id}/entries` | List entries (optional: date_from, date_to, type filters); regenerates permanent public URLs from `attachment_path` via `get_public_url()` for every entry that has an attachment so `<Image>` loads without auth headers | ✅ |
 | POST | `/{book_id}/entries` | Create an entry | ✅ |
 | PUT | `/{book_id}/entries/{entry_id}` | Update an entry | ✅ |
 | DELETE | `/{book_id}/entries/{entry_id}` | Delete an entry | ✅ |
 | GET | `/{book_id}/summary` | Get balance summary (via DB function) | ✅ |
 
-All entry endpoints call `_verify_book(sb, book_id, user_id)` first — raises 404 if book doesn't belong to user.
+Entry endpoints use `get_book_owner_id(sb, book_id, user_id)` (reads) or `get_book_access(sb, book_id, user_id)` + `require_rights()` (writes/deletes) — not a standalone `_verify_book` helper.
 
 **POST /entries body:**
 ```json
@@ -246,11 +246,22 @@ All endpoints require `require_superadmin` dependency (403 if not superadmin).
   "title": "string",
   "body": "string",
   "target_type": "all",
-  "user_ids": ["uuid", "..."]
+  "user_ids": ["uuid", "..."],
+  "days_threshold": 30
 }
 ```
-`target_type` must be `'all'` or `'specific'`. `user_ids` is required when `target_type='specific'`; ignored for `'all'`. All supplied `user_ids` must be real, non-superadmin profiles — returns 422 otherwise.
-Returns `NotificationResponse` with `recipient_count`.
+`target_type` supported values:
+- `'all'` — all non-superadmin users (admin also receives a copy)
+- `'new_users'` — users created within the last `days_threshold` days (default 30); admin receives a copy
+- `'plan_free'` — free-tier users
+- `'plan_pro_m'` — Pro monthly subscribers
+- `'plan_pro_y'` — Pro yearly subscribers
+- `'plan_biz_m'` — Business monthly subscribers
+- `'plan_biz_y'` — Business yearly subscribers
+- `'specific'` — user_ids list required; all supplied IDs must be real non-superadmin profiles (422 otherwise)
+
+Superadmin is included only for `'all'` and `'new_users'`; plan-based and `'specific'` targets do not auto-append admin.
+Returns `NotificationResponse` with `recipient_count`. Push notifications sent via Expo Push API (batched, fire-and-forget).
 
 ---
 

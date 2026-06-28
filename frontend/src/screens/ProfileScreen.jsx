@@ -7,6 +7,7 @@ import {
 import { ProfileCardSkeleton } from '../components/ui/Shimmer';
 import { Image as ExpoImage } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../hooks/useTheme';
@@ -372,14 +373,30 @@ export default function ProfileScreen() {
     }
 
     const result = source === 'camera'
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8 })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8 });
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 1 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 1 });
 
     if (!result.canceled && result.assets?.[0]) {
       const asset = result.assets[0];
-      setLocalAvatarUri(asset.uri);
+
+      const MAX_AVATAR_MB = 5;
+      if (asset.fileSize && asset.fileSize > MAX_AVATAR_MB * 1024 * 1024) {
+        Alert.alert('File too large', `Image is ${(asset.fileSize / (1024 * 1024)).toFixed(1)} MB — maximum allowed is ${MAX_AVATAR_MB} MB.`);
+        return;
+      }
+
+      let finalUri = asset.uri;
+      try {
+        const imageRef = await ImageManipulator.manipulate(asset.uri).resize({ width: 1200 }).renderAsync();
+        const compressed = await imageRef.saveAsync({ compress: 0.72, format: SaveFormat.JPEG });
+        if (compressed?.uri) finalUri = compressed.uri;
+      } catch {
+        // if compression fails, upload the original
+      }
+
+      setLocalAvatarUri(finalUri);
       uploadAvatar.mutate(
-        { uri: asset.uri, mimeType: asset.mimeType || 'image/jpeg' },
+        { uri: finalUri, mimeType: 'image/jpeg' },
         {
           onSuccess: () => setLocalAvatarUri(null),
           onError:   () => { setLocalAvatarUri(null); Alert.alert('Upload failed', 'Could not upload photo. Please try again.'); },

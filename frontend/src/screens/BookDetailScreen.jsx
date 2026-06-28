@@ -265,11 +265,14 @@ export default function BookDetailScreen() {
   const router = useRouter();
   const basePath = useBookBasePath();
   const { id, name: nameParam } = useLocalSearchParams();
-  const { data: books } = useBooks();
+  const { data: books, isLoading: booksLoading } = useBooks();
   const { data: sharedBooks = [] } = useSharedBooks();
   const currentBook = books?.find(b => b.id === id);
   const name = currentBook?.name ?? nameParam;
-  const isOwner = !!currentBook;
+  // Gate on booksLoading (local SQLite — fast) so we don't mistakenly treat an
+  // owned book as a shared/cloud book before the local list resolves.
+  const bookOwnershipKnown = !booksLoading;
+  const isOwner = bookOwnershipKnown && !!currentBook;
   const authUser = useAuthStore(s => s.user);
   const canShare = canAccess(authUser, 'book_sharing');
   const sharedBook = !isOwner ? sharedBooks.find(b => b.id === id) : null;
@@ -347,10 +350,12 @@ export default function BookDetailScreen() {
     queryKey:        ['entries', id],
     queryFn:         () => apiGetEntries(id),
     staleTime:       0,
-    refetchInterval: 5000,  // fallback poll — realtime handles it instantly when available
+    // Only poll for shared/cloud books; owner books read from local SQLite and don't need network polling
+    refetchInterval: isOwner ? false : 5000,
     refetchOnFocus:  true,
-    enabled:         !!id,
-    retry:           1,
+    // Wait until we know ownership so we don't mistakenly route to cloud for an owned book
+    enabled:         !!id && bookOwnershipKnown,
+    retry:           isOwner ? 0 : 1,
   });
 
   const {
@@ -362,10 +367,12 @@ export default function BookDetailScreen() {
     queryKey:        ['summary', id],
     queryFn:         () => apiGetSummary(id),
     staleTime:       0,
-    refetchInterval: 5000,  // fallback poll — realtime handles it instantly when available
+    // Only poll for shared/cloud books; owner books read from local SQLite and don't need network polling
+    refetchInterval: isOwner ? false : 5000,
     refetchOnFocus:  true,
-    enabled:         !!id,
-    retry:           1,
+    // Wait until we know ownership so we don't mistakenly route to cloud for an owned book
+    enabled:         !!id && bookOwnershipKnown,
+    retry:           isOwner ? 0 : 1,
   });
 
   const deleteEntry = useMutation({
@@ -422,8 +429,10 @@ export default function BookDetailScreen() {
     },
   });
 
-  const isLoading = entriesLoading || summaryLoading;
-  const isError = entriesError || summaryError;
+  const isLoading = booksLoading || entriesLoading || summaryLoading;
+  // Owners always read from local SQLite — a fetch error should never block the UI.
+  // Only show error state for collaborators whose cloud fetch fails.
+  const isError = !isOwner && (entriesError || summaryError);
 
   const filtered = useMemo(() => entries.filter((e) => {
     if (filterType && e.type !== filterType) return false;

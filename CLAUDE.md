@@ -223,6 +223,8 @@ SUPABASE_JWT_SECRET=    # Project Settings → API → JWT Secret
 
 Five tables: `profiles`, `books`, `entries`, `customers`/`suppliers`, `categories`.
 
+**Local SQLite** (frontend only) also has a `deleted_entries` tombstone table — see Section 8 / Sync Rules.
+
 Key invariants:
 - `books.net_balance` is **auto-maintained** by the `trg_update_book_balance` trigger on `entries` — never compute it in application code
 - `categories.total_in/out/net_balance` are **auto-maintained** by the `trg_update_category_balance` trigger on `entries` — never compute in application code
@@ -249,6 +251,12 @@ Key invariants:
 - All server state via React Query; Zustand only for auth + UI prefs
 - All screens must handle loading, error, and empty states
 - `DraggableList` syncs its internal `items` with the `books` prop via `useEffect` when not dragging
+
+### Sync Rules (own books — manual upload only)
+- `shouldBackupToCloud()` in `dataSource.js` always returns `false` — no write ever triggers an automatic cloud push
+- The owner must go to Settings → Backup & Sync → "Upload to Cloud" to push any local change to the cloud
+- `syncLocalToCloud()` in `syncManager.js` handles the full upload in 7 steps: books → delete orphan books → categories → customers → suppliers → payment modes → entries → **delete orphan entries (tombstones)**
+- **Entry deletion tombstones:** `localDeleteEntry()` and `localDeleteAllEntries()` write a row to the `deleted_entries` SQLite table (`cloud_entry_id`, `cloud_book_id`, `deleted_at`) before removing the local row. Step 7 of `syncLocalToCloud()` reads these tombstones and calls `DELETE /api/v1/books/:id/entries/:eid` for each. Tombstones are cleared on success or 404; left in place on other errors (retried next sync). Works regardless of whether the owner was online or offline at delete time.
 
 ### Design Consistency (applies to every new screen and component)
 Every new or modified screen/component **must match the visual language of the existing app**. Before writing any JSX, look at a similar existing screen for reference. Specific rules:
@@ -335,6 +343,9 @@ Swagger UI: `http://localhost:8000/docs`
 | Book & entry data | Supabase database via FastAPI |
 | Balance calculation | Supabase trigger (`trg_update_book_balance`) |
 | Admin user management | FastAPI `/api/v1/admin/*` (superadmin only) |
-| Receipts / photo attachments | Supabase Storage (`attachments` bucket) |
+| Receipts / photo attachments | Supabase Storage (`attachments` bucket); local `file:///` copy on device after upload or restore |
 | Real-time admin user list | React Query polling (10 s interval) |
 | Token storage | Expo SecureStore (native) / localStorage (web) |
+| Entry deletion cloud sync | Tombstone log (`deleted_entries` SQLite table) — replayed during next manual "Upload to Cloud" |
+| Cloud → device restore | `syncCloudToLocal()` — downloads entries + attachments; each entry linked to its cloud UUID via `cloud_entry_id` so re-upload never duplicates |
+| Restore button availability | Live delta (`onlyInCloudEntries`, `newBooks`) — button stays active until all cloud data is locally present; no session flag can hide it |

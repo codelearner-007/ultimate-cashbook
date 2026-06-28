@@ -358,7 +358,7 @@ No Account Status card — users are differentiated by subscription tier (Free /
 | Element               | Action | Result                                                                            |
 |-----------------------|--------|-----------------------------------------------------------------------------------|
 | Book name + count     | —      | Shows book name and "X entries" that will be deleted                              |
-| "Delete All" confirm  | Tap    | `DELETE /api/v1/books/:id/entries` → animated sheet close → `SuccessDialog`       |
+| "Delete All" confirm  | Tap    | `localDeleteAllEntries()` — records tombstones for every previously-synced entry, then bulk-deletes from SQLite → animated sheet close → `SuccessDialog`. Cloud entries removed on next manual sync. |
 | Cancel / drag down    | —      | Closes sheet                                                                      |
 
 ### DeleteEntrySheet (single or bulk)
@@ -911,9 +911,8 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 ### Status Card (always shown — all users)
 - Animated dot: green (online) / red (offline), connection type label (e.g. WIFI, CELLULAR)
 - Last synced timestamp from `syncStore.lastSyncedAt` (or "Never synced")
-  - Updates automatically after every background cloud push (book/entry create, update, delete) via `stampSyncTime()` in `dataSource.js`
-  - Updates after every `AutoSyncMonitor` cycle (every 5 min while online) — always stamped even when 0 new items
-  - Updates after a manual sync via the Sync button
+  - Updated only after a successful manual "Upload to Cloud" via `finishSync()` in `BackupSyncScreen`
+  - Never updated automatically — there is no background auto-sync for own books
 - Upload progress bar (while syncing)
 - Restore progress bar (while restoring) in green (`C.cashIn`)
 - Error message if last sync/restore failed
@@ -964,15 +963,17 @@ This section is shown because free users with shared book access need visibility
 | **Sync to Cloud**       | Already synced (`delta.toUpload === 0 && localTotal > 0`) | Icon changes to check-circle, sublabel "Local and cloud are in sync"; tap shows toast "Already synced" |
 | **Sync to Cloud**       | Syncing in progress                                       | Disabled + icon "loader", shows "Syncing…"                                           |
 | **Sync to Cloud**       | No local data (`stats.total === 0`)                       | Tap → shows "Nothing to sync" centered modal alert                                   |
-| **Restore from Cloud**  | Visible only when `!hasRestoredFromCloud && hasUnrestoredCloudData` | Tap → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal()` with progress |
+| **Restore from Cloud**  | Visible when `hasUnrestoredCloudData` is true             | Tap → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal()` with progress |
 | **Restore from Cloud**  | Offline / syncing / restoring                             | Disabled (still visible)                                                             |
 
 #### "Restore from Cloud" button — visibility logic
-Hidden unless ALL are true:
-1. `hasRestoredFromCloud === false` — no restore has completed this session
-2. `hasCloudData === true` — cloud account has at least one book
-3. `delta.onlyInCloudEntries > 0` OR `delta.newBooks > 0` — cloud has data not yet on device
-4. `deltaLoading === false` — delta comparison has finished loading
+Shown whenever ALL are true:
+1. `canSync === true` — paid / superadmin user
+2. `deltaLoading === false` — delta comparison has finished
+3. `hasCloudData === true` — cloud account has at least one book
+4. `delta.onlyInCloudEntries > 0` OR `delta.newBooks > 0` — cloud has data not yet on this device
+
+The old `hasRestoredFromCloud` session flag is **no longer a gate**. The button stays visible after a partial restore (e.g. mid-download network failure) so the user can retry. It disappears automatically once the delta shows no remaining unrestored data.
 
 ### DANGER ZONE Card (paid / superadmin only)
 | Element                   | State   | Action | Result                                                               |
@@ -996,16 +997,36 @@ Hidden unless ALL are true:
 
 ### Info Note (always shown — all users)
 - Blue info box at the bottom of the scroll
-- Paid/superadmin: "Data auto-syncs to cloud every 5 minutes and on reconnect. Use the Sync button if something seems out of date."
+- Paid/superadmin: "Use Upload to Cloud to back up your data. Sync is manual — tap the button whenever you want your cloud to reflect local changes."
 - Free with shared access: "Your shared books stay in sync automatically. Your own books are stored on this device only — upgrade to back them up."
 - Free with no shared access: "Free plan stores data on this device only. Uninstalling the app will delete all data."
 
-### Auto-Sync Behaviour (no manual action required — all eligible users)
-- `AutoSyncMonitor` fires on reconnect and every 5 min (paid/superadmin only); always stamps `lastSyncedAt` after every cycle
-- Each write (create/update/delete) in `dataSource.js` fires a background cloud push and stamps `lastSyncedAt` on success via `stampSyncTime()`
-- Shared book writes go directly to cloud; realtime subscriptions deliver changes to all book members instantly when online; queued offline when not
-- Offline writes queue locally; `AutoSyncMonitor` uploads them on next reconnect — no manual action needed
-- No duplicate data: entries matched by fingerprint (`date|time|type|amount|remark`), books by name — re-running sync is always safe
+### Sync Behaviour (manual upload only — own books)
+- Own-book writes (create, edit, delete) go to local SQLite only — **no automatic cloud push ever occurs**
+- The owner must tap "Upload to Cloud" in BackupSyncScreen to push any change to the cloud
+- Shared book writes go directly to cloud; realtime subscriptions deliver changes to all book members instantly when online
+- `syncLocalToCloud()` runs in 7 steps: books → delete orphan books → categories → customers → suppliers → payment modes → entries (create/update/attach) → **step 7: delete tombstoned entries from cloud**
+- No duplicate data: entries matched by fingerprint (`date|time|type|amount|remark`), books/categories/contacts matched by name — re-running sync is always safe
+
+#### Attachment upload during sync
+- Entries with `attachment_provider = 'local'` → file uploaded to Supabase Storage on first sync; cloud entry updated with the returned URL; **local SQLite entry also updated** (`attachment_url` → Supabase URL, `attachment_provider` → `'supabase'`) so the local record stays in sync with cloud
+- Entries with `attachment_provider = 'supabase'` → URL passed through as-is; no re-upload
+- Applies to both **Case C** (new entry) and **Case B** (edited entry with `cloud_entry_id`)
+
+#### Restore (`syncCloudToLocal`)
+- Each cloud entry's UUID is stored as `cloud_entry_id` in the restored local SQLite row immediately — so a future "Upload to Cloud" targets the existing cloud row (Case B update) instead of creating a duplicate (Case C)
+- Supabase attachments are **physically downloaded** to `{documentDirectory}attachments/restored_{seq}.jpg` (or `.pdf`) during restore so they display offline
+  - Filename uses a per-book monotonic counter (`seq`), not `Date.now()`, to guarantee uniqueness
+  - Old file at the same path is deleted before each download (safe re-run if restore is retried)
+  - `attachment_url` = local `file:///` path (offline display), `attachment_path` = Supabase storage path (deletion/sync), `attachment_provider` = `'supabase'` (tells next upload: already in cloud, skip)
+  - On download failure: falls back to Supabase URL — displays online; user can re-run restore when connectivity returns
+
+#### Entry deletion sync (tombstone mechanism)
+- When an owner deletes an entry that was previously synced, `localDeleteEntry()` writes a tombstone row to the `deleted_entries` SQLite table (`cloud_entry_id`, `cloud_book_id`, `deleted_at`) before removing the local row
+- "Delete All Entries" does the same in bulk via `localDeleteAllEntries()`
+- This works whether the device is online or offline — tombstones are local SQLite writes
+- During the next "Upload to Cloud", step 7 reads all tombstones and calls `DELETE /api/v1/books/:id/entries/:eid` for each; tombstone cleared on success or 404; left in place on other errors (retried next sync)
+- Entries that were **never uploaded** to cloud produce no tombstone — nothing to delete remotely
 
 ### Sheets used
 | Sheet                | Purpose                                      |

@@ -523,10 +523,9 @@ export default function BackupSyncScreen() {
     try {
       const result = await syncCloudToLocal((done, total, step) => setRestoreProgress(done, total, step));
       finishRestore();
-      setHasRestored(true);
       setShowRestoreConfirm(false);
       qc.invalidateQueries();
-      await loadData();
+      await loadData(); // recomputes delta — button auto-hides when nothing remains
       const msg = result.synced > 0
         ? `${result.synced} item(s) restored to your device.`
         : 'All data is already up to date.';
@@ -535,7 +534,7 @@ export default function BackupSyncScreen() {
       failRestore(err?.message ?? 'Restore failed. Please try again.');
       setShowRestoreConfirm(false);
     }
-  }, [startRestore, setRestoreProgress, finishRestore, failRestore, setHasRestored, qc, loadData]);
+  }, [startRestore, setRestoreProgress, finishRestore, failRestore, qc, loadData]);
 
   const doFreshStart = useCallback(async () => {
     setIsFreshStarting(true);
@@ -749,7 +748,7 @@ export default function BackupSyncScreen() {
                   disabled={!isOnline || isSyncing || isRestoring}
                   C={C}
                 />
-                {!hasRestoredFromCloud && hasUnrestoredCloudData && (
+                {hasUnrestoredCloudData && (
                   <ActionBtn
                     icon={isRestoring ? 'loader' : 'download-cloud'}
                     label={isRestoring ? 'Restoring…' : 'Restore from Cloud'}

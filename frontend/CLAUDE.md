@@ -391,7 +391,7 @@ Shared `forwardRef` component used by both `AddEntryScreen` and `EditEntryScreen
 const hasUnrestoredCloudData = canSync && !deltaLoading && hasCloudData &&
   ((delta?.onlyInCloudEntries ?? 0) > 0 || (delta?.newBooks ?? 0) > 0);
 ```
-Button renders only when `!hasRestoredFromCloud && hasUnrestoredCloudData`. Hidden when local already matches cloud, no cloud data exists, or restore already ran this session. Disabled (but shown) when offline, syncing, or restoring.
+Button renders whenever `hasUnrestoredCloudData` is true — **the `hasRestoredFromCloud` flag is no longer part of the condition.** The delta is the live source of truth: once all cloud data is locally present, `onlyInCloudEntries` and `newBooks` both drop to 0 and the button disappears naturally. This means the button stays visible and re-appears after a partial restore (e.g. mid-download network failure) so the user can retry. Disabled (but shown) when offline, syncing, or restoring.
 
 ---
 
@@ -486,9 +486,78 @@ Routes every read and write through `isLocalBook(bookId)` — a fast SQLite chec
 `isLocalBook()` calls `localBookExists(bookId)` in `localDb.js`. Shared books are never pulled into the recipient's SQLite, so the check returns `false` and the cloud path is taken automatically.
 
 ### Entry cloud-ID tracking (`cloud_entry_id`)
-When a manual upload sends an entry to the cloud, the returned cloud UUID is stored in the local `entries.cloud_entry_id` column via `localSetEntryCloudId()`. This enables:
-- **Update reconciliation:** `syncLocalToCloud` detects entries where fingerprint changed but `cloud_entry_id` is known → sends an update to the existing cloud row instead of creating a duplicate.
-- **Delete reconciliation:** entries deleted locally while offline are detected during the next manual upload via the `AutoDeleteMonitor` book-level logic.
+The local `entries.cloud_entry_id` column links a local row to its cloud UUID. It is set in two places:
+- **Upload (`syncLocalToCloud` Case C):** after a new entry is created in the cloud, the returned UUID is stored via `localSetEntryCloudId()`.
+- **Restore (`syncCloudToLocal`):** after a cloud entry is written to local SQLite, the cloud entry's `id` is stored immediately via `localSetEntryCloudId()` — so a future upload can update that cloud row instead of creating a duplicate.
+
+This enables:
+- **Update reconciliation:** `syncLocalToCloud` sees `cloud_entry_id` is known but fingerprint changed → Case B → updates existing cloud row.
+- **Delete reconciliation:** See tombstone section below.
+- **Idempotent re-upload after restore:** Case A fingerprint match back-fills `cloud_entry_id` if somehow still null (safety net).
+
+### Deletion tombstone log (`deleted_entries` SQLite table)
+
+**Problem solved:** When an owner deletes a local entry that was previously synced, the row (including its `cloud_entry_id`) disappears from SQLite. The sync loop only iterates over *existing* entries, so it could never detect the deletion — the cloud entry would remain forever.
+
+**Solution:** A `deleted_entries` table acts as a tombstone log:
+
+```
+deleted_entries
+  id             INTEGER PRIMARY KEY AUTOINCREMENT
+  cloud_entry_id TEXT NOT NULL   — cloud UUID of the deleted entry
+  cloud_book_id  TEXT NOT NULL   — cloud UUID of its parent book
+  deleted_at     TEXT NOT NULL   — ISO timestamp
+```
+
+**Write path (both single and bulk delete):**
+- `localDeleteEntry()` — reads `cloud_entry_id` + `books.cloud_id` before deleting; inserts a tombstone row if both are non-null (i.e. the entry was previously synced). No tombstone for unsynced entries.
+- `localDeleteAllEntries()` — bulk-reads all synced entries for the book first, inserts a tombstone for each, then does the bulk `DELETE`.
+
+**Sync path (`syncLocalToCloud` — step 7):**
+1. Tombstones are fetched at function start and included in the `total` progress count.
+2. After entries are uploaded/updated, step 7 loops over tombstones and calls `apiDeleteEntry(cloud_book_id, cloud_entry_id)` for each.
+3. On success or 404 (already gone) → tombstone cleared via `localClearDeletedEntry(id)`.
+4. On any other network error → tombstone is **left in place** and retried on the next manual sync.
+
+**Offline behaviour:** Tombstones are pure SQLite writes — no network required at delete time. They accumulate until the owner next presses "Upload to Cloud", at which point all pending deletions are replayed against the cloud.
+
+**Helpers exported from `localDb.js`:**
+- `localGetDeletedEntries()` — returns all rows ordered by `deleted_at ASC`
+- `localClearDeletedEntry(id)` — removes a single tombstone row after successful cloud delete
+
+### Attachment sync rules
+
+Attachments have three fields in SQLite: `attachment_url`, `attachment_path`, `attachment_provider`.
+
+| Field | Role |
+|---|---|
+| `attachment_url` | URI used for **display** (`<Image source={{ uri }}>`) — may be a local `file:///` path or a Supabase HTTPS URL |
+| `attachment_path` | Supabase Storage object path (e.g. `attachments/entry-id/attachment.jpg`) — used for **deletion** and **sync dedup** |
+| `attachment_provider` | `'local'` or `'supabase'` — tells sync whether the file already lives in cloud storage |
+
+#### Upload (`syncLocalToCloud`)
+
+| Entry attachment state | What sync does |
+|---|---|
+| `provider = 'local'`, file exists | Uploads file to Supabase Storage, updates cloud entry with returned URL/path, mirrors Supabase URL back to **local** SQLite (so `attachment_url` becomes the Supabase URL and `provider` becomes `'supabase'`) |
+| `provider = 'supabase'` | Passes existing `attachment_url`, `attachment_path`, `provider` through in the payload — no re-upload |
+| `provider = null` / no attachment | Sends nulls — no file operation |
+
+For **Case B** (edited entry with `cloud_entry_id`): same attachment upload logic as Case C, applied before the cloud update call.
+
+#### Restore (`syncCloudToLocal`)
+
+For each cloud entry with a Supabase attachment:
+1. Creates `{documentDirectory}attachments/restored_{seq}.jpg` (or `.pdf`) using a **monotonic per-book counter** — never `Date.now()`, so filenames are unique even when entries are processed within the same millisecond.
+2. Calls `FileSystem.deleteAsync(dest, { idempotent: true })` before download to clean up any stale file from a previous restore run at the same sequence position.
+3. Downloads via `FileSystem.downloadAsync(cloudUrl, localDest)`.
+4. On success:
+   - `attachment_url` = local `file:///` path (offline display works)
+   - `attachment_path` = original Supabase Storage path (deletion / sync knows the cloud location)
+   - `attachment_provider` = `'supabase'` (sync will NOT re-upload — file is already in cloud)
+5. On failure (network error, non-200 status): falls back to storing the Supabase URL as `attachment_url` — images display when online; `attachment_provider` stays `'supabase'` so the next restore attempt skips the entry (fingerprint match) but the Supabase URL fallback remains visible online. The "Restore from Cloud" button stays active until `onlyInCloudEntries` reaches zero, so the user can retry if needed.
+
+**Free-tier users** whose attachments were stored with `provider = 'local'` and were never manually uploaded to cloud will have null attachment fields after restore — the files were never backed up.
 
 ### `stampSyncTime()` helper
 No longer used for background pushes (those are removed). Still present in `dataSource.js` but `shouldBackupToCloud()` always returns `false` so the branches that call it never execute. `lastSyncedAt` is now only updated by `finishSync()` in `BackupSyncScreen` after a manual upload completes.

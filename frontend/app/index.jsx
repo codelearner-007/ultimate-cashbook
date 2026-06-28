@@ -180,7 +180,8 @@ export default function Index() {
         setRestoreProgress(done, total, step);
       });
       finishRestore();
-      setHasRestored(true);             // hide restore button in Backup & Sync — data is now local
+      // Note: hasRestoredFromCloud flag is no longer used to hide the restore button.
+      // The delta (onlyInCloudEntries / newBooks) is the live source of truth.
       setRestoreJustCompleted(true);    // keep overlay until BooksView confirms books are rendered
       qc.invalidateQueries();
       const msg = result.synced > 0

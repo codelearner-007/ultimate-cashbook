@@ -12,8 +12,9 @@
  * Return value for both: { synced, skipped, alreadySynced, total }
  */
 
+import * as FileSystem from 'expo-file-system/legacy';
 import * as L from './localDb';
-import { localSetBookCloudId, localSetEntryCloudId } from './localDb';
+import { localSetBookCloudId, localSetEntryCloudId, localGetDeletedEntries, localClearDeletedEntry } from './localDb';
 import {
   apiGetBooks,
   apiCreateBook,
@@ -30,6 +31,7 @@ import {
   apiGetPaymentModes,
   apiCreatePaymentMode,
   apiUploadAttachment,
+  apiDeleteEntry as apiDeleteCloudEntry,
 } from './api';
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
@@ -177,10 +179,12 @@ const entryFingerprint = (e) =>
  * @returns {Promise<{ synced: number, skipped: number, alreadySynced: number, total: number }>}
  */
 export async function syncLocalToCloud(onProgress) {
-  const data = await L.localGetAllDataForMigration();
+  const data       = await L.localGetAllDataForMigration();
+  const tombstones = await localGetDeletedEntries();
 
   const total = data.books.length + data.categories.length + data.customers.length +
-                data.suppliers.length + data.payment_modes.length + data.entries.length;
+                data.suppliers.length + data.payment_modes.length + data.entries.length +
+                tombstones.length;
 
   let done          = 0;
   let skipped       = 0;
@@ -380,6 +384,9 @@ export async function syncLocalToCloud(onProgress) {
       continue;
     }
 
+    // For supabase-provider attachments the URL is already in cloud storage — pass it through.
+    // Local-provider attachments are handled below in Case C (upload on new entry creation).
+    // For Case B (edit of existing entry), if the attachment is still local we attempt upload too.
     const payload = {
       type:         entry.type,
       amount:       entry.amount,
@@ -392,12 +399,37 @@ export async function syncLocalToCloud(onProgress) {
       supplier_id:  suppIdMap[entry.supplier_id] ?? null,
       entry_date:   entry.entry_date,
       entry_time:   entry.entry_time  ?? '00:00',
+      attachment_url:      (entry.attachment_provider === 'supabase') ? (entry.attachment_url  ?? null) : null,
+      attachment_path:     (entry.attachment_provider === 'supabase') ? (entry.attachment_path ?? null) : null,
+      attachment_provider: (entry.attachment_provider === 'supabase') ? 'supabase' : null,
     };
 
     // Case B — has a known cloud ID but fingerprint changed: update the existing cloud row
     if (entry.cloud_entry_id && (cloudEntryById[cloudBookId] ?? new Map()).has(entry.cloud_entry_id)) {
       try {
-        await apiUpdateEntry(cloudBookId, entry.cloud_entry_id, payload);
+        let updatePayload = payload;
+
+        // If the edited entry still has a local-provider attachment, upload it to Supabase now
+        if (entry.attachment_provider === 'local' && entry.attachment_path) {
+          try {
+            const isPdf    = entry.attachment_path.toLowerCase().endsWith('.pdf');
+            const mimeType = isPdf ? 'application/pdf' : 'image/jpeg';
+            const filename = isPdf ? 'attachment.pdf'  : 'attachment.jpg';
+            const uploaded = await apiUploadAttachment(entry.attachment_path, mimeType, filename, entry.cloud_entry_id);
+            const attachPatch = {
+              attachment_url:      uploaded.attachment_url,
+              attachment_path:     uploaded.path,
+              attachment_provider: uploaded.provider ?? 'supabase',
+            };
+            updatePayload = { ...payload, ...attachPatch };
+            // Mirror Supabase URL back to local so it's correct going forward
+            L.localUpdateEntry(entry.book_id, entry.id, attachPatch).catch(() => {});
+          } catch {
+            // Upload failed — sync entry data without attachment; image stays local
+          }
+        }
+
+        await apiUpdateEntry(cloudBookId, entry.cloud_entry_id, updatePayload);
         // Update the fpMap so subsequent entries in the same book don't see a stale state
         fpMap.set(fp, entry.cloud_entry_id);
         tick('Updating entry…');
@@ -424,11 +456,15 @@ export async function syncLocalToCloud(onProgress) {
           const mimeType = isPdf ? 'application/pdf' : 'image/jpeg';
           const filename = isPdf ? 'attachment.pdf'  : 'attachment.jpg';
           const uploaded = await apiUploadAttachment(entry.attachment_path, mimeType, filename, cloudEntry.id);
-          await apiUpdateEntry(cloudBookId, cloudEntry.id, {
+          const attachPatch = {
             attachment_url:      uploaded.attachment_url,
             attachment_path:     uploaded.path,
             attachment_provider: uploaded.provider ?? 'supabase',
-          });
+          };
+          await apiUpdateEntry(cloudBookId, cloudEntry.id, attachPatch);
+          // Mirror the Supabase URL back into local SQLite so this device also uses the
+          // cloud URL going forward (survives future local-data clears and reinstalls).
+          L.localUpdateEntry(entry.book_id, entry.id, attachPatch).catch(() => {});
         } catch {
           // Attachment upload failed — entry data is saved; image stays local
         }
@@ -438,6 +474,26 @@ export async function syncLocalToCloud(onProgress) {
     } catch {
       skip('Skipped entry');
     }
+  }
+
+  // ── 7. Delete cloud entries that were removed locally ─────────────────────────
+  // localDeleteEntry() records a tombstone (cloud_entry_id + cloud_book_id) in
+  // the deleted_entries table whenever an entry with a known cloud ID is deleted.
+  // Here we replay those deletions against the cloud and clear each tombstone.
+  for (const t of tombstones) {
+    try {
+      await apiDeleteCloudEntry(t.cloud_book_id, t.cloud_entry_id);
+      tick(`Deleting entry from cloud…`);
+    } catch (err) {
+      // 404 means the cloud row is already gone — still safe to clear the tombstone.
+      if (err?.response?.status === 404) {
+        tick(`Cloud entry already removed`);
+      } else {
+        skip(`Could not delete cloud entry`);
+        continue; // leave tombstone so it retries on the next sync
+      }
+    }
+    await localClearDeletedEntry(t.id);
   }
 
   return { synced: done - skipped - alreadySynced, skipped, alreadySynced, total };
@@ -633,7 +689,14 @@ export async function syncCloudToLocal(onProgress) {
     for (const p of freshPms)   pmIdByName[key(p.name)]   = p.id;
 
     // ── Entries ───────────────────────────────────────────────────────────────
-    const localFPs = localEntryFPByBook[localBookId] ?? new Set();
+    // localFPs is pre-seeded with fingerprints of entries that existed in local DB
+    // before this restore run started — guards against duplicating on re-run.
+    const localFPs = new Set(localEntryFPByBook[localBookId] ?? []);
+
+    // Monotonic counter for unique filenames — avoids collisions when two entries
+    // are processed within the same millisecond on fast devices.
+    let attachSeq = 0;
+    const ATTACHMENTS_DIR = `${FileSystem.documentDirectory}attachments/`;
 
     for (const entry of entries) {
       const fp = entryFingerprint(entry);
@@ -648,8 +711,44 @@ export async function syncCloudToLocal(onProgress) {
       const resolvedPaymentMode = entry.payment_mode ?? 'Cash';
       const resolvedPmId        = pmIdByName[key(resolvedPaymentMode)] ?? null;
 
+      // Download Supabase attachment to local filesystem so it works offline.
+      // attachment_url  → local file:/// path   (used for display)
+      // attachment_path → Supabase storage path (used for deletion & sync dedup)
+      // attachment_provider → 'supabase'        (tells sync: already in cloud, don't re-upload)
+      let restoredAttachUrl      = null;
+      let restoredAttachPath     = null;
+      let restoredAttachProvider = null;
+
+      const cloudUrl = (entry.attachment_provider !== 'local') ? (entry.attachment_url ?? null) : null;
+      if (cloudUrl) {
+        try {
+          await FileSystem.makeDirectoryAsync(ATTACHMENTS_DIR, { intermediates: true });
+          const isPdf    = (entry.attachment_path ?? '').toLowerCase().endsWith('.pdf');
+          attachSeq++;
+          const localDest = `${ATTACHMENTS_DIR}restored_${attachSeq}${isPdf ? '.pdf' : '.jpg'}`;
+          // Delete any stale file at this path before downloading (idempotent re-run safety)
+          await FileSystem.deleteAsync(localDest, { idempotent: true });
+          const result = await FileSystem.downloadAsync(cloudUrl, localDest);
+          if (result.status === 200) {
+            restoredAttachUrl      = result.uri;
+            restoredAttachPath     = entry.attachment_path ?? null;
+            restoredAttachProvider = 'supabase';
+          } else {
+            // Download failed — store Supabase URL as fallback (displays when online)
+            restoredAttachUrl      = cloudUrl;
+            restoredAttachPath     = entry.attachment_path ?? null;
+            restoredAttachProvider = 'supabase';
+          }
+        } catch {
+          // Network or FS error — store Supabase URL as fallback
+          restoredAttachUrl      = cloudUrl;
+          restoredAttachPath     = entry.attachment_path ?? null;
+          restoredAttachProvider = 'supabase';
+        }
+      }
+
       try {
-        await L.localCreateEntry(localBookId, {
+        const localEntry = await L.localCreateEntry(localBookId, {
           type:            entry.type,
           amount:          entry.amount,
           remark:          entry.remark       ?? null,
@@ -662,10 +761,16 @@ export async function syncCloudToLocal(onProgress) {
           supplier_id:     resolvedSupplierId,
           entry_date:      entry.entry_date,
           entry_time:      entry.entry_time   ?? '00:00',
-          attachment_url:  entry.attachment_url  ?? null,
-          attachment_path: entry.attachment_path ?? null,
-          attachment_provider: entry.attachment_url ? 'supabase' : null,
+          attachment_url:      restoredAttachUrl,
+          attachment_path:     restoredAttachPath,
+          attachment_provider: restoredAttachProvider,
         });
+        // Store cloud UUID → local entry link so future uploads update instead of duplicate
+        if (localEntry?.id && entry.id) {
+          localSetEntryCloudId(localEntry.id, entry.id).catch(() => {});
+        }
+        // Add to the in-run fingerprint set so a duplicate cloud entry in the same book
+        // doesn't get created twice within this restore session
         localFPs.add(fp);
         tick('Downloaded entry…');
       } catch {

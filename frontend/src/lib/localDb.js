@@ -108,6 +108,16 @@ async function getDb() {
         UNIQUE (book_id, name)
       );
     `);
+    // Tombstone log: records cloud_entry_id of entries deleted locally so sync can
+    // remove them from the cloud during the next manual upload.
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS deleted_entries (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        cloud_entry_id TEXT NOT NULL,
+        cloud_book_id  TEXT NOT NULL,
+        deleted_at     TEXT NOT NULL
+      );
+    `);
     // Add columns introduced after initial schema — safe to run every time (errors ignored)
     for (const ddl of [
       'ALTER TABLE entries      ADD COLUMN customer_id          TEXT',
@@ -403,6 +413,16 @@ export async function localUpdateEntry(bookId, entryId, payload) {
 export async function localDeleteEntry(bookId, entryId) {
   const db  = await getDb();
   const old = await db.getFirstAsync(`SELECT * FROM entries WHERE id = ?`, [entryId]);
+  // Record tombstone before deleting so sync can remove the cloud row later.
+  if (old?.cloud_entry_id) {
+    const cloudBookId = await db.getFirstAsync(`SELECT cloud_id FROM books WHERE id = ?`, [bookId]);
+    if (cloudBookId?.cloud_id) {
+      await db.runAsync(
+        `INSERT INTO deleted_entries (cloud_entry_id, cloud_book_id, deleted_at) VALUES (?, ?, ?)`,
+        [old.cloud_entry_id, cloudBookId.cloud_id, now()],
+      );
+    }
+  }
   await db.runAsync(`DELETE FROM entries WHERE id = ?`, [entryId]);
   await recomputeBookBalance(db, bookId);
   await recomputeCategoryBalance(db, bookId, old?.category);
@@ -413,6 +433,21 @@ export async function localDeleteEntry(bookId, entryId) {
 
 export async function localDeleteAllEntries(bookId) {
   const db = await getDb();
+  // Record tombstones for all synced entries before bulk-deleting them.
+  const cloudBook = await db.getFirstAsync(`SELECT cloud_id FROM books WHERE id = ?`, [bookId]);
+  if (cloudBook?.cloud_id) {
+    const synced = await db.getAllAsync(
+      `SELECT cloud_entry_id FROM entries WHERE book_id = ? AND cloud_entry_id IS NOT NULL`,
+      [bookId],
+    );
+    const ts = now();
+    for (const row of synced) {
+      await db.runAsync(
+        `INSERT INTO deleted_entries (cloud_entry_id, cloud_book_id, deleted_at) VALUES (?, ?, ?)`,
+        [row.cloud_entry_id, cloudBook.cloud_id, ts],
+      );
+    }
+  }
   await db.runAsync(`DELETE FROM entries WHERE book_id = ?`, [bookId]);
   await db.runAsync(
     `UPDATE books SET net_balance = 0, last_entry_at = NULL, updated_at = ? WHERE id = ?`,
@@ -794,4 +829,17 @@ export async function localGetCloudEntryId(localEntryId) {
   const db = await getDb();
   const row = await db.getFirstAsync(`SELECT cloud_entry_id FROM entries WHERE id = ?`, [localEntryId]);
   return row?.cloud_entry_id ?? null;
+}
+
+// ── Deleted-entry tombstones ───────────────────────────────────────────────────
+// Used by syncLocalToCloud to delete cloud entries that were removed locally.
+
+export async function localGetDeletedEntries() {
+  const db = await getDb();
+  return db.getAllAsync(`SELECT * FROM deleted_entries ORDER BY deleted_at ASC`);
+}
+
+export async function localClearDeletedEntry(id) {
+  const db = await getDb();
+  await db.runAsync(`DELETE FROM deleted_entries WHERE id = ?`, [id]);
 }

@@ -7,7 +7,11 @@
  * Both directions are duplicate-safe:
  *   - Books matched by name (case-insensitive)
  *   - Categories / customers / suppliers matched by name within their book
- *   - Entries matched by fingerprint: date + time + type + amount + remark
+ *   - Entries matched by fingerprint: date + time + type + amount + remark +
+ *     category + payment_mode + contact_name + attachment. Any edit to any of
+ *     these fields (including clearing one to null/none) changes the fingerprint,
+ *     so it's detected as a pending change everywhere the fingerprint is used —
+ *     see entryFingerprint() / attachmentKey() below.
  *
  * Return value for both: { synced, skipped, alreadySynced, total }
  */
@@ -70,11 +74,25 @@ export async function getLocalStats() {
  *   alreadySyncedEntries — local entries that match a cloud fingerprint exactly
  *   onlyInCloudEntries  — cloud entries with no local match (deleted/edited locally)
  *   newBooks            — local books not yet created in cloud
- *   toUpload            — total items that would actually be sent (newBooks + newEntries)
+ *   deletedBooks        — cloud books with no local match (deleted locally since last sync;
+ *                          only counted once this device has synced before, i.e. it has at
+ *                          least one book with a known cloud_id — otherwise every cloud book
+ *                          on a brand-new device would incorrectly look "deleted")
+ *   pendingDeletions    — entries deleted locally (single or "Delete All Entries") that still
+ *                          have an unresolved deleted_entries tombstone — i.e. still exist in
+ *                          the cloud and are waiting for the next sync to remove them there too
+ *   toUpload            — total items that would actually be sent
+ *                          (newBooks + newEntries + deletedBooks + pendingDeletions)
  */
 export async function getCloudDeltaStats() {
   try {
-    const data = await L.localGetAllDataForMigration();
+    const data       = await L.localGetAllDataForMigration();
+    const tombstones = await localGetDeletedEntries();
+    const pendingDeletions = tombstones.length;
+    // Cloud entries with a pending tombstone are entries the user already deleted
+    // locally — they must NOT be treated as "new cloud data to restore" even though
+    // they still physically exist in the cloud until the next sync removes them.
+    const tombstonedCloudIds = new Set(tombstones.map(t => t.cloud_entry_id));
 
     // ── Fetch cloud books ──────────────────────────────────────────────────────
     let cloudBooks = [];
@@ -96,13 +114,24 @@ export async function getCloudDeltaStats() {
       }
     }
 
+    // ── Books deleted locally but still present in cloud ───────────────────────
+    // Mirrors the orphan-book detection in syncLocalToCloud(): only counted once
+    // this device has synced before (localCloudIds non-empty), otherwise every
+    // cloud book would look "deleted" on a brand-new device that never synced.
+    const localCloudIds = new Set(data.books.map(b => b.cloud_id).filter(Boolean));
+    const deletedBooks = localCloudIds.size > 0
+      ? cloudBooks.filter(b => !localCloudIds.has(b.id)).length
+      : 0;
+
     // ── Fetch cloud entries for every matched book ─────────────────────────────
-    const cloudFPSet = {};  // cloudBookId → Set<fingerprint>
+    const cloudFPSet   = {};  // cloudBookId → Set<fingerprint>
+    const cloudFPToId  = {};  // cloudBookId → Map<fingerprint, cloudEntryId> (to check tombstones)
     const uniqueCloudIds = [...new Set(Object.values(bookIdMap))];
     await Promise.all(
       uniqueCloudIds.map(async (cloudBookId) => {
         const entries = await apiGetEntries(cloudBookId).catch(() => []);
-        cloudFPSet[cloudBookId] = new Set(entries.map(entryFingerprint));
+        cloudFPSet[cloudBookId]  = new Set(entries.map(entryFingerprint));
+        cloudFPToId[cloudBookId] = new Map(entries.map(e => [entryFingerprint(e), e.id]));
       })
     );
 
@@ -134,12 +163,18 @@ export async function getCloudDeltaStats() {
 
     // ── Count cloud entries with no local match ────────────────────────────────
     // These are old versions of edited entries (replaced by the update above) or
-    // entries deleted locally while offline. Both need attention.
+    // entries deleted locally while offline. Entries with a pending deletion
+    // tombstone are excluded — they're not "new cloud data to restore", they're
+    // the user's own deletions still waiting for the next sync to reach the cloud.
     let onlyInCloudEntries = 0;
     for (const [cloudBookId, fps] of Object.entries(cloudFPSet)) {
-      const matched = matchedFPs[cloudBookId] ?? new Set();
+      const matched  = matchedFPs[cloudBookId] ?? new Set();
+      const fpToId   = cloudFPToId[cloudBookId] ?? new Map();
       for (const fp of fps) {
-        if (!matched.has(fp)) onlyInCloudEntries++;
+        if (matched.has(fp)) continue;
+        const cloudEntryId = fpToId.get(fp);
+        if (cloudEntryId && tombstonedCloudIds.has(cloudEntryId)) continue;
+        onlyInCloudEntries++;
       }
     }
 
@@ -151,14 +186,16 @@ export async function getCloudDeltaStats() {
       onlyInCloudEntries,
       localBooks:           data.books.length,
       newBooks,
+      deletedBooks,
+      pendingDeletions,
       localCategories:      data.categories.length,
-      toUpload:             newBooks + newEntries,
+      toUpload:             newBooks + newEntries + deletedBooks + pendingDeletions,
     };
   } catch {
     return {
       hasCloudData: false,
       localEntries: 0, newEntries: 0, alreadySyncedEntries: 0, onlyInCloudEntries: 0,
-      localBooks: 0, newBooks: 0, localCategories: 0, toUpload: 0,
+      localBooks: 0, newBooks: 0, deletedBooks: 0, pendingDeletions: 0, localCategories: 0, toUpload: 0,
     };
   }
 }
@@ -167,8 +204,28 @@ export async function getCloudDeltaStats() {
 
 const key = (str) => (str ?? '').trim().toLowerCase();
 
+// Attachment identity for fingerprinting. Cloud entries only ever have
+// provider 'supabase' or null, so their key is just the Supabase path (or ''
+// when no attachment). Local entries can also be 'local' (picked but not yet
+// uploaded) — that must produce a key distinct from both '' (no attachment)
+// and any Supabase path, otherwise adding a first attachment to an
+// attachment-less entry (both sides read as '') would be invisible to the
+// fingerprint diff. Prefixing by provider keeps all three states distinct:
+// removing an attachment ('supabase:x' -> ''), replacing one
+// ('supabase:x' -> 'local:file') and adding one to a bare entry
+// ('' -> 'local:file') all change the fingerprint.
+const attachmentKey = (e) => {
+  if (e.attachment_provider === 'supabase') return `supabase:${e.attachment_path ?? ''}`;
+  if (e.attachment_provider === 'local' && e.attachment_path) return `local:${e.attachment_path}`;
+  return '';
+};
+
+// category / contact_name are the stable text snapshots (also used for name-based
+// matching elsewhere), not the local-only IDs, so they compare correctly between
+// a local entry and its cloud counterpart even before/after a restore.
 const entryFingerprint = (e) =>
-  `${e.entry_date}|${e.entry_time ?? '00:00'}|${e.type}|${e.amount}|${key(e.remark)}`;
+  `${e.entry_date}|${e.entry_time ?? '00:00'}|${e.type}|${e.amount}|${key(e.remark)}|` +
+  `${key(e.category)}|${key(e.payment_mode)}|${key(e.contact_name)}|${attachmentKey(e)}`;
 
 // ── Main sync ─────────────────────────────────────────────────────────────────
 

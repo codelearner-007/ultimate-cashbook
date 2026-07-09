@@ -69,7 +69,7 @@ frontend/
 │   ├── screens/                  # All screen components (one file = one screen)
 │   ├── components/
 │   │   ├── books/
-│   │   │   ├── BookMenu.jsx      # Bottom-sheet action menu for a book (delete)
+│   │   │   ├── BookMenu.jsx      # Popup action menu for a book card (Rename, Sync, Book Settings, Delete)
 │   │   │   ├── DraggableList.jsx # Custom drag-reorder list for books
 │   │   │   └── SortSheet.jsx     # Sort-mode picker bottom sheet
 │   │   ├── entry/
@@ -207,7 +207,8 @@ frontend/
 - Sort modes: `updated` (default) | `created` | `alpha` | `custom` (drag-reorder)
 - FAB → if limit reached: button turns grey (`C.cardAlt` bg, no shadow), icon + label dimmed (`C.textSubtle`); tapping fires a `Toast.info` ("Book limit reached" + tier/limit message) — no sheet, no navigation
 - If somehow a create request reaches the backend and returns `BOOK_LIMIT_REACHED:{n}` (403), `LimitReachedSheet` is shown as a fallback safety net
-- ⋮ on card → `BookMenu` bottom sheet → confirm delete → `useDeleteBook().mutate(id)`
+- ⋮ on card → `BookMenu` popup menu → Rename | Sync (paid/superadmin only, see below) | Book Settings | Delete (confirm → `useDeleteBook().mutate(id)`)
+- **Sync item** (`BookMenu`, shown only when `canSync`): global sync, same underlying action as `BackupSyncScreen`'s "Upload to Cloud" and `BookDetailScreen`'s "Sync" menu item — not scoped to the specific book the menu was opened from. Label/icon driven live by `isAlreadySynced` (`BooksView.jsx`: `canSync && delta !== null && delta.toUpload === 0`, where `delta` comes from `getCloudDeltaStats()` refreshed via `useFocusEffect` on every screen focus — not a one-shot per-book flag). Tapping while already synced shows an "Already uploaded" toast instead of re-running sync.
 - Tap book → `/(app)/books/[id]`
 - Bottom nav: Cashbooks | Help | Settings
 
@@ -295,7 +296,7 @@ frontend/
 - `deleteAllEntries` mutation; `SuccessDialog` shown after sheet closes
 
 **Dots menu:**
-- Sync (shown only when `canSync`; label changes: Syncing… / Synced / Sync; icon: check-circle when synced)
+- Sync (shown only when `canSync`; label changes: Syncing… / Synced / Sync; icon: check-circle when synced). "Synced" is driven live by `getCloudDeltaStats()` (`isAlreadySynced = delta.toUpload === 0`), refreshed via `useFocusEffect` every time the screen regains focus — not a one-shot per-session flag. Tapping while already synced shows an "Already uploaded" toast instead of re-running sync, matching `BackupSyncScreen`'s "Upload to Cloud" button behavior. Any attachment add/remove/replace on an entry (even with no other field changed) counts as a pending change and re-enables this.
 - Book Settings
 - Delete All Entries (shown only when `canDelete`)
 
@@ -527,6 +528,16 @@ deleted_entries
 - `localGetDeletedEntries()` — returns all rows ordered by `deleted_at ASC`
 - `localClearDeletedEntry(id)` — removes a single tombstone row after successful cloud delete
 
+**Tombstones count as pending changes in `getCloudDeltaStats()`.** A `pendingDeletions` count (= `localGetDeletedEntries().length`) feeds into `toUpload`, so deleting one entry or all entries in a book correctly re-enables all 3 sync buttons instead of leaving them on "All Data Synced" — deleted-but-not-yet-synced entries are a real pending change just like a new/edited entry. Additionally, `onlyInCloudEntries` (which drives the "Restore from Cloud" button's visibility) explicitly **excludes** any cloud entry whose ID has a pending tombstone — without this exclusion, deleting entries would make "Restore from Cloud" appear as if there were new cloud data to pull down, when it's actually the user's own just-deleted entries; tapping restore in that state would re-download and undo the deletion locally.
+
+### Book deletion — no tombstone needed, matched by orphan `cloud_id`
+
+Unlike entries, deleted books don't need a tombstone table — a book's `cloud_id` is a stable, unique identifier, so orphan detection is a direct set-difference: any cloud book whose `id` isn't in the local `books.cloud_id` set was deleted locally.
+
+- **`syncLocalToCloud`:** builds `localCloudIds` from `L.localGetBooks()`'s `cloud_id` column; any `cloudBook` not in that set gets `apiDeleteCloudBook(cloudBook.id)` called on it (cascades entries + attachments on the backend). Only runs when `localCloudIds.size > 0` — guards a never-synced device from deleting every cloud book it sees.
+- **`getCloudDeltaStats`:** the same orphan check feeds a `deletedBooks` count into `toUpload` (`newBooks + newEntries + deletedBooks`), so a locally-deleted book correctly shows as a pending change on all 3 sync buttons — Backup & Sync's "Upload to Cloud", BookDetailScreen's "Sync" menu item, and BooksView's per-card `BookMenu` "Sync" item — instead of leaving them stuck on "Synced" while the cloud still has the deleted book and its data.
+- **`AutoDeleteMonitor`** (`app/_layout.jsx`): a separate, automatic path — fires the same orphan-deletion logic on every offline→online reconnect transition, for paid/superadmin users, independent of the manual sync buttons. It does **not** fire immediately after a book deletion if the device is already online at delete time — that gap is covered by the `deletedBooks` count above making the manual sync buttons light up instead.
+
 ### Attachment sync rules
 
 **Capture is local-first for every tier.** `storage.js`'s `uploadAttachment()` always copies the picked photo/PDF into `{documentDirectory}attachments/` and returns `provider: 'local'` — free, pro, business, and superadmin all behave identically at picker time, online or offline. The attachment file only reaches Supabase Storage as part of a manual "Upload to Cloud" sync (`syncLocalToCloud()`), exactly like the entry row itself. There is no tier or online-state branching in `storage.js`.
@@ -538,6 +549,10 @@ Attachments have three fields in SQLite: `attachment_url`, `attachment_path`, `a
 | `attachment_url` | URI used for **display** (`<Image source={{ uri }}>`) — may be a local `file:///` path or a Supabase HTTPS URL |
 | `attachment_path` | Supabase Storage object path (e.g. `attachments/entry-id/attachment.jpg`) — used for **deletion** and **sync dedup** |
 | `attachment_provider` | `'local'` or `'supabase'` — tells sync whether the file already lives in cloud storage |
+
+**Fingerprint covers every editable field, not just amount/remark.** `entryFingerprint()` in `syncManager.js` hashes `date|time|type|amount|remark|category|payment_mode|contact_name` **plus** a provider-tagged attachment key (`attachmentKey()`: `''` for no attachment, `local:<path>` for a picked-but-not-yet-uploaded file, `supabase:<path>` for an already-cloud file). `category` and `contact_name` are fingerprinted by their stable text-snapshot fields (not the local-only `category_id`/`customer_id`/`supplier_id`), matching how they're already name-matched elsewhere in sync.
+
+This breadth is required so that editing **any single field on an already-synced entry** — removing/changing the customer, category, payment mode, or attachment, with every other field unchanged — still produces a different fingerprint than the last-synced cloud row. Without covering a field here, an edit to just that field is invisible to both `getCloudDeltaStats()` (the Backup & Sync button stays stuck on "All Data Synced" / "Synced") and `syncLocalToCloud()` (Case A skips the entry, so the change is never pushed to the cloud `entries` row — e.g. a removed attachment's stale `attachment_url` never clears, a changed category/customer/payment_mode is silently dropped). This one shared `entryFingerprint()` function is used by `getCloudDeltaStats()`, `syncLocalToCloud()`, and `syncCloudToLocal()`'s local-dedup check — fixing it here fixes "pending changes" detection everywhere at once, across all three sync entry points in the app: `BackupSyncScreen`'s "Upload to Cloud" button, `BookDetailScreen`'s "Sync" menu item (see below), and `BooksView`'s (`BooksScreen` + `AdminBooksScreen`) per-card `BookMenu` "Sync" item. All three compute their synced/not-synced state the same way — `canSync && delta !== null && delta.toUpload === 0` from a live `getCloudDeltaStats()` call refreshed via `useFocusEffect` — so a change to any entry field anywhere lights up all three consistently, not just one.
 
 #### Upload (`syncLocalToCloud`)
 

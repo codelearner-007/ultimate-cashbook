@@ -7,7 +7,10 @@
  * Both directions are duplicate-safe:
  *   - Books matched by name (case-insensitive)
  *   - Categories / customers / suppliers matched by name within their book
- *   - Entries matched by fingerprint: date + time + type + amount + remark
+ *   - Entries matched by fingerprint: date + time + type + amount + remark + attachment
+ *     (attachment identity is the Supabase storage path, so adding/removing/replacing
+ *     an attachment always breaks the fingerprint match and forces a sync update —
+ *     see entryFingerprint() / attachmentKey() below)
  *
  * Return value for both: { synced, skipped, alreadySynced, total }
  */
@@ -167,8 +170,24 @@ export async function getCloudDeltaStats() {
 
 const key = (str) => (str ?? '').trim().toLowerCase();
 
+// Attachment identity for fingerprinting. Cloud entries only ever have
+// provider 'supabase' or null, so their key is just the Supabase path (or ''
+// when no attachment). Local entries can also be 'local' (picked but not yet
+// uploaded) — that must produce a key distinct from both '' (no attachment)
+// and any Supabase path, otherwise adding a first attachment to an
+// attachment-less entry (both sides read as '') would be invisible to the
+// fingerprint diff. Prefixing by provider keeps all three states distinct:
+// removing an attachment ('supabase:x' -> ''), replacing one
+// ('supabase:x' -> 'local:file') and adding one to a bare entry
+// ('' -> 'local:file') all change the fingerprint.
+const attachmentKey = (e) => {
+  if (e.attachment_provider === 'supabase') return `supabase:${e.attachment_path ?? ''}`;
+  if (e.attachment_provider === 'local' && e.attachment_path) return `local:${e.attachment_path}`;
+  return '';
+};
+
 const entryFingerprint = (e) =>
-  `${e.entry_date}|${e.entry_time ?? '00:00'}|${e.type}|${e.amount}|${key(e.remark)}`;
+  `${e.entry_date}|${e.entry_time ?? '00:00'}|${e.type}|${e.amount}|${key(e.remark)}|${attachmentKey(e)}`;
 
 // ── Main sync ─────────────────────────────────────────────────────────────────
 

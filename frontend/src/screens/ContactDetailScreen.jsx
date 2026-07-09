@@ -35,10 +35,10 @@ export default function ContactDetailScreen() {
   const cfg = TYPE_CONFIG[contactType] || TYPE_CONFIG.customer;
 
   useRealtimeEntries(bookId);
-  const { data: ownBooks = [] }    = useBooks();
+  const { data: ownBooks = [], isLoading: booksLoading } = useBooks();
   const { data: sharedBooks = [] } = useSharedBooks();
   const currentBook = ownBooks.find(b => b.id === bookId);
-  const isOwner    = !!currentBook;
+  const isOwner    = !booksLoading && !!currentBook;
   const sharedBook = !isOwner ? sharedBooks.find(b => b.id === bookId) : null;
   const rights     = isOwner ? 'view_create_edit_delete' : (sharedBook?.rights ?? 'view');
   const canEdit    = rights !== 'view';

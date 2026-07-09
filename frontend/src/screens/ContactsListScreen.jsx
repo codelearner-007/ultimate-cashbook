@@ -59,10 +59,10 @@ export default function ContactsListScreen() {
   const cfg = TYPE_CONFIG[type] || TYPE_CONFIG.customer;
 
   const qc = useQueryClient();
-  const { data: books = [] }       = useBooks();
+  const { data: books = [], isLoading: booksLoading } = useBooks();
   const { data: sharedBooks = [] } = useSharedBooks();
   const currentBook  = books.find(b => b.id === bookId);
-  const isOwner      = !!currentBook;
+  const isOwner      = !booksLoading && !!currentBook;
   const sharedBook   = !isOwner ? sharedBooks.find(b => b.id === bookId) : null;
   const rights       = isOwner ? 'view_create_edit_delete' : (sharedBook?.rights ?? 'view');
   const canEdit      = rights !== 'view';

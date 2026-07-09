@@ -183,7 +183,29 @@ async def delete_book(book_id: str, user_id: str = Depends(get_current_user)):
     )
     if not check.data:
         raise HTTPException(status_code=404, detail="Book not found")
+
+    # Collect Supabase attachment paths before the cascade delete removes the entry rows
+    paths_res = (
+        sb.table("entries")
+        .select("attachment_path, attachment_provider")
+        .eq("book_id", book_id)
+        .eq("user_id", user_id)
+        .not_.is_("attachment_path", "null")
+        .execute()
+    )
+    supabase_paths = [
+        r["attachment_path"] for r in (paths_res.data or [])
+        if r.get("attachment_provider", "supabase") == "supabase"
+    ]
+
+    # entries/categories/customers/suppliers/payment_modes cascade-delete via FK ON DELETE CASCADE
     sb.table("books").delete().eq("id", book_id).eq("user_id", user_id).execute()
+
+    if supabase_paths:
+        try:
+            sb.storage.from_("attachments").remove(supabase_paths)
+        except Exception:
+            pass
 
 
 @router.patch("/{book_id}/field-settings", response_model=BookResponse)

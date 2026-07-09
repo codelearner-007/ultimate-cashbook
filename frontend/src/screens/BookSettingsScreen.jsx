@@ -46,10 +46,10 @@ export default function BookSettingsScreen() {
   const qc = useQueryClient();
   useRealtimeEntries(id);
   useRealtimeBookSettings(id);
-  const { data: books = [] } = useBooks();
+  const { data: books = [], isLoading: booksLoading } = useBooks();
   const { data: sharedBooks = [] } = useSharedBooks();
   const currentBook = books.find(b => b.id === id);
-  const isOwner = !!currentBook;
+  const isOwner = !booksLoading && !!currentBook;
 
   // Polling fallback for collaborators — Realtime nested-RLS can silently fail,
   // so poll every 3 s to guarantee field-settings changes appear for all users.

@@ -25,13 +25,14 @@ export default function EditEntryScreen() {
   const qc = useQueryClient();
   const formRef = useRef();
 
-  const { data: books = [] } = useBooks();
+  const { data: books = [], isLoading: booksLoading } = useBooks();
   const { data: sharedBooks = [] } = useSharedBooks();
-  const isOwner = books.some(b => b.id === id);
+  const bookOwnershipKnown = !booksLoading;
+  const isOwner = bookOwnershipKnown && books.some(b => b.id === id);
   const sharedBook = !isOwner ? sharedBooks.find(b => b.id === id) : null;
   const rights = isOwner ? 'view_create_edit_delete' : (sharedBook?.rights ?? 'view');
-  const canEdit   = rights === 'view_create_edit' || rights === 'view_create_edit_delete';
-  const canDelete = rights === 'view_create_edit_delete';
+  const canEdit   = bookOwnershipKnown && (rights === 'view_create_edit' || rights === 'view_create_edit_delete');
+  const canDelete = bookOwnershipKnown && rights === 'view_create_edit_delete';
 
   const [showDeleteSheet,    setShowDeleteSheet]    = useState(false);
   const [isContactDeleted,  setIsContactDeleted]  = useState(false);

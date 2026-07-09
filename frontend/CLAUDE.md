@@ -102,7 +102,7 @@ frontend/
 │   │   ├── canAccess.js          # Feature-gate: canAccess(user, feature), getLimit(user, feature) — superadmin always returns true/Infinity
 │   │   ├── dataSource.js         # Data-source router: own books → local SQLite only (no background cloud push — manual upload only via BackupSyncScreen); shared books → cloud API directly (via isLocalBook() check). Entry update/delete use cloud_entry_id for correct cloud targeting.
 │   │   ├── supabase.js           # Supabase client (SecureStore / localStorage adapter)
-│   │   ├── storage.js            # Provider-agnostic attachment abstraction (uploadAttachment, removeAttachment) — superadmin always uses Supabase Storage
+│   │   ├── storage.js            # Provider-agnostic attachment abstraction (uploadAttachment, removeAttachment) — always saves locally first, for every tier; Supabase upload only happens via manual sync
 │   │   └── toast.js              # Toast helper
 │   ├── store/
 │   │   ├── authStore.js          # Zustand: user, session, setUser, clearUser
@@ -309,6 +309,8 @@ frontend/
 **Rights resolution:**
 - Owner (`isOwner`): `rights = 'view_create_edit_delete'`; `canCreate = true`; `canDelete = true`; `canViewReports = true`
 - Collaborator: rights from `sharedBook.rights`; `canCreate`, `canDelete`, `canViewReports` derived from rights + screens JSONB
+
+**`isOwner` race rule (applies to every screen that computes ownership from `useBooks()`):** `useBooks()`'s `data` defaults to `[]`/`undefined` while its local-SQLite-backed `['books']` query is still resolving on first mount. Computing `isOwner` as `books.some(...)`/`!!books.find(...)` without also checking `booksLoading` produces a false negative for a real owner during that brief window — the action buttons/menu items gated on `isOwner`/`canEdit`/`canDelete` flash missing, then appear once the query resolves. This is not tier-specific in the code, but is more noticeable on accounts with more local books (paid/business/superadmin tiers typically have more), since the local SQLite read takes measurably longer. **Rule:** always destructure `isLoading` from `useBooks()` (aliased `booksLoading`) and gate `isOwner` on it: `const isOwner = !booksLoading && ...`. Screens following this pattern: `BookDetailScreen`, `EntryDetailScreen`, `EditEntryScreen`, `ReportsScreen`, `BookSettingsScreen`, `CategoriesSettingsScreen`, `ContactsListScreen`, `ContactDetailScreen`, `CategoryProfileScreen`, `PaymentModeSettingsScreen`, `PaymentModeDetailScreen`.
 
 ---
 
@@ -527,6 +529,8 @@ deleted_entries
 
 ### Attachment sync rules
 
+**Capture is local-first for every tier.** `storage.js`'s `uploadAttachment()` always copies the picked photo/PDF into `{documentDirectory}attachments/` and returns `provider: 'local'` — free, pro, business, and superadmin all behave identically at picker time, online or offline. The attachment file only reaches Supabase Storage as part of a manual "Upload to Cloud" sync (`syncLocalToCloud()`), exactly like the entry row itself. There is no tier or online-state branching in `storage.js`.
+
 Attachments have three fields in SQLite: `attachment_url`, `attachment_path`, `attachment_provider`.
 
 | Field | Role |
@@ -557,7 +561,11 @@ For each cloud entry with a Supabase attachment:
    - `attachment_provider` = `'supabase'` (sync will NOT re-upload — file is already in cloud)
 5. On failure (network error, non-200 status): falls back to storing the Supabase URL as `attachment_url` — images display when online; `attachment_provider` stays `'supabase'` so the next restore attempt skips the entry (fingerprint match) but the Supabase URL fallback remains visible online. The "Restore from Cloud" button stays active until `onlyInCloudEntries` reaches zero, so the user can retry if needed.
 
-**Free-tier users** whose attachments were stored with `provider = 'local'` and were never manually uploaded to cloud will have null attachment fields after restore — the files were never backed up.
+**Any tier's** attachments still sitting with `provider = 'local'` at the time of a "Start Fresh" / reinstall (i.e. never manually uploaded before the local data was lost) will have null attachment fields after restore — the files were never backed up, because attachment upload only ever happens during a manual sync.
+
+#### Delete cleanup
+
+No separate attachment-delete step is needed on the frontend. When a synced entry (`attachment_provider = 'supabase'`) is deleted locally, `localDeleteEntry()` / `localDeleteAllEntries()` write a tombstone to `deleted_entries` (see above). The next manual sync's tombstone replay calls `DELETE /api/v1/books/:id/entries/:eid`, and the backend (`entries.py`) deletes the Supabase Storage object itself (`sb.storage.from_("attachments").remove([attachment_path])`) as part of handling that request — so the storage object and the entry row are always cleaned up together, with no risk of an orphaned file left behind.
 
 ### `stampSyncTime()` helper
 No longer used for background pushes (those are removed). Still present in `dataSource.js` but `shouldBackupToCloud()` always returns `false` so the branches that call it never execute. `lastSyncedAt` is now only updated by `finishSync()` in `BackupSyncScreen` after a manual upload completes.

@@ -296,7 +296,7 @@ Query params: `?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`
 | POST | `/attachment` | Upload entry photo to Supabase Storage | ✅ |
 | POST | `/avatar` | Upload profile photo to Supabase Storage (`avatars` bucket) | ✅ |
 
-- `POST /attachment` — `multipart/form-data` with optional `entry_id` (form field) + `file`; generates a UUID path if `entry_id` omitted; allowed types: JPEG, PNG, WebP, HEIC, PDF; max 5 MB; path `{user_id}/{storage_id}/attachment.{ext}`; returns 7-day signed URL + `{ attachment_url, path, provider: "supabase" }`
+- `POST /attachment` — `multipart/form-data` with optional `entry_id` (form field) + `file`; generates a UUID path if `entry_id` omitted; allowed types: JPEG, PNG, WebP, HEIC, PDF; max 5 MB; path `{user_id}/{storage_id}/attachment.{ext}`; returns permanent public URL via `get_public_url()` (not signed, never expires) + `{ attachment_url, path, provider: "supabase" }`. Only ever called from `syncLocalToCloud()` during a manual "Upload to Cloud" — never at photo-picker time, for any tier.
 - `DELETE /attachment?path=...` — removes file from `attachments` bucket; verifies path starts with `{user_id}/` before deleting
 - `POST /avatar` — `multipart/form-data` with `file` (image only); path `{user_id}/profile.{ext}`; creates/uses public `avatars` bucket; updates `profiles.avatar_url`; returns `{ "avatar_url": "<public-url>" }`
 - Images + PDF: max 5 MB; image compression is done client-side before upload (see `storage.js`)

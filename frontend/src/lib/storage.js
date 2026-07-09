@@ -1,12 +1,15 @@
 /**
  * Storage abstraction for entry attachments (images and PDFs).
  *
- * Free tier / offline  → local provider  (copies file to app documents dir)
- * Paid tier + online   → supabase provider (uploads via FastAPI backend)
+ * All tiers, online or offline → local provider (copies file to app documents dir).
+ * Attachments only reach Supabase Storage via syncManager.js's syncLocalToCloud(),
+ * which is triggered manually (Backup & Sync → "Upload to Cloud") — never at
+ * picker time, regardless of subscription tier. This keeps attachments consistent
+ * with the rest of the app's local-first, manual-sync-only data model.
  *
  * To migrate to another provider (S3, Cloudinary, R2, etc.):
  *  1. Add a new key to PROVIDERS below, implementing the same { upload, remove } interface.
- *  2. Update the routing logic in uploadAttachment / removeAttachment.
+ *  2. Update removeAttachment's provider dispatch if the new provider needs cleanup.
  *  3. Run a migration script that:
  *       SELECT id, attachment_path, attachment_provider
  *       FROM entries
@@ -16,18 +19,15 @@
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
-import { apiUploadAttachment, apiDeleteAttachment } from './api';
-import { useAuthStore } from '../store/authStore';
-import { useSyncStore } from '../store/syncStore';
+import { apiDeleteAttachment } from './api';
 
 const ATTACHMENTS_DIR = `${FileSystem.documentDirectory}attachments/`;
 
 const PROVIDERS = {
+  // Upload is only ever called by syncManager.js directly via apiUploadAttachment
+  // (not through this module) — this entry exists solely so removeAttachment can
+  // clean up a Supabase Storage object for an already-synced entry.
   supabase: {
-    async upload({ entryId, uri, mimeType, filename }) {
-      const data = await apiUploadAttachment(uri, mimeType, filename, entryId);
-      return { url: data.attachment_url, path: data.path, provider: 'supabase' };
-    },
     async remove({ path }) {
       await apiDeleteAttachment(path);
     },
@@ -46,19 +46,7 @@ const PROVIDERS = {
   },
 };
 
-function shouldUseLocal() {
-  const state    = useAuthStore.getState();
-  const role     = state.user?.role;
-  const isOnline = useSyncStore.getState()?.isOnline ?? true;
-  if (!isOnline) return true;
-  // superadmin behaves like a paid user — Supabase Storage when online, local when offline
-  if (role === 'superadmin') return false;
-  const tier = state.user?.subscription_tier ?? 'free';
-  return tier === 'free';
-}
-
-export const uploadAttachment = (params) =>
-  shouldUseLocal() ? PROVIDERS.local.upload(params) : PROVIDERS.supabase.upload(params);
+export const uploadAttachment = (params) => PROVIDERS.local.upload(params);
 
 export const removeAttachment = (params) => {
   const provider = params.provider ?? 'supabase';

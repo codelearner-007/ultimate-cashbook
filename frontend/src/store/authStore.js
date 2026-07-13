@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 
-const TIER_KEY = 'cashbook_subscription_tier';
+export const TIER_KEY = 'cashbook_subscription_tier';
 
 export const useAuthStore = create((set) => ({
   user:              null,

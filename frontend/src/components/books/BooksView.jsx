@@ -29,6 +29,7 @@ import BookMenu from './BookMenu';
 import SearchBar from '../ui/SearchBar';
 import DeleteBookSheet from '../ui/DeleteBookSheet';
 import LeaveBookSheet from '../ui/LeaveBookSheet';
+import OfflineSyncModal from '../ui/OfflineSyncModal';
 import { BookCardSkeleton } from '../ui/Shimmer';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -512,6 +513,7 @@ export default function BooksView({
   const deleteBookSheetCloseRef = useRef(null);
   const [leaveDialog,       setLeaveDialog]       = useState(null); // book | null
   const [showLimitSheet,   setShowLimitSheet]   = useState(false);
+  const [showOfflineAlert, setShowOfflineAlert] = useState(false);
 
   const currency = profile?.currency ?? 'PKR';
 
@@ -606,7 +608,7 @@ export default function BooksView({
       case 'sync': {
         if (isSyncing) return;
         if (isAlreadySynced) { setMenuState(null); Toast.show({ type: 'success', text1: 'Already uploaded', text2: 'All local data is already in the cloud.' }); return; }
-        if (!isOnline) { setMenuState(null); Alert.alert('No connection', 'Please connect to the internet to sync.'); return; }
+        if (!isOnline) { setMenuState(null); setShowOfflineAlert(true); return; }
         if (!canSync)  { setMenuState(null); Alert.alert('Pro feature', 'Cloud backup requires a Pro or Business plan.'); return; }
         startSync();
         try {
@@ -1072,6 +1074,11 @@ export default function BooksView({
         limitType="books"
         currentLimit={bookLimit === Infinity ? 0 : bookLimit}
         currentTier={tier}
+      />
+
+      <OfflineSyncModal
+        visible={showOfflineAlert}
+        onDismiss={() => setShowOfflineAlert(false)}
       />
 
       {/* ── Add book modal (slide-up, keyboard-aware) ───────────────────── */}

@@ -12,6 +12,7 @@ import { useRealtimeCollaborators, useRealtimeGivenInvitations } from '../hooks/
 import { useAuthStore } from '../store/authStore';
 import { useBookBasePath } from '../hooks/useBookBasePath';
 import { canAccess, getLimit } from '../lib/canAccess';
+import { useSyncStore } from '../store/syncStore';
 import { RIGHTS_MAP, getInitials } from '../constants/sharing';
 import EditShareSheet from '../components/sharing/EditShareSheet';
 import RemoveAccessSheet from '../components/sharing/RemoveAccessSheet';
@@ -109,6 +110,7 @@ export default function ManageSharesScreen() {
   const user       = useAuthStore((s) => s.user);
   const canShare   = canAccess(user, 'book_sharing');
   const guestLimit = getLimit(user, 'guest_access');   // 0 | 1 | 10
+  const isOnline   = useSyncStore((s) => s.isOnline);
 
   const { data: shares = [], isLoading } = useBookShares(id);
   const removeCollaborator = useRemoveCollaborator(id);
@@ -217,6 +219,15 @@ export default function ManageSharesScreen() {
         </View>
       ) : (
         <>
+          {!isOnline && (
+            <View style={[styles.banner, { backgroundColor: C.dangerLight, borderColor: C.danger + '55' }]}>
+              <Feather name="wifi-off" size={14} color={C.danger} />
+              <Text style={[styles.bannerText, { color: C.danger, fontFamily: Font.medium }]}>
+                You're offline — this list may be out of date. Connect to WiFi to refresh.
+              </Text>
+            </View>
+          )}
+
           {/* Info banner */}
           <View style={[styles.banner, { backgroundColor: C.primaryLight, borderColor: C.primaryMid }]}>
             <Feather name="info" size={14} color={C.primary} />

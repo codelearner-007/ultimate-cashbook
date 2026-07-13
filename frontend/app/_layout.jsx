@@ -13,7 +13,7 @@ import {
   Inter_700Bold,
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter';
-import { useAuthStore } from '../src/store/authStore';
+import { useAuthStore, TIER_KEY } from '../src/store/authStore';
 import { useThemeStore } from '../src/store/themeStore';
 import { useSyncStore }  from '../src/store/syncStore';
 import * as Network     from 'expo-network';
@@ -237,15 +237,19 @@ async function resolveProfile(session) {
     if (data) return data;
     // profiles table not set up yet — build minimal profile from Google session.
     // Preserve role from session metadata so superadmin is not downgraded to 'user'
-    // when the backend is temporarily unreachable.
+    // when the backend is temporarily unreachable. Preserve subscription_tier the
+    // same way, from the last value persisted to SecureStore, so a paid user isn't
+    // shown the free-tier UI just because the app opened offline.
     const u = session.user;
     const role = u.user_metadata?.role || u.app_metadata?.role || 'user';
+    const subscription_tier = await SecureStore.getItemAsync(TIER_KEY).catch(() => null);
     return {
       id: u.id,
       email: u.email,
       full_name: u.user_metadata?.full_name || u.user_metadata?.name || u.email,
       avatar_url: u.user_metadata?.avatar_url || null,
       role,
+      subscription_tier: subscription_tier || undefined,
       is_active: true,
     };
   }
@@ -256,6 +260,25 @@ function SupabaseAuthListener() {
   const clearUser    = useAuthStore((s) => s.clearUser);
   const setAuthReady = useAuthStore((s) => s.setAuthReady);
   const setIsDark    = useThemeStore((s) => s.setIsDark);
+  const isOnline      = useSyncStore((s) => s.isOnline);
+  const wasOnlineRef   = useRef(isOnline);
+
+  // Self-heal: if resolveProfile() had to fall back to a minimal/offline profile
+  // (e.g. app opened with WiFi off), re-resolve it for real once connectivity
+  // returns, so the correct tier/role-driven UI comes back without requiring
+  // the user to log out and back in.
+  useEffect(() => {
+    if (isOnline && !wasOnlineRef.current) {
+      const session = useAuthStore.getState().session;
+      if (session) {
+        resolveProfile(session).then((profile) => {
+          setUser(profile, session);
+          if (profile.is_dark_mode !== undefined) setIsDark(!!profile.is_dark_mode);
+        });
+      }
+    }
+    wasOnlineRef.current = isOnline;
+  }, [isOnline, setUser, setIsDark]);
 
   useEffect(() => {
     // Restore session on app start

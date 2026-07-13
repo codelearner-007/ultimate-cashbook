@@ -88,7 +88,8 @@ frontend/
 │   │       ├── ClearLocalDataSheet.jsx # Confirm clear local data (cloud unaffected)
 │   │       ├── RestoreOrFreshSheet.jsx # Restore-or-Later sheet (launch + BackupSyncScreen)
 │   │       ├── FreshStartSheet.jsx    # 2-step confirm: delete all cloud + local data
-│   │       └── LimitReachedSheet.jsx  # Plan-limit notification sheet (books & shares); props: visible, onDismiss, limitType ('books'|'shares'), currentLimit, currentTier
+│   │       ├── LimitReachedSheet.jsx  # Plan-limit notification sheet (books & shares); props: visible, onDismiss, limitType ('books'|'shares'), currentLimit, currentTier
+│   │       └── OfflineSyncModal.jsx   # Themed "You're offline" alert (wifi-off icon, single "Got it" button) shown whenever Upload to Cloud / Restore from Cloud / a book's Sync action is tapped while offline — replaces the old native Alert.alert('No connection', ...); shared by BackupSyncScreen, BooksView (BookMenu Sync item), BookDetailScreen (dots-menu Sync item)
 │   ├── hooks/
 │   │   ├── useBooks.js           # useBooks, useCreateBook, useDeleteBook (React Query)
 │   │   ├── useBookSort.js        # Sort state + sorted list derivation
@@ -105,7 +106,7 @@ frontend/
 │   │   ├── storage.js            # Provider-agnostic attachment abstraction (uploadAttachment, removeAttachment) — always saves locally first, for every tier; Supabase upload only happens via manual sync
 │   │   └── toast.js              # Toast helper
 │   ├── store/
-│   │   ├── authStore.js          # Zustand: user, session, setUser, clearUser
+│   │   ├── authStore.js          # Zustand: user, session, subscription_tier (SecureStore-hydrated, TIER_KEY exported), setUser, clearUser
 │   │   ├── themeStore.js         # Zustand: isDark, toggle
 │   │   ├── bookFieldsStore.js    # Zustand: per-book field visibility toggles
 │   │   └── syncStore.js          # Zustand: isOnline, isSyncing, isRestoring, progress, restoreProgress, lastSyncedAt; actions: startSync, finishSync, failSync, stampLastSynced (timestamp-only, never resets isSyncing), startRestore, finishRestore, failRestore
@@ -162,6 +163,11 @@ frontend/
 - `AutoDeleteMonitor` — on reconnect, deletes from cloud any books removed locally while offline (only runs when device has previously synced, i.e. `localCloudIds.size > 0`)
 - `NotificationPopup` — centered modal card for unread notifications; auto-shows for regular users; also shows tapped notifications from the OS tray for any logged-in user
 
+### Offline-resilient profile resolution (`resolveProfile()` + `SupabaseAuthListener`)
+- `resolveProfile(session)` tries `apiGetProfile()` → direct Supabase `profiles` select → a minimal fallback object built from session metadata only, in that order. The fallback preserves `role` from `user_metadata`/`app_metadata` **and** `subscription_tier` read from `SecureStore` (`TIER_KEY`, exported from `authStore.js`) — this prevents a paid/superadmin user from being shown the free-tier UI just because the app was opened (or `SIGNED_IN` fired) while offline. Previously the fallback object had no `subscription_tier` field at all, which made `canAccess.js`/`BooksView.jsx` treat any offline paid user as free tier.
+- `SupabaseAuthListener` also watches `useSyncStore.isOnline` for a `false → true` transition (tracked via a ref) and, if a session exists, re-runs `resolveProfile(session)` + `setUser(...)`. This self-heals a stale/fallback `authStore.user` as soon as connectivity returns, without requiring logout/login or an app restart — so toggling WiFi off then on always converges back to the correct tier/role UI.
+- This only affects which **tier UI** renders (`free` vs `pro`/`business`/`superadmin`); it does not change how book/entry data is read or written — owned-book data always comes from local SQLite regardless of tier or connectivity (see Data Source Layer below).
+
 ### Back Navigation Rules
 - **Admin Books tab has its own Stack** (`app/(app)/dashboard/books/_layout.jsx`). This means `books/[id]` screens are pushed within the books-tab Stack (not the outer `(app)` Stack). `router.back()` from BookDetailScreen therefore pops correctly to AdminBooksScreen — NOT to the Dashboard/Users tab.
 - `BookDetailScreen` uses `router.canGoBack() ? router.back() : router.navigate(basePath)`. The fallback fires only on deep-links (no prior history).
@@ -208,7 +214,7 @@ frontend/
 - FAB → if limit reached: button turns grey (`C.cardAlt` bg, no shadow), icon + label dimmed (`C.textSubtle`); tapping fires a `Toast.info` ("Book limit reached" + tier/limit message) — no sheet, no navigation
 - If somehow a create request reaches the backend and returns `BOOK_LIMIT_REACHED:{n}` (403), `LimitReachedSheet` is shown as a fallback safety net
 - ⋮ on card → `BookMenu` popup menu → Rename | Sync (paid/superadmin only, see below) | Book Settings | Delete (confirm → `useDeleteBook().mutate(id)`)
-- **Sync item** (`BookMenu`, shown only when `canSync`): global sync, same underlying action as `BackupSyncScreen`'s "Upload to Cloud" and `BookDetailScreen`'s "Sync" menu item — not scoped to the specific book the menu was opened from. Label/icon driven live by `isAlreadySynced` (`BooksView.jsx`: `canSync && delta !== null && delta.toUpload === 0`, where `delta` comes from `getCloudDeltaStats()` refreshed via `useFocusEffect` on every screen focus — not a one-shot per-book flag). Tapping while already synced shows an "Already uploaded" toast instead of re-running sync.
+- **Sync item** (`BookMenu`, shown only when `canSync`): global sync, same underlying action as `BackupSyncScreen`'s "Upload to Cloud" and `BookDetailScreen`'s "Sync" menu item — not scoped to the specific book the menu was opened from. Label/icon driven live by `isAlreadySynced` (`BooksView.jsx`: `canSync && delta !== null && delta.toUpload === 0`, where `delta` comes from `getCloudDeltaStats()` refreshed via `useFocusEffect` on every screen focus — not a one-shot per-book flag). Tapping while already synced shows an "Already uploaded" toast instead of re-running sync. Tapping while offline shows `OfflineSyncModal` ("You're offline") instead of a native `Alert.alert`.
 - Tap book → `/(app)/books/[id]`
 - Bottom nav: Cashbooks | Help | Settings
 
@@ -223,6 +229,7 @@ frontend/
 ---
 
 ### `AdminUsersScreen` → `/(app)/dashboard/users` _(superadmin)_
+- **Offline blocked state:** reads `useSyncStore(s => s.isOnline)`. When offline, the header stats row (Total Users / Total Books / Storage) and the entire users list are replaced by a themed blocked state (`wifi-off` Feather icon in an 80×80 `C.primaryLight` box, "You're offline" title, "Connect your WiFi to view your users' data" subtitle — same visual pattern as the screen's existing "No users found" empty state). No stale/cached user data renders while offline. As soon as `isOnline` flips back to `true`, the gate lifts and the existing `['admin-users']` query (`refetchOnMount: 'always'` + `refetchOnWindowFocus` + 10 s poll while focused) repopulates the real list automatically — no manual refresh needed.
 - `useQuery({ queryKey: ['admin-users'], staleTime: 0, refetchOnMount: 'always', refetchInterval: isFocused ? 10000 : false })` — polls every 10 s only while tab is focused; `useFocusEffect` manages `isFocused` and also invalidates `['admin-users']` + `['books']` on every tab focus
 - `useQuery({ queryKey: ['books'], staleTime: 0, refetchOnMount: 'always' })` — admin's own books (local SQLite) for header stats and `adminItem.book_count`
 - `useQuery({ queryKey: ['local-user-stats'], queryFn: localGetUserStats, staleTime: 0 })` — `{ book_count, entry_count }` from local SQLite; authoritative source for admin's own counts
@@ -296,7 +303,7 @@ frontend/
 - `deleteAllEntries` mutation; `SuccessDialog` shown after sheet closes
 
 **Dots menu:**
-- Sync (shown only when `canSync`; label changes: Syncing… / Synced / Sync; icon: check-circle when synced). "Synced" is driven live by `getCloudDeltaStats()` (`isAlreadySynced = delta.toUpload === 0`), refreshed via `useFocusEffect` every time the screen regains focus — not a one-shot per-session flag. Tapping while already synced shows an "Already uploaded" toast instead of re-running sync, matching `BackupSyncScreen`'s "Upload to Cloud" button behavior. Any attachment add/remove/replace on an entry (even with no other field changed) counts as a pending change and re-enables this.
+- Sync (shown only when `canSync`; label changes: Syncing… / Synced / Sync; icon: check-circle when synced). "Synced" is driven live by `getCloudDeltaStats()` (`isAlreadySynced = delta.toUpload === 0`), refreshed via `useFocusEffect` every time the screen regains focus — not a one-shot per-session flag. Tapping while already synced shows an "Already uploaded" toast instead of re-running sync, matching `BackupSyncScreen`'s "Upload to Cloud" button behavior. Tapping while offline shows `OfflineSyncModal` ("You're offline") instead of a native `Alert.alert`. Any attachment add/remove/replace on an entry (even with no other field changed) counts as a pending change and re-enables this.
 - Book Settings
 - Delete All Entries (shown only when `canDelete`)
 
@@ -382,8 +389,8 @@ Shared `forwardRef` component used by both `AddEntryScreen` and `EditEntryScreen
 - **Backup Data section** (paid / superadmin, not lapsed): retention window (Pro=7 days, Business/Superadmin=15 days) and last backup timestamp
 - **SHARED BOOKS section** (free users with `sharedBookCount > 0` only): shows count of accepted shared books and online/offline sync status row — lets free users confirm their shared data is current
 - **CLOUD ACTIONS** (paid / superadmin only):
-  - "Upload to Cloud" → `SyncConfirmSheet` → `syncLocalToCloud(onProgress)` → toast; if local empty → "Nothing to sync" modal alert. **Manual only — no auto-upload happens.** Owner must come here to push new data.
-  - "Restore from Cloud" — conditional render → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal(onProgress)` → toast
+  - "Upload to Cloud" → `SyncConfirmSheet` → `syncLocalToCloud(onProgress)` → toast; if local empty → "Nothing to sync" modal alert; if offline → `OfflineSyncModal` ("You're offline") instead of a native `Alert.alert`. **Manual only — no auto-upload happens.** Owner must come here to push new data.
+  - "Restore from Cloud" — conditional render → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal(onProgress)` → toast; if offline → same `OfflineSyncModal`
 - **Danger Zone** (paid / superadmin only): "Start Fresh" → `FreshStartSheet` (2-step confirm) → `apiGetBooks()` → `apiDeleteBook()` for each → `localClearAll()` → toast
 - **Free-tier gate**: shown only when `!canSync && !freeHasSharedAccess`; shows upgrade card; hidden if free user has shared access (shared books section shown instead)
 - **Info note** (all users): text varies by canSync state and whether user has shared access
@@ -436,6 +443,13 @@ Button renders whenever `hasUnrestoredCloudData` is true — **the `hasRestoredF
 - Real-time via `useRealtimeInvitations(user.id)` + `useRealtimeGivenInvitations(user.id)`
 - **Received tab:** `useReceivedInvitations()` → pending/accepted cards; Accept / Decline (→ `DeclineSheet`) / Leave Book (→ `LeaveBookSheet`)
 - **Given tab:** `useGivenInvitations()` → collaborator cards; edit (→ `EditShareSheet`) / remove (→ `Alert` confirm → `useRemoveShareByOwner()`)
+- **Offline banner:** both `useReceivedInvitations()`/`useGivenInvitations()` are cloud-only (no local SQLite mirror — sharing data always routes to the cloud per `dataSource.js`). When `useSyncStore().isOnline` is `false`, a themed banner ("You're offline — this list may be out of date") appears below the tab bar so a stale/empty list while offline doesn't look identical to genuinely having zero invitations. The screen itself stays fully accessible offline (no paywall change) — only the list-freshness signal is new.
+
+### `ManageSharesScreen` → `/(app)/books/[id]/manage-shares`
+- Per-book collaborator list; `canAccess(user, 'book_sharing')` gates the whole screen body: free tier sees a full-screen "Pro Feature" upgrade block (👑 icon, description, "Upgrade to Pro" button) in place of the list; paid/superadmin see the real list
+- `useBookShares(bookId)` → `CollaboratorRow` list; tap row (accepted only) or edit icon → `EditShareSheet`; remove icon → `RemoveAccessSheet`
+- Header "+" → `AddCollaboratorScreen`; shows 👑 instead of the user-plus icon when `!canShare` or at the guest limit (`getLimit(user, 'guest_access')`)
+- **Offline banner:** `useBookShares` is cloud-only (no local SQLite mirror, same reasoning as `ManageAccessScreen`). When `useSyncStore().isOnline` is `false` and the user has sharing access, a themed banner ("You're offline — this list may be out of date") renders above the existing info banner so a stale/empty collaborator list isn't mistaken for "no collaborators." Only shown inside the paid/superadmin branch — the free-tier upgrade block is unaffected by connectivity.
 
 ---
 
@@ -529,6 +543,8 @@ deleted_entries
 - `localClearDeletedEntry(id)` — removes a single tombstone row after successful cloud delete
 
 **Tombstones count as pending changes in `getCloudDeltaStats()`.** A `pendingDeletions` count (= `localGetDeletedEntries().length`) feeds into `toUpload`, so deleting one entry or all entries in a book correctly re-enables all 3 sync buttons instead of leaving them on "All Data Synced" — deleted-but-not-yet-synced entries are a real pending change just like a new/edited entry. Additionally, `onlyInCloudEntries` (which drives the "Restore from Cloud" button's visibility) explicitly **excludes** any cloud entry whose ID has a pending tombstone — without this exclusion, deleting entries would make "Restore from Cloud" appear as if there were new cloud data to pull down, when it's actually the user's own just-deleted entries; tapping restore in that state would re-download and undo the deletion locally.
+
+**`getCloudDeltaStats()` returns `null` while offline** (checked via `useSyncStore.getState().isOnline` at the top of the function, before attempting `apiGetBooks()`). Previously the offline `apiGetBooks()` failure was silently swallowed (`catch {}`) and treated as "cloud has 0 books," which made every local book look "new" and flipped `isAlreadySynced` to `false` even when everything was already synced — the sync buttons briefly read "Upload to Cloud" instead of "Synced" while offline. All three callers (`BackupSyncScreen`, `BookDetailScreen`, `BooksView`) already null-check the return value the same way they do for the `!canSync` case, so this needed no caller changes — they now correctly show "unknown, don't know if synced" instead of "wrongly appears unsynced," while the separate `!isOnline` check on each screen still drives the actual "No internet connection" messaging.
 
 ### Book deletion — no tombstone needed, matched by orphan `cloud_id`
 

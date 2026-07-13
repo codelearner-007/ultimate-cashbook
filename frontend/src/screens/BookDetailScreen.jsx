@@ -24,6 +24,7 @@ import { useCustomers, useSuppliers } from '../hooks/useContacts';
 import SuccessDialog from '../components/ui/SuccessDialog';
 import DeleteAllEntriesSheet from '../components/ui/DeleteAllEntriesSheet';
 import DeleteEntrySheet from '../components/ui/DeleteEntrySheet';
+import OfflineSyncModal from '../components/ui/OfflineSyncModal';
 import { BalanceCardSkeleton, EntryGroupSkeleton } from '../components/ui/Shimmer';
 import Toast from '../lib/toast';
 
@@ -316,6 +317,7 @@ export default function BookDetailScreen() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [showDeleteAllSheet, setShowDeleteAllSheet] = useState(false);
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
+  const [showOfflineAlert, setShowOfflineAlert] = useState(false);
   const deleteSheetCloseRef = useRef(null);
   const [deleteEntryTarget, setDeleteEntryTarget] = useState(null);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -545,7 +547,7 @@ export default function BookDetailScreen() {
   const handleSync = useCallback(async () => {
     if (isSyncing) return;
     if (isAlreadySynced) { setMenuVisible(false); Toast.show({ type: 'success', text1: 'Already uploaded', text2: 'All local data is already in the cloud.' }); return; }
-    if (!isOnline) { setMenuVisible(false); Alert.alert('No connection', 'Please connect to the internet to sync.'); return; }
+    if (!isOnline) { setMenuVisible(false); setShowOfflineAlert(true); return; }
     if (!canSync)  { setMenuVisible(false); Alert.alert('Pro feature', 'Cloud backup requires a Pro or Business plan.'); return; }
     startSync();
     try {
@@ -1172,6 +1174,11 @@ export default function BookDetailScreen() {
         onDismiss={() => setShowDeleteSuccess(false)}
         title="All Entries Deleted"
         subtitle={`"${name}" has been cleared successfully`}
+      />
+
+      <OfflineSyncModal
+        visible={showOfflineAlert}
+        onDismiss={() => setShowOfflineAlert(false)}
       />
 
       {/* Action Buttons — hidden for view-only collaborators and when collaborator is offline */}

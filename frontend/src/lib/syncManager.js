@@ -19,6 +19,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as L from './localDb';
 import { localSetBookCloudId, localSetEntryCloudId, localGetDeletedEntries, localClearDeletedEntry } from './localDb';
+import { useSyncStore } from '../store/syncStore';
 import {
   apiGetBooks,
   apiCreateBook,
@@ -85,6 +86,13 @@ export async function getLocalStats() {
  *                          (newBooks + newEntries + deletedBooks + pendingDeletions)
  */
 export async function getCloudDeltaStats() {
+  // Offline: apiGetBooks() below would fail and get silently swallowed, which used to
+  // make every local book look "new" (isAlreadySynced flips to false even when nothing
+  // actually changed). Bail out early instead so callers keep showing their last-known
+  // synced state rather than a misleading "Upload to Cloud" while there's no connection
+  // to check against.
+  if (!useSyncStore.getState().isOnline) return null;
+
   try {
     const data       = await L.localGetAllDataForMigration();
     const tombstones = await localGetDeletedEntries();

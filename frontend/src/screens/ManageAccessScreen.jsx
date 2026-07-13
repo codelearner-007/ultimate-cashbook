@@ -19,6 +19,7 @@ import {
 import { RIGHTS_MAP, getInitials } from '../constants/sharing';
 import EditShareSheet from '../components/sharing/EditShareSheet';
 import { canAccess } from '../lib/canAccess';
+import { useSyncStore } from '../store/syncStore';
 
 // ── Status badge config ────────────────────────────────────────────────────────
 // Two statuses: 'pending' (awaiting) and 'accepted' (active).
@@ -615,6 +616,7 @@ export default function ManageAccessScreen() {
   const { C, Font, isDark } = useTheme();
   const user = useAuthStore((s) => s.user);
   const hasAccess = canAccess(user, 'book_sharing');
+  const isOnline = useSyncStore((s) => s.isOnline);
   useRealtimeInvitations(user?.id);
   useRealtimeGivenInvitations(user?.id);
 
@@ -729,6 +731,15 @@ export default function ManageAccessScreen() {
         C={C}
         Font={Font}
       />
+
+      {!isOnline && (
+        <View style={[styles.offlineBanner, { backgroundColor: C.dangerLight, borderColor: C.danger + '55' }]}>
+          <Feather name="wifi-off" size={14} color={C.danger} />
+          <Text style={[styles.offlineBannerText, { color: C.danger, fontFamily: Font.medium }]}>
+            You're offline — this list may be out of date. Connect to WiFi to refresh.
+          </Text>
+        </View>
+      )}
 
       {isLoading ? (
         <View style={styles.center}>
@@ -860,4 +871,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12,
   },
   pendingText: { flex: 1, fontSize: 12, lineHeight: 18 },
+  offlineBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    marginHorizontal: 16, marginTop: 12,
+    borderRadius: 12, borderWidth: 1,
+    paddingHorizontal: 14, paddingVertical: 10,
+  },
+  offlineBannerText: { flex: 1, fontSize: 12, lineHeight: 18 },
 });

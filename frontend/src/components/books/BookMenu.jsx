@@ -7,10 +7,8 @@ const POPUP_W = 220;
 
 // ── Popup menu ────────────────────────────────────────────────────────────────
 
-const BookMenu = memo(({ book, anchor, onClose, onSelect, canSync, isSyncing, syncedBookId, C, Font }) => {
+const BookMenu = memo(({ book, anchor, onClose, onSelect, canSync, isSyncing, isSynced, C, Font }) => {
   if (!book) return null;
-
-  const isSynced = syncedBookId === book.id;
 
   const ITEMS = [
     { key: 'rename',   label: 'Rename',        icon: 'edit-2',   danger: false },

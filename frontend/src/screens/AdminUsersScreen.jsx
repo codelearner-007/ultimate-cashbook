@@ -18,6 +18,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PLAN_META, planColor, planLabel } from '../constants/plans';
 import { SUPER_ADMIN_GOLD as SAG } from '../constants/colors';
 import { UserRowSkeleton } from '../components/ui/Shimmer';
+import { useSyncStore } from '../store/syncStore';
+import { Feather } from '@expo/vector-icons';
 
 // ── Super Admin header badge ──────────────────────────────────────────────────
 
@@ -257,6 +259,7 @@ export default function AdminUsersScreen() {
   const qc   = useQueryClient();
   const { data: adminProfile } = useProfile();
   const updateProfile = useUpdateProfile();
+  const isOnline = useSyncStore((st) => st.isOnline);
 
   const handleThemeToggle = useCallback(() => {
     const next = !isDark;
@@ -479,6 +482,16 @@ export default function AdminUsersScreen() {
     </View>
   );
 
+  const OfflineBlocked = (
+    <View style={s.empty}>
+      <View style={s.emptyIconBox}>
+        <Feather name="wifi-off" size={36} color={C.primary} />
+      </View>
+      <Text style={s.emptyTitle}>You're offline</Text>
+      <Text style={s.emptySub}>Connect your WiFi to view{'\n'}your users' data</Text>
+    </View>
+  );
+
   return (
     <SafeAreaView applyTop={false} style={s.safe}>
       <StatusBar barStyle="light-content" backgroundColor={isDark ? C.background : C.primary} />
@@ -509,17 +522,21 @@ export default function AdminUsersScreen() {
 
         <View style={s.headerDivider} />
 
-        <View style={s.statsRow}>
-          <StatCard label="Total Users"  value={stats.totalUsers}               sub={null} s={s} />
-          <View style={s.statDivider} />
-          <StatCard label="Total Books"  value={stats.totalBooks}               sub={null} s={s} />
-          <View style={s.statDivider} />
-          <StatCard label="Storage"      value={fmtStorage(stats.totalStorage)} sub={stats.isAll ? 'all users' : 'filtered'} s={s} />
-        </View>
+        {isOnline && (
+          <View style={s.statsRow}>
+            <StatCard label="Total Users"  value={stats.totalUsers}               sub={null} s={s} />
+            <View style={s.statDivider} />
+            <StatCard label="Total Books"  value={stats.totalBooks}               sub={null} s={s} />
+            <View style={s.statDivider} />
+            <StatCard label="Storage"      value={fmtStorage(stats.totalStorage)} sub={stats.isAll ? 'all users' : 'filtered'} s={s} />
+          </View>
+        )}
       </View>
 
       {/* ── Users list ───────────────────────────────────────────────────── */}
-      {usersLoading ? (
+      {!isOnline ? (
+        OfflineBlocked
+      ) : usersLoading ? (
         <View style={{ paddingTop: 8 }}>
           {[0, 1, 2, 3, 4].map(i => <UserRowSkeleton key={i} />)}
         </View>

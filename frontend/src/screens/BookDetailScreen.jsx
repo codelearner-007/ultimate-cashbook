@@ -7,13 +7,13 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import SearchBar from '../components/ui/SearchBar';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useBookBasePath } from '../hooks/useBookBasePath';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 import { apiGetEntries, apiGetSummary, apiDeleteEntry, apiDeleteAllEntries } from '../lib/dataSource';
-import { syncLocalToCloud } from '../lib/syncManager';
+import { syncLocalToCloud, getCloudDeltaStats } from '../lib/syncManager';
 import { useBooks } from '../hooks/useBooks';
 import { useSharedBooks } from '../hooks/useSharing';
 import { useAuthStore } from '../store/authStore';
@@ -24,7 +24,9 @@ import { useCustomers, useSuppliers } from '../hooks/useContacts';
 import SuccessDialog from '../components/ui/SuccessDialog';
 import DeleteAllEntriesSheet from '../components/ui/DeleteAllEntriesSheet';
 import DeleteEntrySheet from '../components/ui/DeleteEntrySheet';
+import OfflineSyncModal from '../components/ui/OfflineSyncModal';
 import { BalanceCardSkeleton, EntryGroupSkeleton } from '../components/ui/Shimmer';
+import Toast from '../lib/toast';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -290,8 +292,17 @@ export default function BookDetailScreen() {
     failSync: s.failSync, setProgress: s.setProgress,
   }));
   const canSync = canAccess(authUser, 'cloud_sync');
-  const [syncedThisSession, setSyncedThisSession] = useState(false);
+  const [delta, setDelta] = useState(null);
+  const isAlreadySynced = canSync && delta !== null && delta.toUpload === 0;
   useRealtimeEntries(id);
+
+  const refreshDelta = useCallback(async () => {
+    if (!canSync) return;
+    const d = await getCloudDeltaStats().catch(() => null);
+    setDelta(d);
+  }, [canSync]);
+
+  useFocusEffect(useCallback(() => { refreshDelta(); }, [refreshDelta]));
 
   const [search, setSearch] = useState('');
   const [filterDate, setFilterDate] = useState(null);
@@ -306,6 +317,7 @@ export default function BookDetailScreen() {
   const [menuVisible, setMenuVisible] = useState(false);
   const [showDeleteAllSheet, setShowDeleteAllSheet] = useState(false);
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
+  const [showOfflineAlert, setShowOfflineAlert] = useState(false);
   const deleteSheetCloseRef = useRef(null);
   const [deleteEntryTarget, setDeleteEntryTarget] = useState(null);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -533,20 +545,21 @@ export default function BookDetailScreen() {
   }, [router, basePath, id, name]);
 
   const handleSync = useCallback(async () => {
-    if (!isOnline) { setMenuVisible(false); Alert.alert('No connection', 'Please connect to the internet to sync.'); return; }
-    if (!canSync)  { setMenuVisible(false); Alert.alert('Pro feature', 'Cloud backup requires a Pro or Business plan.'); return; }
     if (isSyncing) return;
+    if (isAlreadySynced) { setMenuVisible(false); Toast.show({ type: 'success', text1: 'Already uploaded', text2: 'All local data is already in the cloud.' }); return; }
+    if (!isOnline) { setMenuVisible(false); setShowOfflineAlert(true); return; }
+    if (!canSync)  { setMenuVisible(false); Alert.alert('Pro feature', 'Cloud backup requires a Pro or Business plan.'); return; }
     startSync();
     try {
       await syncLocalToCloud((done, total, step) => setProgress(done, total, step));
       finishSync(new Date().toISOString());
-      setSyncedThisSession(true);
       qc.invalidateQueries();
+      await refreshDelta();
     } catch (err) {
       failSync(err?.message ?? 'Sync failed. Please try again.');
       setMenuVisible(false);
     }
-  }, [isOnline, canSync, isSyncing, startSync, setProgress, finishSync, failSync, qc]);
+  }, [isSyncing, isAlreadySynced, isOnline, canSync, startSync, setProgress, finishSync, failSync, qc, refreshDelta]);
 
   const renderItem = useCallback(({ item: group }) => {
     const isCollapsed = !!collapsed[group.date];
@@ -1093,10 +1106,10 @@ export default function BookDetailScreen() {
           <View style={[s.menuCard, { backgroundColor: C.card, borderColor: C.border }]}>
             {[
               ...(canSync ? [{
-                label: isSyncing ? 'Syncing…' : syncedThisSession ? 'Synced' : 'Sync',
-                icon: syncedThisSession ? 'check-circle' : 'upload-cloud',
+                label: isSyncing ? 'Syncing…' : isAlreadySynced ? 'Synced' : 'Sync',
+                icon: isAlreadySynced ? 'check-circle' : 'upload-cloud',
                 onPress: handleSync,
-                synced: syncedThisSession,
+                synced: isAlreadySynced,
               }] : []),
               { label: 'Book Settings', icon: 'settings', onPress: goToBookSettings },
               ...(canDelete ? [{
@@ -1161,6 +1174,11 @@ export default function BookDetailScreen() {
         onDismiss={() => setShowDeleteSuccess(false)}
         title="All Entries Deleted"
         subtitle={`"${name}" has been cleared successfully`}
+      />
+
+      <OfflineSyncModal
+        visible={showOfflineAlert}
+        onDismiss={() => setShowOfflineAlert(false)}
       />
 
       {/* Action Buttons — hidden for view-only collaborators and when collaborator is offline */}

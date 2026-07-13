@@ -1,5 +1,17 @@
 import * as SQLite from 'expo-sqlite';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useAuthStore } from '../store/authStore';
+
+// Best-effort delete of a locally-stored attachment file (file:/// path only —
+// Supabase-hosted attachments are cleaned up via Storage API, not the filesystem).
+async function deleteLocalAttachmentFile(attachmentUrl, attachmentProvider) {
+  if (attachmentProvider !== 'local' || !attachmentUrl) return;
+  try {
+    await FileSystem.deleteAsync(attachmentUrl, { idempotent: true });
+  } catch {
+    // Non-fatal — device storage may already be gone; don't block the DB delete.
+  }
+}
 
 // Lazy singleton — opened once, reused across all calls
 let _dbPromise = null;
@@ -296,7 +308,16 @@ export async function localUpdateBook(bookId, payload) {
 
 export async function localDeleteBook(bookId) {
   const db = await getDb();
+  // Collect local attachment files before the cascade delete removes the entry rows
+  // (entries/categories/customers/suppliers/payment_modes cascade via FK ON DELETE CASCADE).
+  const localAttachments = await db.getAllAsync(
+    `SELECT attachment_url, attachment_provider FROM entries WHERE book_id = ? AND attachment_provider = 'local' AND attachment_url IS NOT NULL`,
+    [bookId],
+  );
   await db.runAsync(`DELETE FROM books WHERE id = ?`, [bookId]);
+  for (const row of localAttachments) {
+    await deleteLocalAttachmentFile(row.attachment_url, row.attachment_provider);
+  }
 }
 
 export async function localUpdateBookFieldSettings(bookId, settings) {
@@ -429,6 +450,7 @@ export async function localDeleteEntry(bookId, entryId) {
   await recomputeContactBalance(db, bookId, old?.contact_name, 'customers');
   await recomputeContactBalance(db, bookId, old?.contact_name, 'suppliers');
   await recomputePaymentModeBalance(db, bookId, old?.payment_mode);
+  await deleteLocalAttachmentFile(old?.attachment_url, old?.attachment_provider);
 }
 
 export async function localDeleteAllEntries(bookId) {
@@ -448,6 +470,10 @@ export async function localDeleteAllEntries(bookId) {
       );
     }
   }
+  const localAttachments = await db.getAllAsync(
+    `SELECT attachment_url, attachment_provider FROM entries WHERE book_id = ? AND attachment_provider = 'local' AND attachment_url IS NOT NULL`,
+    [bookId],
+  );
   await db.runAsync(`DELETE FROM entries WHERE book_id = ?`, [bookId]);
   await db.runAsync(
     `UPDATE books SET net_balance = 0, last_entry_at = NULL, updated_at = ? WHERE id = ?`,
@@ -457,6 +483,9 @@ export async function localDeleteAllEntries(bookId) {
   await db.runAsync(`UPDATE customers     SET total_in = 0, total_out = 0, net_balance = 0 WHERE book_id = ?`, [bookId]);
   await db.runAsync(`UPDATE suppliers     SET total_in = 0, total_out = 0, net_balance = 0 WHERE book_id = ?`, [bookId]);
   await db.runAsync(`UPDATE payment_modes SET total_in = 0, total_out = 0, net_balance = 0 WHERE book_id = ?`, [bookId]);
+  for (const row of localAttachments) {
+    await deleteLocalAttachmentFile(row.attachment_url, row.attachment_provider);
+  }
 }
 
 // ── Categories ─────────────────────────────────────────────────────────────────

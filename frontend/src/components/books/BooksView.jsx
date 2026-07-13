@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import SafeAreaView from '../ui/AppSafeAreaView';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
 import { useQueryClient } from '@tanstack/react-query';
 import { useBooks, useCreateBook, useRenameBook, useDeleteBook } from '../../hooks/useBooks';
@@ -19,7 +19,7 @@ import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useSyncStore } from '../../store/syncStore';
 import Toast from '../../lib/toast';
 import { getLimit, canAccess } from '../../lib/canAccess';
-import { syncLocalToCloud } from '../../lib/syncManager';
+import { syncLocalToCloud, getCloudDeltaStats } from '../../lib/syncManager';
 import { shadow } from '../../constants/shadows';
 import LimitReachedSheet from '../ui/LimitReachedSheet';
 import { CARD_ACCENTS } from '../../constants/colors';
@@ -29,6 +29,7 @@ import BookMenu from './BookMenu';
 import SearchBar from '../ui/SearchBar';
 import DeleteBookSheet from '../ui/DeleteBookSheet';
 import LeaveBookSheet from '../ui/LeaveBookSheet';
+import OfflineSyncModal from '../ui/OfflineSyncModal';
 import { BookCardSkeleton } from '../ui/Shimmer';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -453,8 +454,17 @@ export default function BooksView({
   const failSync                 = useSyncStore((s) => s.failSync);
   const setProgress              = useSyncStore((s) => s.setProgress);
   const canSync                  = canAccess(user, 'cloud_sync');
-  const [syncedBookId, setSyncedBookId] = useState(null);
+  const [delta, setDelta] = useState(null);
+  const isAlreadySynced = canSync && delta !== null && delta.toUpload === 0;
   const [showWorkspaceSwitcher, setShowWorkspaceSwitcher] = useState(false);
+
+  const refreshDelta = useCallback(async () => {
+    if (!canSync) return;
+    const d = await getCloudDeltaStats().catch(() => null);
+    setDelta(d);
+  }, [canSync]);
+
+  useFocusEffect(useCallback(() => { refreshDelta(); }, [refreshDelta]));
 
   // Dismiss the restore-completion overlay once books have finished loading
   useEffect(() => {
@@ -503,6 +513,7 @@ export default function BooksView({
   const deleteBookSheetCloseRef = useRef(null);
   const [leaveDialog,       setLeaveDialog]       = useState(null); // book | null
   const [showLimitSheet,   setShowLimitSheet]   = useState(false);
+  const [showOfflineAlert, setShowOfflineAlert] = useState(false);
 
   const currency = profile?.currency ?? 'PKR';
 
@@ -595,15 +606,16 @@ export default function BooksView({
     if (key !== 'sync') setMenuState(null);
     switch (key) {
       case 'sync': {
-        if (!isOnline) { setMenuState(null); Alert.alert('No connection', 'Please connect to the internet to sync.'); return; }
-        if (!canSync)  { setMenuState(null); Alert.alert('Pro feature', 'Cloud backup requires a Pro or Business plan.'); return; }
         if (isSyncing) return;
+        if (isAlreadySynced) { setMenuState(null); Toast.show({ type: 'success', text1: 'Already uploaded', text2: 'All local data is already in the cloud.' }); return; }
+        if (!isOnline) { setMenuState(null); setShowOfflineAlert(true); return; }
+        if (!canSync)  { setMenuState(null); Alert.alert('Pro feature', 'Cloud backup requires a Pro or Business plan.'); return; }
         startSync();
         try {
           await syncLocalToCloud((done, total, step) => setProgress(done, total, step));
           finishSync(new Date().toISOString());
-          setSyncedBookId(book.id);
           qc.invalidateQueries();
+          await refreshDelta();
         } catch (err) {
           failSync(err?.message ?? 'Sync failed. Please try again.');
           setMenuState(null);
@@ -621,7 +633,7 @@ export default function BooksView({
         setDeleteDialog(book);
         break;
     }
-  }, [router, bookBasePath, isOnline, canSync, isSyncing, startSync, setProgress, finishSync, failSync, qc]);
+  }, [router, bookBasePath, isOnline, canSync, isSyncing, isAlreadySynced, startSync, setProgress, finishSync, failSync, qc, refreshDelta]);
 
   const handleRenameSubmit = useCallback(() => {
     if (!renameText.trim() || !renameDialog) return;
@@ -945,7 +957,7 @@ export default function BooksView({
           onSelect={handleMenuSelect}
           canSync={canSync}
           isSyncing={isSyncing}
-          syncedBookId={syncedBookId}
+          isSynced={isAlreadySynced}
         />
       )}
 
@@ -1062,6 +1074,11 @@ export default function BooksView({
         limitType="books"
         currentLimit={bookLimit === Infinity ? 0 : bookLimit}
         currentTier={tier}
+      />
+
+      <OfflineSyncModal
+        visible={showOfflineAlert}
+        onDismiss={() => setShowOfflineAlert(false)}
       />
 
       {/* ── Add book modal (slide-up, keyboard-aware) ───────────────────── */}

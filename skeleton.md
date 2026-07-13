@@ -186,6 +186,7 @@ App Start
 | Element              | Action | Result                                          |
 |----------------------|--------|-------------------------------------------------|
 | **Rename**           | Tap    | Opens rename modal with current name pre-filled |
+| **Sync** (paid/superadmin only, `canSync`) | Tap | Triggers `syncLocalToCloud()` (global, not book-scoped); label/icon reflect Syncing… / Synced / Sync via live `isAlreadySynced`; if offline, shows `OfflineSyncModal` ("You're offline") instead |
 | **Delete**           | Tap    | Opens delete confirmation modal                 |
 | Dismiss / drag down  | —      | Closes sheet                                    |
 
@@ -264,6 +265,9 @@ All interactions, mutations, states, and API calls are identical to BooksScreen.
 - Total Users count + active sub-count
 - Total Books count (filtered users + admin's own books when no filter active)
 - Storage used (sum of `storage_mb` across filtered users)
+
+### Offline State
+When the device is offline (`useSyncStore.isOnline === false`), the stats row and the entire user list are hidden and replaced by a blocked state: `wifi-off` icon in an 80×80 `C.primaryLight` box, "You're offline" title, "Connect your WiFi to view your users' data" subtitle. No stale/cached user data is shown while offline. The blocked state disappears automatically and the real list/stats reappear as soon as connectivity returns — no manual refresh needed.
 
 ### Search Bar
 | Element      | Action | Result                                           |
@@ -350,7 +354,7 @@ No Account Status card — users are differentiated by subscription tier (Free /
 ### Dropdown Menu (⋮)
 | Option                  | Shown when              | Action | Result                                               |
 |-------------------------|-------------------------|--------|------------------------------------------------------|
-| **Sync**                | `canSync` is true       | Tap    | Triggers `syncLocalToCloud()`; label shows Syncing… / Synced / Sync; icon check-circle when synced |
+| **Sync**                | `canSync` is true       | Tap    | Triggers `syncLocalToCloud()`; label shows Syncing… / Synced / Sync; icon check-circle when synced. If offline, shows `OfflineSyncModal` ("You're offline") instead of running sync |
 | **Book Settings**       | Always                  | Tap    | Navigate to `/(app)/books/[id]/book-settings`        |
 | **Delete All Entries**  | `canDelete` is true     | Tap    | Opens `DeleteAllEntriesSheet` (200 ms delay after menu close) |
 
@@ -963,8 +967,10 @@ This section is shown because free users with shared book access need visibility
 | **Sync to Cloud**       | Already synced (`delta.toUpload === 0 && localTotal > 0`) | Icon changes to check-circle, sublabel "Local and cloud are in sync"; tap shows toast "Already synced" |
 | **Sync to Cloud**       | Syncing in progress                                       | Disabled + icon "loader", shows "Syncing…"                                           |
 | **Sync to Cloud**       | No local data (`stats.total === 0`)                       | Tap → shows "Nothing to sync" centered modal alert                                   |
+| **Sync to Cloud**       | Offline                                                    | Tap → shows `OfflineSyncModal` ("You're offline" centered alert with wifi-off icon) instead of a native Alert |
 | **Restore from Cloud**  | Visible when `hasUnrestoredCloudData` is true             | Tap → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal()` with progress |
 | **Restore from Cloud**  | Offline / syncing / restoring                             | Disabled (still visible)                                                             |
+| **Restore from Cloud**  | Offline                                                    | Tap → shows `OfflineSyncModal` ("You're offline")                                    |
 
 #### "Restore from Cloud" button — visibility logic
 Shown whenever ALL are true:
@@ -1175,6 +1181,9 @@ Triggered when a **free-tier user** activates any paid plan.
 - `C.primary` background, white "Manage Access" title centered
 - Back chevron (`Feather chevron-left`) → `router.back()`
 
+### Offline Banner
+Shown below the tab bar whenever `useSyncStore().isOnline` is `false` (both tabs — Received and Given data are both cloud-only with no local SQLite mirror): `wifi-off` icon + "You're offline — this list may be out of date. Connect to WiFi to refresh." in a `C.dangerLight`-tinted card. The screen and tabs remain fully accessible while offline — this is informational only, not a block.
+
 ### Tab Bar
 | Tab | Badge |
 |---|---|
@@ -1221,6 +1230,26 @@ Active tab underlined in `C.primary`; inactive label in `C.textMuted`.
 ### Real-time
 - `useRealtimeInvitations(user.id)` — live subscription for received invitations
 - `useRealtimeGivenInvitations(user.id)` — live subscription for given invitations
+
+---
+
+## 17b. ManageSharesScreen — `/(app)/books/[id]/manage-shares`
+
+`src/screens/ManageSharesScreen.jsx`
+
+**Navigation in:** BookDetailScreen header share icon, or BookSettingsScreen → Manage Access row (owner only).
+
+### Free-Tier Gate (book_sharing feature)
+- Free users see a full-screen "Pro Feature" block (👑 icon in amber circle, title, description, "Upgrade to Pro" button → subscription screen) in place of the collaborator list.
+- Header "+" (add collaborator) button shows 👑 instead of `user-plus` icon when locked (free tier or at guest limit).
+
+### Paid/Superadmin View
+- **Offline banner:** shown above the info banner whenever `useSyncStore().isOnline` is `false` — `wifi-off` icon + "You're offline — this list may be out of date. Connect to WiFi to refresh." in a `C.dangerLight`-tinted card. Collaborator data (`useBookShares`) is cloud-only with no local SQLite mirror, so this signals the list may be stale rather than looking like zero collaborators. Screen stays fully accessible offline.
+- **Info banner:** "Tap any row to edit their access, or use the buttons to edit or remove." (`C.primaryLight`)
+- **Guest limit banner** (Pro tier at 1-guest limit only): amber card + "Upgrade →" link
+- **Empty state:** `users` icon, "No collaborators yet", "Add Collaborator" button (hidden if at guest limit)
+- **CollaboratorRow list:** avatar, name, email, Rights badge + Status badge (pending only); tap row or edit icon → `EditShareSheet`; remove icon → `RemoveAccessSheet`
+- Header shows `{count}/{guestLimit}` when a numeric limit applies (Pro/Business); unlimited (superadmin) shows count only
 
 ---
 

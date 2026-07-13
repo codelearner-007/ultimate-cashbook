@@ -86,8 +86,8 @@ export default function ReportsScreen() {
 
   const user       = useAuthStore(s => s.user);
   const canExport  = canAccess(user, 'export_reports');
-  const { data: ownBooks = [] } = useBooks();
-  const isOwner = ownBooks.some(b => b.id === id);
+  const { data: ownBooks = [], isLoading: booksLoading } = useBooks();
+  const isOwner = !booksLoading && ownBooks.some(b => b.id === id);
 
   const [filterDate,        setFilterDate]        = useState(initialDate || null);
   const [filterType,        setFilterType]        = useState(initialType     || null);

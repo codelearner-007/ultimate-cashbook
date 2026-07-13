@@ -57,20 +57,23 @@ export default function EntryDetailScreen() {
   const [showAttachViewer, setShowAttachViewer] = useState(false);
   const [showDeleteSheet,  setShowDeleteSheet]  = useState(false);
 
-  const { data: books = [] } = useBooks();
+  const { data: books = [], isLoading: booksLoading } = useBooks();
   const { data: sharedBooks = [] } = useSharedBooks();
-  const isOwner = books.some(b => b.id === id);
+  const bookOwnershipKnown = !booksLoading;
+  const isOwner = bookOwnershipKnown && books.some(b => b.id === id);
   const sharedBook = !isOwner ? sharedBooks.find(b => b.id === id) : null;
   const rights = isOwner ? 'view_create_edit_delete' : (sharedBook?.rights ?? 'view');
-  const canEdit   = rights === 'view_create_edit' || rights === 'view_create_edit_delete';
-  const canDelete = rights === 'view_create_edit_delete';
+  const canEdit   = bookOwnershipKnown && (rights === 'view_create_edit' || rights === 'view_create_edit_delete');
+  const canDelete = bookOwnershipKnown && rights === 'view_create_edit_delete';
 
-  const { data: entries = [], isLoading } = useQuery({
+  const { data: entries = [], isLoading: entriesLoading } = useQuery({
     queryKey: ['entries', id],
     queryFn: () => apiGetEntries(id),
     staleTime: 1000 * 60 * 2,
     enabled: !!id,
   });
+
+  const isLoading = entriesLoading || booksLoading;
 
   const entry = entries.find(e => e.id === eid);
 

@@ -24,6 +24,7 @@ import Toast from '../lib/toast';
 import SyncConfirmSheet from '../components/ui/SyncConfirmSheet';
 import RestoreOrFreshSheet from '../components/ui/RestoreOrFreshSheet';
 import FreshStartSheet from '../components/ui/FreshStartSheet';
+import OfflineSyncModal from '../components/ui/OfflineSyncModal';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -387,6 +388,7 @@ export default function BackupSyncScreen() {
   const [isFreshStarting,    setIsFreshStarting]    = useState(false);
   const [freshStartStatus,   setFreshStartStatus]   = useState('');
   const [showEmptyAlert,     setShowEmptyAlert]     = useState(false);
+  const [showOfflineAlert,   setShowOfflineAlert]   = useState(false);
 
   const dotOpacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -486,7 +488,7 @@ export default function BackupSyncScreen() {
   const handleSync = useCallback(() => {
     if (isSyncing) return;
     if (isAlreadySynced) { Toast.show({ type: 'success', text1: 'Already uploaded', text2: 'All local data is already in the cloud.' }); return; }
-    if (!isOnline) { Alert.alert('No connection', 'Please connect to the internet to sync your data.'); return; }
+    if (!isOnline) { setShowOfflineAlert(true); return; }
     if (!canSync)  { Alert.alert('Pro feature', 'Cloud backup & sync requires a Pro or Business plan.'); return; }
     if (!stats || stats.total === 0) { setShowEmptyAlert(true); return; }
     setShowSyncConfirm(true);
@@ -513,7 +515,7 @@ export default function BackupSyncScreen() {
   }, [startSync, setProgress, finishSync, failSync, qc, loadData]);
 
   const handleRestore = useCallback(() => {
-    if (!isOnline) { Alert.alert('No connection', 'Please connect to the internet to restore your data.'); return; }
+    if (!isOnline) { setShowOfflineAlert(true); return; }
     if (!hasCloudData) { Alert.alert('No cloud data', 'No books found in your cloud account.'); return; }
     setShowRestoreConfirm(true);
   }, [isOnline, hasCloudData]);
@@ -898,6 +900,11 @@ export default function BackupSyncScreen() {
           </View>
         </View>
       </Modal>
+
+      <OfflineSyncModal
+        visible={showOfflineAlert}
+        onDismiss={() => setShowOfflineAlert(false)}
+      />
 
     </SafeAreaView>
   );

@@ -23,10 +23,10 @@ export default function CategoryProfileScreen() {
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
 
   // Permissions
-  const { data: ownBooks = [] }    = useBooks();
+  const { data: ownBooks = [], isLoading: booksLoading } = useBooks();
   const { data: sharedBooks = [] } = useSharedBooks();
   const currentBook = ownBooks.find(b => b.id === bookId);
-  const isOwner     = !!currentBook;
+  const isOwner     = !booksLoading && !!currentBook;
   const sharedBook  = !isOwner ? sharedBooks.find(b => b.id === bookId) : null;
   const rights      = isOwner ? 'view_create_edit_delete' : (sharedBook?.rights ?? 'view');
   const canEdit     = rights !== 'view';

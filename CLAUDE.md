@@ -309,6 +309,7 @@ Every new or modified screen/component **must match the visual language of the e
 | `ProfileScreen.jsx` | `/(app)/settings/profile` | both | ✅ Complete |
 | `LoginScreen.jsx` | `/(auth)/login` | — | ✅ Complete |
 | `DashboardScreen.jsx` | `/(app)/dashboard` | superadmin | Alias → AdminUsersScreen |
+| `LocalBackupScreen.jsx` | `/(app)/settings/local-backup` | both (no tier/role gating) | ✅ Complete |
 
 ---
 

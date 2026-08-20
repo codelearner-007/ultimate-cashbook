@@ -29,5 +29,6 @@ export const localGetSupplier             = async () => null;
 export const localUpdateSupplier          = async () => null;
 export const localDeleteSupplier          = async () => {};
 export const localGetSupplierEntries      = async () => [];
-export const localGetAllDataForMigration  = async () => ({ books: [], entries: [], categories: [], customers: [], suppliers: [] });
+export const localGetAllDataForMigration  = async () => ({ books: [], entries: [], categories: [], customers: [], suppliers: [], payment_modes: [], deleted_entries: [] });
 export const localClearAll                = async () => {};
+export const localImportAllData           = async () => {};

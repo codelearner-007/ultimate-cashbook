@@ -796,7 +796,122 @@ export async function localGetAllDataForMigration() {
     payment_modes: await db.getAllAsync(
       `SELECT pm.* FROM payment_modes pm JOIN books b ON b.id = pm.book_id WHERE b.user_id = ?`, [userId],
     ),
+    // Not user-scoped (deleted_entries has no user_id column) — this device is
+    // single-user in practice, so the full tombstone log is captured as-is.
+    deleted_entries: await db.getAllAsync(`SELECT * FROM deleted_entries ORDER BY deleted_at ASC`),
   };
+}
+
+// Restores a device-local backup snapshot with original ids preserved (except user_id,
+// which is rewritten to the currently logged-in account so restored rows are immediately
+// visible — a backup's original user_id may belong to a different login session). Insert
+// order (books → categories/customers/suppliers/payment_modes → entries) satisfies the
+// book_id FK. deleted_entries (sync tombstones) is wholesale replaced since it isn't
+// user-scoped.
+export async function localImportAllData(data) {
+  const db  = await getDb();
+  const uid = currentUserId();
+  for (const b of data.books ?? []) {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO books
+         (id, user_id, name, currency, net_balance,
+          show_customer, show_supplier, show_category, show_attachment,
+          created_at, updated_at, last_entry_at, cloud_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        b.id, uid, b.name, b.currency, b.net_balance,
+        b.show_customer   ? 1 : 0,
+        b.show_supplier   ? 1 : 0,
+        b.show_category   ? 1 : 0,
+        b.show_attachment ? 1 : 0,
+        b.created_at,
+        b.updated_at    ?? null,
+        b.last_entry_at ?? null,
+        b.cloud_id      ?? null,
+      ],
+    );
+  }
+  for (const c of data.categories ?? []) {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO categories
+         (id, book_id, user_id, name, total_in, total_out, net_balance, created_at, display_order)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [c.id, c.book_id, uid, c.name, c.total_in, c.total_out, c.net_balance, c.created_at, c.display_order ?? 0],
+    );
+  }
+  for (const c of data.customers ?? []) {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO customers
+         (id, book_id, user_id, name, phone, email, address, total_in, total_out, net_balance, created_at, updated_at, display_order)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        c.id, c.book_id, uid, c.name,
+        c.phone ?? null, c.email ?? null, c.address ?? null,
+        c.total_in, c.total_out, c.net_balance,
+        c.created_at, c.updated_at ?? null, c.display_order ?? 0,
+      ],
+    );
+  }
+  for (const s of data.suppliers ?? []) {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO suppliers
+         (id, book_id, user_id, name, phone, email, address, total_in, total_out, net_balance, created_at, updated_at, display_order)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        s.id, s.book_id, uid, s.name,
+        s.phone ?? null, s.email ?? null, s.address ?? null,
+        s.total_in, s.total_out, s.net_balance,
+        s.created_at, s.updated_at ?? null, s.display_order ?? 0,
+      ],
+    );
+  }
+  for (const pm of data.payment_modes ?? []) {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO payment_modes
+         (id, book_id, user_id, name, total_in, total_out, net_balance, created_at, display_order)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [pm.id, pm.book_id, uid, pm.name, pm.total_in, pm.total_out, pm.net_balance, pm.created_at, pm.display_order ?? 0],
+    );
+  }
+  for (const e of data.entries ?? []) {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO entries
+         (id, book_id, user_id, type, amount, remark,
+          category, category_id,
+          payment_mode, payment_mode_id,
+          contact_name, customer_id, supplier_id,
+          entry_date, entry_time,
+          attachment_url, attachment_path, attachment_provider,
+          created_at, cloud_entry_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        e.id, e.book_id, uid, e.type, e.amount,
+        e.remark              ?? null,
+        e.category            ?? null,
+        e.category_id         ?? null,
+        e.payment_mode        ?? 'cash',
+        e.payment_mode_id     ?? null,
+        e.contact_name        ?? null,
+        e.customer_id         ?? null,
+        e.supplier_id         ?? null,
+        e.entry_date,
+        e.entry_time          ?? '00:00',
+        e.attachment_url      ?? null,
+        e.attachment_path     ?? null,
+        e.attachment_provider ?? null,
+        e.created_at,
+        e.cloud_entry_id      ?? null,
+      ],
+    );
+  }
+  // Tombstone log has no user_id column — replace wholesale to match the backup exactly.
+  await db.runAsync(`DELETE FROM deleted_entries`);
+  for (const d of data.deleted_entries ?? []) {
+    await db.runAsync(
+      `INSERT INTO deleted_entries (cloud_entry_id, cloud_book_id, deleted_at) VALUES (?,?,?)`,
+      [d.cloud_entry_id, d.cloud_book_id, d.deleted_at],
+    );
+  }
 }
 
 export async function localClearAll() {

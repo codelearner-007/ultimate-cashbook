@@ -851,6 +851,7 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 | **Notifications**     | —                  | Tap    | Navigate to notifications                                            |
 | **Privacy & Security** | —                 | Tap    | Navigate to `/(app)/settings/privacy-policy` (PrivacyPolicyScreen)  |
 | **Backup & Sync**     | 👑 Pro (if free, `SUBSCRIPTIONS_ENABLED` only)  | Tap    | `SUBSCRIPTIONS_ENABLED=true`: sub "Cloud sync active"/"Requires Pro or Business", navigates to subscription (if free) or `/(app)/settings/backup-sync` (if has cloud). `SUBSCRIPTIONS_ENABLED=false`: sub is always "Local data & backup", no crown, always navigates to `/(app)/settings/backup-sync` (BackupSyncScreen) regardless of tier. |
+| **Backup & Restore Locally** | — (no gating, always visible) | Tap | Sub "Save or restore a backup file on this device"; navigates to `/(app)/settings/local-backup` (LocalBackupScreen) — device-local backup/restore, unconditional for every tier/role, separate from the cloud "Backup & Sync" row above |
 | Language              | —                  | TODO   | —                                                                    |
 
 ### Support Section (all TODO)
@@ -1051,6 +1052,55 @@ The old `hasRestoredFromCloud` session flag is **no longer a gate**. The button 
 | `SyncConfirmSheet`   | Confirm upload local → cloud                 |
 | `RestoreOrFreshSheet`| Confirm restore cloud → local (mode="confirm") |
 | `FreshStartSheet`    | 2-step confirm delete cloud + local          |
+
+---
+
+## 13c. LocalBackupScreen — `/(app)/settings/local-backup`
+
+**Component:** `LocalBackupScreen.jsx`
+**Access:** All users, every role and subscription tier — no `canAccess`/tier gating of any kind. **Completely separate from and unrelated to BackupSyncScreen** (cloud Backup & Sync, `/(app)/settings/backup-sync`) — no network calls, no cloud account required; reads/writes a single backup file entirely on-device via `lib/localBackup.js`.
+
+### Header
+- Primary-color bg, back chevron (`router.canGoBack() ? router.back() : router.replace('/(app)/settings')`), "Backup & Restore Locally" title
+
+### Description Card (always shown)
+- `hard-drive` Feather icon in a `C.primaryLight` circular icon box
+- Bold title "Local Backup & Restore"
+- Body: explains the backup file contains all books, entries, categories, contacts, payment modes, and attachments, saved on this device; no internet connection or subscription required; advises saving the file somewhere safe (Google Drive, email, a computer) to restore later, e.g. after reinstalling the app or moving to a new device
+
+### CREATE BACKUP Section
+| Button              | State                        | Action                                                                                  |
+|---------------------|-------------------------------|------------------------------------------------------------------------------------------|
+| **Backup Locally**  | Default (icon `download`)     | Tap → `generateLocalBackup(onProgress)` — reads all local data + local attachment files, writes a backup JSON file, opens the OS share sheet |
+| **Backup Locally**  | Running                       | Disabled; label "Creating Backup… (done/total)" (or plain "Creating Backup…" if `total` is 0/unset — never shows "0/0"); disabled while a restore is running too (shared busy guard, since both touch the same SQLite DB) |
+| **Backup Locally**  | Success                       | Success toast summarizing counts, e.g. "N books, M entries backed up"                    |
+| **Backup Locally**  | Failure                       | Error toast with the thrown error's message                                              |
+
+### RESTORE FROM BACKUP Section
+| Button                          | State                     | Action                                                                                     |
+|----------------------------------|---------------------------|----------------------------------------------------------------------------------------------|
+| **Restore from Backup File**    | Default (icon `upload`, secondary style) | Tap → `pickBackupFile()` opens a file picker                                    |
+| **Restore from Backup File**    | User cancels picker       | No-op                                                                                         |
+| **Restore from Backup File**    | Picked file invalid       | `Alert.alert('Invalid File', err.message)`                                                   |
+| **Restore from Backup File**    | Picked file valid         | Payload stored in state → opens **RestoreConfirmSheet** (never restores immediately)         |
+| **Restore from Backup File**    | Disabled                  | While a backup or restore is already running (shared busy guard)                             |
+
+### RestoreConfirmSheet (bottom sheet, local to this screen)
+Handle bar, rounded top corners, `rgba(0,0,0,0.60)` backdrop — same bottom-sheet pattern as the rest of the app. Shows:
+- The backup's `exported_at` timestamp, formatted human-readably ("Backup from {date}")
+- A 7-cell counts grid: Cashbooks, Entries, Categories, Customers, Suppliers, Payment Modes, Attachments (each with a Feather icon + count recomputed live from the picked file's actual data, not the embedded counts summary — protects against a stale/hand-edited backup showing misleading numbers)
+- A danger-toned warning box: "This will REPLACE all data currently on this device with the contents of this backup. This action cannot be undone."
+
+| Button               | Action | Result                                                                                          |
+|-----------------------|--------|---------------------------------------------------------------------------------------------------|
+| **Cancel**             | Tap    | Dismisses the sheet, clears the pending payload — no data changed                                 |
+| **Restore Backup** (danger) | Tap | Guarded against double-tap → `restoreLocalBackup(payload, onProgress)` — progress bar replaces the buttons while running ("Restoring… (done/total)") |
+
+On restore success: `qc.invalidateQueries()` (no arguments, same broad-invalidate precedent as `BackupSyncScreen`'s restore/fresh-start) → sheet closes → shared `SuccessDialog` shown ("Backup Restored!" / "All your data has been restored to this device.").
+On restore failure: `Alert.alert('Restore Failed', err.message)` — the sheet is **left open** with the payload intact so the user can see the restore did not complete and retry.
+
+### Loading / Error / Empty States
+- No server-data query on this screen — only the backup-in-progress and restore-in-progress states above; no skeleton loaders
 
 ---
 
@@ -1308,6 +1358,7 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 | Notifications settings            | SettingsScreen                            | Not implemented           |
 | Privacy & Security (Privacy Policy) | PrivacyPolicyScreen                     | ✅ Complete               |
 | Backup & Sync                     | BackupSyncScreen (`/(app)/settings/backup-sync`) | ✅ Complete (gate card shows "Stored on This Device" info, no upgrade button, while `SUBSCRIPTIONS_ENABLED = false`) |
+| Local Backup & Restore             | LocalBackupScreen (`/(app)/settings/local-backup`) | ✅ Complete (device-local backup/restore file, no cloud, no tier/role gating — unrelated to Backup & Sync above) |
 | Language picker                   | SettingsScreen                            | Not implemented           |
 | Help & FAQ                        | SettingsScreen                            | Not implemented           |
 | Rate the App                      | SettingsScreen                            | Not implemented           |

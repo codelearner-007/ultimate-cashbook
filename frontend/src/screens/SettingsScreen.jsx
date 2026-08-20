@@ -96,6 +96,14 @@ const CloudIcon = ({ color, size = 14 }) => (
   </View>
 );
 
+const SaveIcon = ({ color, size = 14 }) => (
+  <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: size * 0.78, height: size * 0.78, borderRadius: 3, borderWidth: 1.5, borderColor: color, alignItems: 'center' }}>
+      <View style={{ width: size * 0.34, height: size * 0.22, borderWidth: 1.5, borderColor: color, borderTopWidth: 0, marginTop: -1 }} />
+    </View>
+  </View>
+);
+
 const GlobeIcon = ({ color, size = 14 }) => (
   <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
     <View style={{ width: size * 0.78, height: size * 0.78, borderRadius: size * 0.39, borderWidth: 1.5, borderColor: color, alignItems: 'center', justifyContent: 'center' }}>
@@ -274,6 +282,7 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
           accent: null,
           crown: SUBSCRIPTIONS_ENABLED && !hasCloud ? 'pro' : null,
         },
+        { Icon: SaveIcon,   label: 'Backup & Restore Locally', sub: 'Save or restore a backup file on this device', route: '/(app)/settings/local-backup', accent: null },
         { Icon: GlobeIcon,  label: 'Language',           sub: 'English',                    route: null, accent: null },
       ],
     },

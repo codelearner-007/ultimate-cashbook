@@ -10,8 +10,9 @@ const FEATURES = {
   // Cloud sync — data stored locally on free tier only
   cloud_sync:      'pro',
 
-  // PDF / Excel export and full report access
-  export_reports:  'pro',
+  // PDF / Excel export and full report access — available on all tiers
+  // (this build ships free-tier-only; see frontend/src/constants/buildConfig.js)
+  export_reports:  'free',
 
   // Book sharing / collaboration
   book_sharing:    'pro',

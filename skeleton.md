@@ -741,12 +741,12 @@ Data loaded: React Query key `['report-entries', bookId, dateFrom, dateTo]` via 
 
 | Button                              | Action | Result                                                                                                                                                   |
 |-------------------------------------|--------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Export as PDF** (red border)      | Tap    | If `canExport`: `FileSystem.downloadAsync` → `GET /api/v1/books/:id/report/pdf?date_from=&date_to=` with Bearer token → saves to cache dir → `Sharing.shareAsync()` opens native share sheet. If `!canExport`: `SUBSCRIPTIONS_ENABLED=true` → navigate to `/(app)/settings/subscription`; `SUBSCRIPTIONS_ENABLED=false` (current build) → `Alert.alert('Not Available', 'PDF & Excel export is not included in your current plan.')`, no navigation |
-| **Export as Excel** (green border)  | Tap    | Same flow but `GET /api/v1/books/:id/report/excel` → `.xlsx` → `Sharing.shareAsync()`; same `!canExport` gating as PDF above                             |
+| **Export as PDF** (red border)      | Tap    | `canExport` is now `true` for every tier (`export_reports: 'free'` in `frontend/src/lib/canAccess.js`) — `FileSystem.downloadAsync` → `GET /api/v1/books/:id/report/pdf?date_from=&date_to=` with Bearer token → saves to cache dir → `Sharing.shareAsync()` opens native share sheet. The backend endpoint has no tier check of its own (any authenticated owner/collaborator with rights can call it), so this was a pure frontend unlock. |
+| **Export as Excel** (green border)  | Tap    | Same flow but `GET /api/v1/books/:id/report/excel` → `.xlsx` → `Sharing.shareAsync()`; unlocked for every tier the same way as PDF above                 |
 
 Both buttons show `ActivityIndicator` while downloading.  Both buttons disabled while an export is in progress.  Share sheet includes: Save to Files, WhatsApp, Email, Google Drive, Dropbox, and any installed app that handles PDF or XLSX.
 
-Header PDF/XLS buttons and the export-preview modal's PDF/Excel buttons use the same `!canExport` gating (via `handleExportGated` / inline checks) — none of them navigate to the subscription screen while `SUBSCRIPTIONS_ENABLED` is `false`; all show the same `Alert.alert('Not Available', ...)` instead. The "Share hint" note under the export buttons also reads "PDF & Excel export is not available on your current plan." instead of an upgrade prompt while the flag is off. 👑 `CrownBadge` lock icons remain visible on locked buttons regardless of the flag — they are purely visual, not navigation.
+Header PDF/XLS buttons and the export-preview modal's PDF/Excel buttons all read the same `canExport` (now always `true`), so they render as fully active (chevron icons, no 👑 `CrownBadge`) and export directly with no gate. The `!canExport` fallback paths (`SUBSCRIPTIONS_ENABLED`-conditional navigate-vs-`Alert.alert` logic added for the free-tier-only build, and the "not available on your current plan" Share-hint copy) are now dead code — harmless, left in place since `canAccess.js` could reintroduce a paid tier for this feature later without any UI changes needed.
 
 ### Loading / Error / Empty States
 | State                  | UI                                                |
@@ -1299,8 +1299,8 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 | Feature                           | Screen                                    | Status                    |
 |-----------------------------------|-------------------------------------------|---------------------------|
 | Backup Entry                      | EntryDetailScreen ⋮ menu                  | Not implemented           |
-| Export PDF                        | ReportsScreen                             | ✅ Complete (👑 Pro gate) |
-| Export Excel                      | ReportsScreen                             | ✅ Complete (👑 Pro gate) |
+| Export PDF                        | ReportsScreen                             | ✅ Complete (free tier)   |
+| Export Excel                      | ReportsScreen                             | ✅ Complete (free tier)   |
 | Subscription plans page           | SubscriptionScreen                        | ✅ Complete               |
 | Crown gates on locked features    | SettingsScreen, ReportsScreen, BooksView  | ✅ Complete               |
 | Invite collaborator               | BookDetailScreen user-plus icon           | Not implemented           |

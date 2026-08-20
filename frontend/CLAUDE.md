@@ -264,7 +264,7 @@ frontend/
 - Error state: only shown for collaborators whose cloud fetch fails (owners never error — they read from local SQLite); offline collaborators see a dedicated offline state with "Go Back" button
 
 **Header (two modes):**
-- **Normal:** back chevron, book name + "Add Member, Book Activity etc" subtitle, share icon (owner only; 👑 badge + amber color when canShare is false), dots menu
+- **Normal:** back chevron, book name + "Add Member, Book Activity etc" subtitle, share icon (owner only AND `SHARED_BOOKS_ENABLED`; 👑 badge + amber color when canShare is false), dots menu — the icon is entirely hidden while `SHARED_BOOKS_ENABLED = false` (current build, see `frontend/src/constants/buildConfig.js`)
 - **Selection mode:** X close button, "N entries selected" title, "Select All / Deselect All" text button, trash icon (disabled when 0 selected)
 
 **Search + Filters:**
@@ -378,22 +378,27 @@ Shared `forwardRef` component used by both `AddEntryScreen` and `EditEntryScreen
 - Export: tapping PDF or Excel calls `FileSystem.downloadAsync(backendUrl, cacheDir/filename, { headers: { Authorization } })` then `Sharing.shareAsync(localUri)` — opens native OS share sheet (WhatsApp, Email, Google Drive, Save to Files, etc.)
 - Loading indicator shown inline next to date range label while fetching
 - Both export buttons disabled while any export is in progress
+- **Export gating (`canExport = canAccess(user, 'export_reports')`, unchanged — free users still cannot export):** every place that reacts to `!canExport` (header PDF/XLS buttons via `handleExportGated`, the two export-preview modal buttons, and the "Share hint" text) checks the `SUBSCRIPTIONS_ENABLED` build flag (`constants/buildConfig.js`) before deciding what to do. When `SUBSCRIPTIONS_ENABLED` is `true`, behavior is unchanged — navigates to `/(app)/settings/subscription`. When `false` (current release), navigation is replaced with `Alert.alert('Not Available', 'PDF & Excel export is not included in your current plan.')` since the subscription screen is hidden in this build; the "Share hint" copy under the export buttons also swaps from an "upgrade" call-to-action to "PDF & Excel export is not available on your current plan." `CrownBadge` lock icons next to the export buttons are unaffected (visual only, not navigation).
 
 ---
 
 ### `BackupSyncScreen` → `/(app)/settings/backup-sync`
 - Open to all users; content varies by tier
+- Reads the two build flags from `constants/buildConfig.js`: `SUBSCRIPTIONS_ENABLED`, `SHARED_BOOKS_ENABLED` (both currently `false` for this free-tier-only release)
 - **Status card** (all users): online dot (animated pulse), last-sync time, upload + restore progress bars
   - `lastSyncedAt` is stamped after every **manual** "Upload to Cloud" action from BackupSyncScreen (`finishSync` in `BackupSyncScreen.jsx`)
 - **LOCAL DATA section** (all users): section label separated above card with `marginTop: 24`; card with `marginTop: 8` shows counts for books / entries / categories / customers / suppliers
 - **Backup Data section** (paid / superadmin, not lapsed): retention window (Pro=7 days, Business/Superadmin=15 days) and last backup timestamp
-- **SHARED BOOKS section** (free users with `sharedBookCount > 0` only): shows count of accepted shared books and online/offline sync status row — lets free users confirm their shared data is current
+- **SHARED BOOKS section** (free users with `sharedBookCount > 0` only, **and only when `SHARED_BOOKS_ENABLED` is true**): `freeHasSharedAccess = SHARED_BOOKS_ENABLED && isFreeUser && sharedBookCount > 0` — with the flag `false`, this is always `false`, so the section never renders and the free-tier gate / info-note branches that key off `freeHasSharedAccess` fall through to their non-shared-access paths. Shows count of accepted shared books and online/offline sync status row — lets free users confirm their shared data is current
 - **CLOUD ACTIONS** (paid / superadmin only):
   - "Upload to Cloud" → `SyncConfirmSheet` → `syncLocalToCloud(onProgress)` → toast; if local empty → "Nothing to sync" modal alert; if offline → `OfflineSyncModal` ("You're offline") instead of a native `Alert.alert`. **Manual only — no auto-upload happens.** Owner must come here to push new data.
   - "Restore from Cloud" — conditional render → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal(onProgress)` → toast; if offline → same `OfflineSyncModal`
 - **Danger Zone** (paid / superadmin only): "Start Fresh" → `FreshStartSheet` (2-step confirm) → `apiGetBooks()` → `apiDeleteBook()` for each → `localClearAll()` → toast
-- **Free-tier gate**: shown only when `!canSync && !freeHasSharedAccess`; shows upgrade card; hidden if free user has shared access (shared books section shown instead)
+- **Free-tier gate**: shown only when `!canSync && !freeHasSharedAccess`. Its inner card branches on `SUBSCRIPTIONS_ENABLED`:
+  - `true` → original "Pro Feature" upgrade card (crown emoji, description, "View Plans" button → `/(app)/settings/subscription`)
+  - `false` (current build) → simpler informational card instead: `Feather "hard-drive"` icon, "Stored on This Device" title, "Your books and entries are saved locally on this device only." subtitle — no button, no navigation
 - **Info note** (all users): text varies by canSync state and whether user has shared access
+- **Lapse overlay** (`LapseOverlay`, shown when subscription lapsed): its "Renew Plan to Keep Data" button only renders when the `onRenew` prop is truthy. The call site passes `onRenew={SUBSCRIPTIONS_ENABLED ? () => router.push('/(app)/settings/subscription') : null}`, so with the flag `false` the button is omitted while the countdown tiles / "Subscription Ended" copy still render unchanged.
 - All sync/restore state in `useSyncStore`: `isSyncing`, `isRestoring`, `progress`, `restoreProgress`
 
 #### "Restore from Cloud" button — visibility logic
@@ -406,7 +411,12 @@ Button renders whenever `hasUnrestoredCloudData` is true — **the `hasRestoredF
 ---
 
 ### `SettingsScreen` → `/(app)/settings` (and `/(app)/dashboard/settings`)
-- Sections: Account | App | Support
+- Sections: Account | (Subscription, only when `SUBSCRIPTIONS_ENABLED`) | App | Support
+- Reads `SUBSCRIPTIONS_ENABLED` and `SHARED_BOOKS_ENABLED` from `constants/buildConfig.js` (this build ships both `false` — free-tier-only release):
+  - **Subscription section** — included in `SECTIONS` only when `SUBSCRIPTIONS_ENABLED` (`...(SUBSCRIPTIONS_ENABLED ? [section] : [])`)
+  - **"Manage Access" row** (App section) — included only when `SHARED_BOOKS_ENABLED`, same spread pattern
+  - **"Backup & Sync" row** — when `SUBSCRIPTIONS_ENABLED` is false, always shows sub "Local data & backup", no crown, and always routes to `/(app)/settings/backup-sync` regardless of tier (no more gating on `hasCloud`/upsell to subscription page). When `SUBSCRIPTIONS_ENABLED` is true, unchanged: sub/route/crown depend on `hasCloud`
+  - **Tier chip** (avatar card) — wrapper component chosen conditionally: `const TierChipWrapper = SUBSCRIPTIONS_ENABLED ? TouchableOpacity : View`; when `SUBSCRIPTIONS_ENABLED` is false it renders as a plain non-touchable `View` (no `onPress`, avoids a dead link) with identical style/content; when true, behaves as before (`TouchableOpacity` → `/(app)/settings/subscription`)
 - Logout → `supabase.auth.signOut()` → `clearUser()` → AuthGuard redirects to login
 
 ---

@@ -18,6 +18,7 @@ import AdminPillBadge from '../components/ui/AdminPillBadge';
 import CrownBadge, { CROWN_COLORS } from '../components/ui/CrownBadge';
 import LogoutSheet from '../components/ui/LogoutSheet';
 import { canAccess } from '../lib/canAccess';
+import { SUBSCRIPTIONS_ENABLED, SHARED_BOOKS_ENABLED } from '../constants/buildConfig';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -247,7 +248,7 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
         { Icon: CurrencyIcon, label: 'Currency', sub: currencySub, route: '/(app)/settings/currency', accent: null },
       ],
     },
-    {
+    ...(SUBSCRIPTIONS_ENABLED ? [{
       title: 'Subscription',
       items: [
         {
@@ -259,14 +260,20 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
           crown:       null,
         },
       ],
-    },
+    }] : []),
     {
       title: 'App',
       items: [
-        { Icon: ShareIcon,  label: 'Manage Access',      sub: 'Invitations & shared books', route: '/(app)/settings/manage-access', accent: null, badge: pendingInviteCount, crown: hasSharing ? null : 'pro' },
+        ...(SHARED_BOOKS_ENABLED ? [{ Icon: ShareIcon,  label: 'Manage Access',      sub: 'Invitations & shared books', route: '/(app)/settings/manage-access', accent: null, badge: pendingInviteCount, crown: hasSharing ? null : 'pro' }] : []),
         { Icon: BellIcon,   label: 'Notifications',      sub: 'Manage alerts',              route: '/(app)/settings/notifications', accent: null },
         { Icon: ShieldIcon, label: 'Privacy & Security', sub: 'Privacy policy',              route: '/(app)/settings/privacy-policy', accent: null },
-        { Icon: CloudIcon,  label: 'Backup & Sync',      sub: hasCloud ? 'Cloud sync active' : 'Requires Pro or Business', route: hasCloud ? '/(app)/settings/backup-sync' : '/(app)/settings/subscription', accent: null, crown: hasCloud ? null : 'pro' },
+        {
+          Icon: CloudIcon, label: 'Backup & Sync',
+          sub: SUBSCRIPTIONS_ENABLED ? (hasCloud ? 'Cloud sync active' : 'Requires Pro or Business') : 'Local data & backup',
+          route: SUBSCRIPTIONS_ENABLED ? (hasCloud ? '/(app)/settings/backup-sync' : '/(app)/settings/subscription') : '/(app)/settings/backup-sync',
+          accent: null,
+          crown: SUBSCRIPTIONS_ENABLED && !hasCloud ? 'pro' : null,
+        },
         { Icon: GlobeIcon,  label: 'Language',           sub: 'English',                    route: null, accent: null },
       ],
     },
@@ -287,6 +294,8 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
   };
 
   const s = useMemo(() => makeStyles(C, hPad, showBottomNav), [C, hPad, showBottomNav]);
+
+  const TierChipWrapper = SUBSCRIPTIONS_ENABLED ? TouchableOpacity : View;
 
   return (
     <SafeAreaView applyTop={applyTop} style={s.safe}>
@@ -334,16 +343,15 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
             </View>
           )}
           {/* Subscription tier badge */}
-          <TouchableOpacity
-            onPress={() => router.push('/(app)/settings/subscription')}
-            activeOpacity={0.8}
+          <TierChipWrapper
+            {...(SUBSCRIPTIONS_ENABLED ? { onPress: () => router.push('/(app)/settings/subscription'), activeOpacity: 0.8 } : {})}
             style={[s.tierChip, { backgroundColor: tierColor + '1A', borderColor: tierColor + '44' }]}
           >
             {(tier === 'pro' || tier === 'business') && <Text style={{ fontSize: 12, marginRight: 3 }}>👑</Text>}
             <Text style={[s.tierChipText, { color: tierColor, fontFamily: Font.bold }]}>
               {tierLabel} Plan
             </Text>
-          </TouchableOpacity>
+          </TierChipWrapper>
           <TouchableOpacity
             style={[s.editBtn, { backgroundColor: C.primaryLight, borderColor: C.primary }]}
             onPress={() => router.push(profileRoute)}

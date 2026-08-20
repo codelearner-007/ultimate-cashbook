@@ -20,6 +20,7 @@ import {
 import { localClearAll } from '../lib/localDb';
 import { apiGetBooks, apiDeleteBook, apiGetSharedBooks } from '../lib/api';
 import { canAccess, getLimit } from '../lib/canAccess';
+import { SUBSCRIPTIONS_ENABLED, SHARED_BOOKS_ENABLED } from '../constants/buildConfig';
 import Toast from '../lib/toast';
 import SyncConfirmSheet from '../components/ui/SyncConfirmSheet';
 import RestoreOrFreshSheet from '../components/ui/RestoreOrFreshSheet';
@@ -234,7 +235,7 @@ function LapseOverlay({ cloudDataDeleteAt, backupDays, C, onRenew }) {
           )}
 
           {/* Renew button */}
-          {!timeLeft.expired && (
+          {!timeLeft.expired && onRenew && (
             <TouchableOpacity
               onPress={onRenew}
               style={{
@@ -565,7 +566,7 @@ export default function BackupSyncScreen() {
   }, [setHasRestored, qc, loadData]);
 
   // ── Free user with shared books: determine if their shared data is in sync ──
-  const freeHasSharedAccess = isFreeUser && sharedBookCount > 0;
+  const freeHasSharedAccess = SHARED_BOOKS_ENABLED && isFreeUser && sharedBookCount > 0;
 
   return (
     <SafeAreaView applyTop style={st.safe}>
@@ -798,20 +799,30 @@ export default function BackupSyncScreen() {
           ) : (
             /* ── Free-tier gate (shown only when user has no shared books access either) ── */
             !freeHasSharedAccess && (
-              <View style={[st.gateCard, { backgroundColor: '#F59E0B14', borderColor: '#F59E0B44' }]}>
-                <Text style={{ fontSize: 28, marginBottom: 10 }}>👑</Text>
-                <Text style={[st.gateTitle, { color: C.text, fontFamily: Font.bold }]}>Pro Feature</Text>
-                <Text style={[st.gateSub, { color: C.textMuted, fontFamily: Font.regular }]}>
-                  Cloud backup & sync requires a Pro or Business subscription. Your data is safe locally.
-                </Text>
-                <TouchableOpacity
-                  style={[st.gateBtn, { backgroundColor: '#F59E0B' }]}
-                  onPress={() => router.push('/(app)/settings/subscription')}
-                  activeOpacity={0.85}
-                >
-                  <Text style={[st.gateBtnText, { fontFamily: Font.bold }]}>View Plans 👑</Text>
-                </TouchableOpacity>
-              </View>
+              SUBSCRIPTIONS_ENABLED ? (
+                <View style={[st.gateCard, { backgroundColor: '#F59E0B14', borderColor: '#F59E0B44' }]}>
+                  <Text style={{ fontSize: 28, marginBottom: 10 }}>👑</Text>
+                  <Text style={[st.gateTitle, { color: C.text, fontFamily: Font.bold }]}>Pro Feature</Text>
+                  <Text style={[st.gateSub, { color: C.textMuted, fontFamily: Font.regular }]}>
+                    Cloud backup & sync requires a Pro or Business subscription. Your data is safe locally.
+                  </Text>
+                  <TouchableOpacity
+                    style={[st.gateBtn, { backgroundColor: '#F59E0B' }]}
+                    onPress={() => router.push('/(app)/settings/subscription')}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[st.gateBtnText, { fontFamily: Font.bold }]}>View Plans 👑</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={[st.gateCard, { backgroundColor: C.primaryLight, borderColor: C.primary + '33' }]}>
+                  <Feather name="hard-drive" size={26} color={C.primary} style={{ marginBottom: 10 }} />
+                  <Text style={[st.gateTitle, { color: C.text, fontFamily: Font.bold }]}>Stored on This Device</Text>
+                  <Text style={[st.gateSub, { color: C.textMuted, fontFamily: Font.regular }]}>
+                    Your books and entries are saved locally on this device only.
+                  </Text>
+                </View>
+              )
             )
           )}
 
@@ -836,7 +847,7 @@ export default function BackupSyncScreen() {
             cloudDataDeleteAt={cloudDataDeleteAt}
             backupDays={backupDays}
             C={C}
-            onRenew={() => router.push('/(app)/settings/subscription')}
+            onRenew={SUBSCRIPTIONS_ENABLED ? () => router.push('/(app)/settings/subscription') : null}
           />
         )}
       </View>

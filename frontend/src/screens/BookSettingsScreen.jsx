@@ -18,6 +18,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { apiDeleteAllEntries, apiGetEntries, apiUpdateBookFieldSettings } from '../lib/dataSource';
 import { useAuthStore } from '../store/authStore';
 import { canAccess } from '../lib/canAccess';
+import { SHARED_BOOKS_ENABLED } from '../constants/buildConfig';
 import CrownBadge from '../components/ui/CrownBadge';
 
 import SuccessDialog from '../components/ui/SuccessDialog';
@@ -323,7 +324,7 @@ export default function BookSettingsScreen() {
         </View>
 
         {/* Sharing — only shown to the book owner */}
-        {isOwner && (
+        {isOwner && SHARED_BOOKS_ENABLED && (
           <>
             <Text style={[s.sectionLabel, { marginTop: 24 }]}>COLLABORATION</Text>
             <View style={[s.card, { backgroundColor: C.card, borderColor: canShare ? C.border : '#F59E0B44' }]}>

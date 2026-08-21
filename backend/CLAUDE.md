@@ -139,6 +139,7 @@ No JWT auth required (these are the endpoints that issue the JWT).
 | GET | `` | Get authenticated user's profile. Computes real `storage_mb` (RPC, fallback 0), `entry_count` (entries table), and `shared_books_count` (accepted book_shares where user is owner). | ✅ |
 | PUT | `` | Update own profile (full_name, phone, avatar_url) | ✅ |
 | PATCH | `/subscription` | Update subscription tier, status, billing cycle, expires_at, cancel_at_period_end. Backend calculates `expires_at` from `subscription_started_at + billing_cycle` if not provided; sets `cloud_data_delete_at` on lapse; clears it on resubscribe. | ✅ |
+| DELETE | `` | Permanently delete the caller's account. Collects the caller's Supabase-hosted attachment paths + avatar path (via `storage.list()`), then deletes the `auth.users` row through the Admin API (`DELETE {SUPABASE_URL}/auth/v1/admin/users/{user_id}`, same direct-`httpx` pattern as `verify_otp` in `auth.py`) — this cascades via `ON DELETE CASCADE` through `profiles` → `books` → `entries`/`categories`/`customers`/`suppliers`/`payment_modes`, and through `profiles` → `book_shares`/`user_notifications`/`push_tokens`. Storage objects aren't part of the Postgres FK graph, so the collected attachment + avatar paths are removed from the `attachments`/`avatars` buckets afterward, same two-phase pattern as `delete_book()` in `books.py`. | ✅ |
 
 ---
 
@@ -451,6 +452,14 @@ app.include_router(admin.router,    prefix="/api/v1/admin",    tags=["admin"])
 app.include_router(contacts.router,    prefix="/api/v1/books",    tags=["contacts"])
 app.include_router(categories.router,  prefix="/api/v1/books",    tags=["categories"])
 ```
+
+**`GET /health`** — health check, `{"status": "ok"}`.
+
+**`GET /account-deletion`** — public, unauthenticated HTML page (defined directly in `main.py`, not a router). Fulfills Google Play's User Data policy requirement for a web resource where account deletion can be requested without the app installed: explains the in-app path (Settings → Delete Account) and an email-request fallback to `settings.GMAIL_FROM_ADDRESS`. Kept in `main.py` rather than a router since it's a single static page, not an API endpoint.
+
+**`GET /privacy-policy`** — public, unauthenticated HTML page (also in `main.py`). Fulfills Google Play Console's App Content and Data safety requirement for a live privacy-policy URL — the in-app `PrivacyPolicyScreen` alone doesn't satisfy this. `_PRIVACY_SECTIONS` mirrors `frontend/src/screens/PrivacyPolicyScreen.jsx`'s `SECTIONS` array **verbatim, including the exact `support@ultimatecashbook.com` contact address** (deliberately not `settings.GMAIL_FROM_ADDRESS`, which is a different mailbox) — when either changes, update both so the disclosed policy text matches word for word. `_render_policy_body()` converts each section's `\n\n`-separated, `• `-bulleted body text into `<p>`/`<ul>` HTML. Both pages share one CSS shell via `_page_shell()`/`_PAGE_STYLE`.
+
+Both public pages are shared visually and share a support-contact inconsistency worth resolving: the privacy policy promises `support@ultimatecashbook.com`, while the account-deletion page and all transactional email (OTP, etc.) actually send from `settings.GMAIL_FROM_ADDRESS` (`info@ultimatecashbook.com`). Neither page invents a new address — this mismatch predates both pages and should be resolved by picking one real, monitored inbox.
 
 ---
 

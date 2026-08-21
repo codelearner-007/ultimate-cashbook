@@ -1,8 +1,10 @@
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List
 from datetime import datetime, timezone, timedelta
 from dateutil.relativedelta import relativedelta
 from app.auth.jwt import get_current_user
+from app.config import settings
 from app.db.supabase import get_supabase
 from app.models.profile import ProfileResponse, ProfileUpdate, SubscriptionUpdate
 from app.models.sharing import CollaboratorProfile
@@ -199,6 +201,72 @@ async def update_subscription(
     if not result.data:
         raise HTTPException(status_code=404, detail="Profile not found")
     return result.data[0]
+
+
+@router.delete("", status_code=204)
+async def delete_account(user_id: str = Depends(get_current_user)):
+    """
+    Permanently delete the caller's account.
+
+    Deletes the Supabase Auth user, which cascades (via FK ON DELETE CASCADE)
+    through profiles -> books -> entries/categories/customers/suppliers/
+    payment_modes, and through profiles -> book_shares/user_notifications/
+    push_tokens. Storage objects (attachments, avatar) are not part of the
+    Postgres FK graph, so they're collected before the cascade and removed
+    afterward — same two-phase pattern as delete_book() in routers/books.py.
+    """
+    sb = get_supabase()
+
+    # Collect this user's Supabase-hosted attachment paths before the cascade
+    # removes the entries rows that reference them.
+    books_res = sb.table("books").select("id").eq("user_id", user_id).execute()
+    book_ids = [b["id"] for b in (books_res.data or [])]
+
+    attachment_paths: List[str] = []
+    if book_ids:
+        entries_res = (
+            sb.table("entries")
+            .select("attachment_path, attachment_provider")
+            .in_("book_id", book_ids)
+            .not_.is_("attachment_path", "null")
+            .execute()
+        )
+        attachment_paths = [
+            r["attachment_path"] for r in (entries_res.data or [])
+            if r.get("attachment_provider", "supabase") == "supabase"
+        ]
+
+    try:
+        avatar_files = sb.storage.from_("avatars").list(path=user_id)
+        avatar_paths = [f"{user_id}/{f['name']}" for f in (avatar_files or [])]
+    except Exception:
+        avatar_paths = []
+
+    # Delete the auth user via the Admin API — same direct-httpx pattern used
+    # in routers/auth.py's verify_otp for admin/users. Cascades every owned row.
+    service_url = settings.SUPABASE_URL.rstrip("/")
+    headers = {
+        "apikey": settings.SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_KEY}",
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        del_res = await client.delete(
+            f"{service_url}/auth/v1/admin/users/{user_id}",
+            headers=headers,
+        )
+    if del_res.status_code not in (200, 204):
+        raise HTTPException(status_code=500, detail="Failed to delete account")
+
+    if attachment_paths:
+        try:
+            sb.storage.from_("attachments").remove(attachment_paths)
+        except Exception:
+            pass
+    if avatar_paths:
+        try:
+            sb.storage.from_("avatars").remove(avatar_paths)
+        except Exception:
+            pass
 
 
 @router.get("/search", response_model=List[CollaboratorProfile])

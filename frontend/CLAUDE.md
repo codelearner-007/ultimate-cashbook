@@ -91,7 +91,8 @@ frontend/
 │   │       ├── RestoreOrFreshSheet.jsx # Restore-or-Later sheet (launch + BackupSyncScreen)
 │   │       ├── FreshStartSheet.jsx    # 2-step confirm: delete all cloud + local data
 │   │       ├── LimitReachedSheet.jsx  # Plan-limit notification sheet (books & shares); props: visible, onDismiss, limitType ('books'|'shares'), currentLimit, currentTier
-│   │       └── OfflineSyncModal.jsx   # Themed "You're offline" alert (wifi-off icon, single "Got it" button) shown whenever Upload to Cloud / Restore from Cloud / a book's Sync action is tapped while offline — replaces the old native Alert.alert('No connection', ...); shared by BackupSyncScreen, BooksView (BookMenu Sync item), BookDetailScreen (dots-menu Sync item)
+│   │       ├── OfflineSyncModal.jsx   # Themed "You're offline" alert (wifi-off icon, single "Got it" button) shown whenever Upload to Cloud / Restore from Cloud / a book's Sync action is tapped while offline — replaces the old native Alert.alert('No connection', ...); shared by BackupSyncScreen, BooksView (BookMenu Sync item), BookDetailScreen (dots-menu Sync item)
+│   │       └── DeleteAccountSheet.jsx # 2-step destructive confirm for account deletion (same shape as FreshStartSheet); used only by SettingsScreen's Danger Zone row
 │   ├── hooks/
 │   │   ├── useBooks.js           # useBooks, useCreateBook, useDeleteBook (React Query)
 │   │   ├── useBookSort.js        # Sort state + sorted list derivation; custom-order snapshot auto-resets when the live book id set no longer matches it (e.g. after a local or cloud restore replaces the data), so BooksView never renders stale/deleted books while in "Custom Order" mode
@@ -443,6 +444,7 @@ Button renders whenever `hasUnrestoredCloudData` is true — **the `hasRestoredF
   - **"Backup & Restore Locally" row** (App section, immediately after "Backup & Sync") — unconditional, always rendered for every tier/role (no `SUBSCRIPTIONS_ENABLED`/`SHARED_BOOKS_ENABLED` gating), sub "Save or restore a backup file on this device", routes to `/(app)/settings/local-backup` → `LocalBackupScreen` (device-local backup/restore, separate from cloud sync). Uses new hand-drawn `SaveIcon` component (rounded-square outline with a small notch near the top), defined alongside the file's other icon components
   - **Tier chip** (avatar card) — wrapper component chosen conditionally: `const TierChipWrapper = SUBSCRIPTIONS_ENABLED ? TouchableOpacity : View`; when `SUBSCRIPTIONS_ENABLED` is false it renders as a plain non-touchable `View` (no `onPress`, avoids a dead link) with identical style/content; when true, behaves as before (`TouchableOpacity` → `/(app)/settings/subscription`)
 - Logout → `supabase.auth.signOut()` → `clearUser()` → AuthGuard redirects to login
+- **Danger Zone** (unconditional, every tier/role, always visible below Logout): "Delete Account" row → `DeleteAccountSheet` (2-step confirm, same shape as `FreshStartSheet`) → on final confirm: `apiDeleteAccount()` (`DELETE /api/v1/profile`) → `localClearAll()` → `supabase.auth.signOut()` → `clearUser()` → AuthGuard redirects to login. Exists to satisfy Google Play's account-deletion policy — see `frontend/src/components/ui/DeleteAccountSheet.jsx` and the backend `DELETE /api/v1/profile` entry in `backend/CLAUDE.md`. The public no-app-installed fallback is `GET /account-deletion` on the backend.
 
 ---
 
@@ -453,8 +455,9 @@ Button renders whenever `hasUnrestoredCloudData` is true — **the `hasRestoredF
 
 ### `PrivacyPolicyScreen` → `/(app)/settings/privacy-policy`
 - Static scrollable screen — no API calls, no state
-- Intro card with `C.primaryLight` / `C.primaryMid` styling; 11 policy sections rendered in a single `C.card` container
+- Intro card with `C.primaryLight` / `C.primaryMid` styling; 10 policy sections (`SECTIONS` array) rendered in a single `C.card` container
 - Back navigates to settings; header matches all other settings sub-screens
+- **Public web mirror:** `GET /privacy-policy` on the backend (`backend/app/main.py`) renders the same `SECTIONS` content as a plain HTML page — required because Play Console's App Content/Data safety forms need a live URL, not just an in-app screen. The backend's `_PRIVACY_SECTIONS` list must be kept word-for-word in sync with this file's `SECTIONS` array, including the `support@ultimatecashbook.com` contact address (a different mailbox than `GMAIL_FROM_ADDRESS`, used deliberately to match what this screen already promises users).
 
 ---
 
@@ -680,6 +683,7 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `apiGetProfile()` | GET | `/api/v1/profile` |
 | `apiUpdateProfile(payload)` | PUT | `/api/v1/profile` |
 | `apiUpdateSubscription({ tier, subscription_status, billing_cycle, expires_at?, cancel_at_period_end? })` | PATCH | `/api/v1/profile/subscription` |
+| `apiDeleteAccount()` | DELETE | `/api/v1/profile` — permanently deletes the caller's account and all owned data (cloud); frontend must also `localClearAll()` + sign out on success |
 | `apiUploadAvatar(uri, mimeType)` | POST | `/api/v1/upload/avatar` — multipart, returns `{ avatar_url }` |
 | `apiUploadAttachment(uri, mimeType, filename, entryId?)` | POST | `/api/v1/upload/attachment` — multipart, returns `{ attachment_url, path, provider }` |
 | `apiDeleteAttachment(path)` | DELETE | `/api/v1/upload/attachment?path=...` — removes file from Supabase Storage |

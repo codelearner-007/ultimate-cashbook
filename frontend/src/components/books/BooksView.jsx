@@ -924,10 +924,10 @@ export default function BooksView({
             if (!canAddBook) {
               Toast.show({
                 type: 'info',
-                text1: 'Book limit reached',
+                text1: 'Book limit reached 👑',
                 text2: SUBSCRIPTIONS_ENABLED
                   ? `Your ${tier === 'pro' ? 'Pro' : 'Free'} plan allows up to ${bookLimit} book${bookLimit !== 1 ? 's' : ''}. Upgrade to add more.`
-                  : `You've reached the ${bookLimit}-book limit for this plan.`,
+                  : `You've used all ${bookLimit} free books. Upgrade to add more — coming soon!`,
               });
               return;
             }

@@ -1,5 +1,6 @@
 from datetime import datetime
 from io import BytesIO
+from xml.sax.saxutils import escape as _xml_escape
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.platypus import (
@@ -72,7 +73,7 @@ def _page_deco(canv, doc):
 # ── Helper: paragraph ───────────────────────────────────────────────────────
 def _p(text, size=9, bold=False, color=SLATE_900, align="LEFT", space_after=0, leading=None):
     return Paragraph(
-        text,
+        _xml_escape(str(text)),
         ParagraphStyle(
             "x",
             fontSize=size,
@@ -89,20 +90,28 @@ _PAYMENT_LABELS = {"cash": "Cash", "online": "Online", "cheque": "Cheque", "othe
 _TYPE_LABELS    = {"in": "Cash In", "out": "Cash Out"}
 
 
+_FILTER_VALUE_MAX = 120
+
+
+def _clip(value: str) -> str:
+    value = str(value)
+    return value if len(value) <= _FILTER_VALUE_MAX else value[:_FILTER_VALUE_MAX] + "…"
+
+
 def _build_filter_items(filters: dict, date_from=None, date_to=None, contact_type=None) -> list:
     items = []
     if date_from or date_to:
         items.append(("Date Range", f"{date_from or 'Beginning'} → {date_to or 'Today'}"))
     if filters:
         if filters.get("entry_type"):
-            items.append(("Entry Type", _TYPE_LABELS.get(filters["entry_type"], filters["entry_type"].title())))
+            items.append(("Entry Type", _clip(_TYPE_LABELS.get(filters["entry_type"], filters["entry_type"].title()))))
         if filters.get("contact_name"):
             _lbl = "Customer" if contact_type == "customer" else "Supplier" if contact_type == "supplier" else "Contact"
-            items.append((_lbl, filters["contact_name"]))
+            items.append((_lbl, _clip(filters["contact_name"])))
         if filters.get("category"):
-            items.append(("Category", filters["category"]))
+            items.append(("Category", _clip(filters["category"])))
         if filters.get("payment_mode"):
-            items.append(("Payment Mode", _PAYMENT_LABELS.get(filters["payment_mode"], filters["payment_mode"].title())))
+            items.append(("Payment Mode", _clip(_PAYMENT_LABELS.get(filters["payment_mode"], filters["payment_mode"].title()))))
     return items
 
 

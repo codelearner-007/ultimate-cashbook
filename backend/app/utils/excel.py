@@ -1,3 +1,4 @@
+import re
 from datetime import datetime
 from io import BytesIO
 from openpyxl import Workbook
@@ -18,6 +19,14 @@ BORDER_CLR  = "E2E8F0"
 DARK        = "0F172A"
 MUTED       = "64748B"
 WHITE       = "FFFFFF"
+
+
+_ILLEGAL_XML_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _clean(value):
+    """Strip XML-illegal control characters so openpyxl never raises IllegalCharacterError."""
+    return _ILLEGAL_XML_RE.sub("", value) if isinstance(value, str) else value
 
 
 def _fill(hex_color: str) -> PatternFill:
@@ -102,7 +111,7 @@ def generate_excel(book_name: str, currency: str, entries: list, summary: dict,
     ws.merge_cells("A2:I2")
     end_date = date_to or datetime.now().strftime("%Y-%m-%d")
     c = ws["A2"]
-    c.value = f"  {book_name}  ·  {date_from or 'All time'}  →  {end_date}  ·  {len(entries)} transactions"
+    c.value = _clean(f"  {book_name}  ·  {date_from or 'All time'}  →  {end_date}  ·  {len(entries)} transactions")
     c.font  = Font(size=9, color=WHITE)
     c.fill  = _fill(TEAL_DARK)
     c.alignment = Alignment(horizontal="left", vertical="center")
@@ -130,14 +139,14 @@ def generate_excel(book_name: str, currency: str, entries: list, summary: dict,
             row = FDATA_START + i
 
             ws.merge_cells(f"A{row}:C{row}")
-            lc = ws.cell(row=row, column=1, value=f"  {label}")
+            lc = ws.cell(row=row, column=1, value=_clean(f"  {label}"))
             lc.font      = Font(bold=True, size=8.5, color=TEAL_DARK)
             lc.fill      = _fill(TEAL_MID)
             lc.alignment = Alignment(horizontal="left", vertical="center")
             _fill_row(ws, row, 2, 3, _fill(TEAL_MID))
 
             ws.merge_cells(f"D{row}:I{row}")
-            vc = ws.cell(row=row, column=4, value=f"  {value}")
+            vc = ws.cell(row=row, column=4, value=_clean(f"  {value}"))
             vc.font      = Font(size=8.5, color=DARK)
             vc.fill      = _fill(TEAL_LIGHT)
             vc.alignment = Alignment(horizontal="left", vertical="center")
@@ -231,7 +240,7 @@ def generate_excel(book_name: str, currency: str, entries: list, summary: dict,
 
         def _d(col, val, fmt=None, bold=False, val_color=DARK, center=False,
                _r=row_idx, _bg=row_bg, _bd=bd):
-            c = ws.cell(row=_r, column=col, value=val)
+            c = ws.cell(row=_r, column=col, value=_clean(val))
             c.fill      = _bg
             c.font      = Font(size=9, bold=bold, color=val_color)
             c.alignment = Alignment(horizontal="center" if center else "left",

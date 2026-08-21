@@ -213,7 +213,9 @@ Bell icon + "{N} pending book invitation(s) — tap to respond" → navigates to
 | Element              | State        | Appearance                                          | Action | Result                                              |
 |----------------------|--------------|-----------------------------------------------------|--------|-----------------------------------------------------|
 | FAB button           | Under limit  | Primary colour bg, white `+` icon + "ADD NEW BOOK"  | Tap    | Opens "Add New Book" modal                          |
-| FAB button (disabled)| Limit reached| Grey (`C.cardAlt`) bg, no shadow, dimmed icon+label | Tap    | `Toast.info` — "Book limit reached" with tier/limit message (mentions upgrading only when `SUBSCRIPTIONS_ENABLED`; current build shows "You've reached the N-book limit for this plan." with no upgrade wording); no sheet or navigation |
+| FAB button (disabled)| Limit reached| Grey (`C.cardAlt`) bg, no shadow, dimmed icon+label | Tap    | `Toast.info` — title "Book limit reached 👑"; body: `SUBSCRIPTIONS_ENABLED=true` → "Your {tier} plan allows up to N books. Upgrade to add more."; `SUBSCRIPTIONS_ENABLED=false` (current build) → "You've used all N free books. Upgrade to add more — coming soon!"; no sheet or navigation |
+
+Free-tier book limit is 5 (`getLimit(user, 'books')` in `lib/canAccess.js`, mirrored server-side in `backend/app/routers/books.py`'s `BOOK_LIMITS`). If a create request somehow reaches the backend past the disabled FAB (e.g. stale client state) and returns `BOOK_LIMIT_REACHED:{n}` (403), `LimitReachedSheet` opens as a fallback — its amber "Upgrade" card always renders now (previously gated on `SUBSCRIPTIONS_ENABLED`): a 👑 crown icon + "Upgrade to add more" / "Paid plans are launching soon" + an amber "SOON" pill badge when `SUBSCRIPTIONS_ENABLED=false` (current build); the original ⚡ zap icon + "Upgrade to Pro/Business" + "View Plans" flow still renders unchanged when `SUBSCRIPTIONS_ENABLED=true`. The description line above the card also now ends with "— upgrade to add more" for the books case regardless of the flag.
 
 #### Add New Book Modal
 | Element          | Action | Result                                                                                    |
@@ -850,7 +852,7 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 | **Manage Access** (shown only when `SHARED_BOOKS_ENABLED = true`) | 👑 Pro (if free)  | Tap    | Always navigates to `/(app)/settings/manage-access`; free users see inline paywall overlay with "Upgrade to Pro" CTA |
 | **Notifications**     | —                  | Tap    | Navigate to notifications                                            |
 | **Privacy & Security** | —                 | Tap    | Navigate to `/(app)/settings/privacy-policy` (PrivacyPolicyScreen)  |
-| **Backup & Sync**     | 👑 Pro (if free, `SUBSCRIPTIONS_ENABLED` only)  | Tap    | `SUBSCRIPTIONS_ENABLED=true`: sub "Cloud sync active"/"Requires Pro or Business", navigates to subscription (if free) or `/(app)/settings/backup-sync` (if has cloud). `SUBSCRIPTIONS_ENABLED=false`: sub is always "Local data & backup", no crown, always navigates to `/(app)/settings/backup-sync` (BackupSyncScreen) regardless of tier. |
+| **Backup & Sync**     | 👑 Pro (if free) — only rendered at all when `SUBSCRIPTIONS_ENABLED` | Tap | Row is hidden entirely in the current build (`SUBSCRIPTIONS_ENABLED=false`, same spread-gating pattern as the Subscription section and "Manage Access" row) — a cloud-sync upsell has no purpose in a free-tier-only release. When shown (`SUBSCRIPTIONS_ENABLED=true`): sub "Cloud sync active"/"Requires Pro or Business", navigates to `/(app)/settings/backup-sync` (if has cloud) or subscription (if free). `BackupSyncScreen` itself is unchanged and still reachable by direct deep link — only this settings entry point is gone. |
 | **Backup & Restore Locally** | — (no gating, always visible) | Tap | Sub "Save or restore a backup file on this device"; navigates to `/(app)/settings/local-backup` (LocalBackupScreen) — device-local backup/restore, unconditional for every tier/role, separate from the cloud "Backup & Sync" row above |
 | Language              | —                  | TODO   | —                                                                    |
 
@@ -1073,14 +1075,14 @@ The old `hasRestoredFromCloud` session flag is **no longer a gate**. The button 
 ### Description Card (always shown)
 - `hard-drive` Feather icon in a `C.primaryLight` circular icon box
 - Bold title "Local Backup & Restore"
-- Body: explains the backup file contains all books, entries, categories, contacts, payment modes, and attachments, saved on this device; no internet connection or subscription required; advises saving the file somewhere safe (Google Drive, email, a computer) to restore later, e.g. after reinstalling the app or moving to a new device
+- Body: explains the backup file contains all books, entries, categories, contacts, payment modes, and attachments, saved on this device (Android body text adds "(including your Downloads folder, once you've picked one)"); no internet connection or subscription required; notes the file can also be sent elsewhere (Google Drive, email, a computer) via the share sheet shown right after it's created
 
 ### CREATE BACKUP Section
 | Button              | State                        | Action                                                                                  |
 |---------------------|-------------------------------|------------------------------------------------------------------------------------------|
-| **Backup Locally**  | Default (icon `download`)     | Tap → `generateLocalBackup(onProgress)` — reads all local data + local attachment files, writes a backup JSON file, opens the OS share sheet |
+| **Backup Locally**  | Default (icon `download`)     | Tap → `generateLocalBackup(onProgress)` — reads all local data + local attachment files, writes the backup JSON to the app's persistent `documentDirectory/backups/` folder (survives even if the share sheet below is dismissed), on Android also writes a second copy into a user-chosen public folder via Storage Access Framework (folder picker shown once, then reused), then opens the OS share sheet on the persistent copy |
 | **Backup Locally**  | Running                       | Disabled; label "Creating Backup… (done/total)" (or plain "Creating Backup…" if `total` is 0/unset — never shows "0/0"); disabled while a restore is running too (shared busy guard, since both touch the same SQLite DB) |
-| **Backup Locally**  | Success                       | Success toast summarizing counts, e.g. "N books, M entries backed up"                    |
+| **Backup Locally**  | Success                       | Success toast — title "Backup Saved to Downloads" (Android, when the public-folder write succeeded) or "Backup Saved on Device" (iOS, or Android without a granted folder); subtitle summarizes counts, e.g. "N books, M entries backed up" |
 | **Backup Locally**  | Failure                       | Error toast with the thrown error's message                                              |
 
 ### RESTORE FROM BACKUP Section
@@ -1365,7 +1367,7 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 | Notifications settings            | SettingsScreen                            | Not implemented           |
 | Privacy & Security (Privacy Policy) | PrivacyPolicyScreen                     | ✅ Complete — also mirrored publicly at `GET /privacy-policy` on the backend (Play Console requires a live URL, not just an in-app screen) |
 | Delete Account (Danger Zone)      | SettingsScreen                            | ✅ Complete (`DeleteAccountSheet` + `DELETE /api/v1/profile` + `GET /account-deletion` web fallback) |
-| Backup & Sync                     | BackupSyncScreen (`/(app)/settings/backup-sync`) | ✅ Complete (gate card shows "Stored on This Device" info, no upgrade button, while `SUBSCRIPTIONS_ENABLED = false`) |
+| Backup & Sync                     | BackupSyncScreen (`/(app)/settings/backup-sync`) | ✅ Complete, but its Settings row is hidden while `SUBSCRIPTIONS_ENABLED = false` (free-tier-only release) — screen itself is unchanged and still reachable by direct deep link |
 | Local Backup & Restore             | LocalBackupScreen (`/(app)/settings/local-backup`) | ✅ Complete (device-local backup/restore file, no cloud, no tier/role gating — unrelated to Backup & Sync above) |
 | Language picker                   | SettingsScreen                            | Not implemented           |
 | Help & FAQ                        | SettingsScreen                            | Not implemented           |

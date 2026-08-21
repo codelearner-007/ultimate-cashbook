@@ -73,6 +73,8 @@ Supabase provides three things for Ultimate CashBook:
 
 **First-user rule:** The `handle_new_user` trigger fires on every `auth.users` INSERT. It counts existing profiles — if 0, it assigns `role = 'superadmin'`; otherwise `role = 'user'`. Profile is auto-created; no manual insert needed.
 
+**Account-deletion cascade (load-bearing):** `DELETE /api/v1/profile` (backend `routers/profile.py`) deletes only the `auth.users` row via the Admin API — every other row is removed purely by `ON DELETE CASCADE`: `auth.users` → `profiles` → `book_shares`/`user_notifications`/`push_tokens`, and `auth.users` → `books`/`entries` → `categories`/`customers`/`suppliers`/`payment_modes`. If any of these FKs is ever changed away from `CASCADE` (e.g. to `SET NULL` or left `RESTRICT`), account deletion breaks or leaves orphaned rows — update `backend/app/routers/profile.py`'s `delete_account()` to match. Storage objects (`attachments`, `avatars` buckets) are outside this graph and are cleaned up explicitly by the endpoint before the cascade fires.
+
 ---
 
 ### `public.books`
@@ -326,7 +328,8 @@ Both functions are `security definer` — they run with the privileges of the fu
 
 ### Email OTP (magic link)
 - Enabled by default in Supabase → Authentication → Providers → Email
-- No additional configuration needed
+- **Local dev custom templates:** `supabase/config.toml` sets `[auth.email.template.magic_link]` and `[auth.email.template.confirmation]` `content_path` to `./supabase/templates/magic_link.html` / `confirmation.html` (path is resolved relative to the repo root, where the Supabase CLI is invoked from — not relative to the `supabase/` folder, despite that being where `config.toml` itself lives). Supabase's built-in default template only renders `{{ .ConfirmationURL }}` — it never shows `{{ .Token }}` (the raw 6-digit code) unless the template explicitly includes it. Since `LoginScreen`'s dev fallback (`supabase.auth.signInWithOtp()` → `supabase.auth.verifyOtp({ token: code, type: 'email' })`) requires a human-typeable code, both custom templates render `{{ .Token }}` in a large code box alongside the `{{ .ConfirmationURL }}` link — the code is what makes sign-in work on mobile (the link only opens on the machine running the local Supabase stack). `signInWithOtp` triggers `magic_link` for existing users and `confirmation` for brand-new ones (`shouldCreateUser: true`), so both must stay customized.
+- **Any change to `config.toml`'s `[auth.email.*]` section requires `supabase stop` then `supabase start`** to take effect — a running stack does not hot-reload config.toml.
 
 ### JWT
 - Algorithm: **HS256**

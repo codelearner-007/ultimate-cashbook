@@ -17,8 +17,12 @@ import { getCurrency } from '../constants/currencies';
 import AdminPillBadge from '../components/ui/AdminPillBadge';
 import CrownBadge, { CROWN_COLORS } from '../components/ui/CrownBadge';
 import LogoutSheet from '../components/ui/LogoutSheet';
+import DeleteAccountSheet from '../components/ui/DeleteAccountSheet';
 import { canAccess } from '../lib/canAccess';
 import { SUBSCRIPTIONS_ENABLED, SHARED_BOOKS_ENABLED } from '../constants/buildConfig';
+import { apiDeleteAccount } from '../lib/api';
+import { localClearAll } from '../lib/localDb';
+import Toast from '../lib/toast';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -145,6 +149,17 @@ const DiamondIcon = ({ color, size = 14 }) => (
       transform: [{ rotate: '45deg' }],
       borderRadius: 2,
     }} />
+  </View>
+);
+
+// Hand-drawn to match this screen's existing glyph set (UserIcon + an X badge)
+// rather than mixing in a Feather icon just for this one row.
+const DeleteAccountIcon = ({ color, size = 14 }) => (
+  <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: size * 0.5, height: size * 0.5, borderRadius: size * 0.25, borderWidth: 1.5, borderColor: color }} />
+    <View style={{ width: size * 0.75, height: size * 0.35, borderTopLeftRadius: size * 0.375, borderTopRightRadius: size * 0.375, borderWidth: 1.5, borderColor: color, borderBottomWidth: 0, marginTop: 2 }} />
+    <View style={{ position: 'absolute', right: -size * 0.12, top: -size * 0.08, width: size * 0.42, height: 1.5, backgroundColor: color, transform: [{ rotate: '45deg' }] }} />
+    <View style={{ position: 'absolute', right: -size * 0.12, top: -size * 0.08, width: size * 0.42, height: 1.5, backgroundColor: color, transform: [{ rotate: '-45deg' }] }} />
   </View>
 );
 
@@ -302,6 +317,27 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
     clearUser(); // AuthGuard in _layout.jsx handles the redirect
   };
 
+  const [deleteAccountVisible, setDeleteAccountVisible] = useState(false);
+  const [deleteAccountLoading, setDeleteAccountLoading] = useState(false);
+
+  const handleDeleteAccount = () => setDeleteAccountVisible(true);
+
+  const confirmDeleteAccount = async () => {
+    setDeleteAccountLoading(true);
+    try {
+      await apiDeleteAccount();
+      await localClearAll();
+      if (supabase) await supabase.auth.signOut();
+      setDeleteAccountLoading(false);
+      setDeleteAccountVisible(false);
+      clearUser(); // AuthGuard in _layout.jsx handles the redirect
+      Toast.show({ type: 'success', text1: 'Account deleted', text2: 'Your account and all data have been permanently removed.' });
+    } catch (err) {
+      setDeleteAccountLoading(false);
+      Toast.show({ type: 'error', text1: 'Delete failed', text2: err?.response?.data?.detail || err.message || 'Please try again.' });
+    }
+  };
+
   const s = useMemo(() => makeStyles(C, hPad, showBottomNav), [C, hPad, showBottomNav]);
 
   const TierChipWrapper = SUBSCRIPTIONS_ENABLED ? TouchableOpacity : View;
@@ -411,6 +447,25 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
           </View>
         </View>
 
+        {/* Danger Zone */}
+        <View style={s.sectionWrap}>
+          <Text style={[s.sectionLabel, { color: C.danger, fontFamily: Font.semiBold }]}>
+            DANGER ZONE
+          </Text>
+          <View style={[s.card, { backgroundColor: C.card, borderColor: C.danger + '33' }]}>
+            <TouchableOpacity style={rowStyles.row} onPress={handleDeleteAccount} activeOpacity={0.7}>
+              <View style={[rowStyles.iconBox, { backgroundColor: C.dangerLight }]}>
+                <DeleteAccountIcon color={C.danger} size={15} />
+              </View>
+              <View style={rowStyles.body}>
+                <Text style={[rowStyles.label, { color: C.danger, fontFamily: Font.semiBold }]}>Delete Account</Text>
+                <Text style={[rowStyles.sub, { color: C.textMuted, fontFamily: Font.regular }]}>Permanently erase your account and all data</Text>
+              </View>
+              <ChevronRight color={C.danger} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <Text style={[s.version, { color: C.textSubtle, fontFamily: Font.regular }]}>Ultimate CashBook v1.0.0</Text>
 
       </ScrollView>
@@ -420,6 +475,15 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
         onDismiss={() => setLogoutVisible(false)}
         onConfirm={confirmLogout}
         isLoading={logoutLoading}
+        C={C}
+        Font={Font}
+      />
+
+      <DeleteAccountSheet
+        visible={deleteAccountVisible}
+        onDismiss={() => setDeleteAccountVisible(false)}
+        onConfirm={confirmDeleteAccount}
+        isLoading={deleteAccountLoading}
         C={C}
         Font={Font}
       />

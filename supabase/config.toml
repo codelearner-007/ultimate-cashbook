@@ -238,6 +238,17 @@ otp_expiry = 3600
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
 
+# Custom templates so local dev emails (Inbucket/Mailpit) show both the raw
+# 6-digit {{ .Token }} (needed for manual entry on mobile) and the magic link.
+# The default built-in template only renders {{ .ConfirmationURL }}.
+[auth.email.template.magic_link]
+subject = "Your Ultimate CashBook sign-in code"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.confirmation]
+subject = "Your Ultimate CashBook sign-in code"
+content_path = "./supabase/templates/confirmation.html"
+
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true

@@ -149,6 +149,11 @@ export const apiUpdateSubscription = async ({
   })).data;
 };
 
+/** DELETE /api/v1/profile — permanently deletes the caller's account and all owned data */
+export const apiDeleteAccount = async () => {
+  return (await api.delete('/api/v1/profile')).data;
+};
+
 /** POST /api/v1/upload/avatar — multipart upload, returns { avatar_url } */
 export const apiUploadAvatar = async (uri, mimeType = 'image/jpeg') => {
   const filename = uri.split('/').pop() || 'avatar.jpg';

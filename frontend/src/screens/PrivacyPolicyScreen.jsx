@@ -40,7 +40,7 @@ const SECTIONS = [
   },
   {
     title: 'Data Retention',
-    body: 'We retain your account and financial data for as long as your account is active or as needed to provide services.\n\nIf you cancel your subscription, your data remains accessible until your billing period ends. Your data is never deleted automatically — you remain in full control.\n\nYou may request deletion of your account and all associated data by contacting our support team.',
+    body: 'We retain your account and financial data for as long as your account is active or as needed to provide services.\n\nIf you cancel your subscription, your data remains accessible until your billing period ends. Your data is never deleted automatically — you remain in full control.\n\nYou may delete your account and all associated data at any time from Settings → Delete Account in the app, or by visiting ultimate-cashbook.onrender.com/account-deletion.',
   },
   {
     title: 'Your Rights',

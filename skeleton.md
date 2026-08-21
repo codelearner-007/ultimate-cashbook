@@ -866,6 +866,13 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 |--------------------------|--------|-------------------------------------------------------------------------------------------|
 | **Logout** button / row  | Tap    | Alert "Are you sure?" → confirm → `supabase.auth.signOut()` + `clearUser()` → redirect to `/login` |
 
+### Danger Zone
+| Element                       | Action | Result                                                                                    |
+|--------------------------------|--------|-------------------------------------------------------------------------------------------|
+| **Delete Account** button / row | Tap    | Opens `DeleteAccountSheet` (2-step confirm, same pattern as `FreshStartSheet`) → on final confirm: `DELETE /api/v1/profile` (deletes the Supabase Auth user; cascades profile, all owned books/entries/categories/contacts/payment modes, shared-book access, notifications, push tokens; removes Storage attachments + avatar) → `localClearAll()` → `supabase.auth.signOut()` → `clearUser()` → redirect to `/login` |
+
+Unconditional — shown for every tier and role, always visible (no `SUBSCRIPTIONS_ENABLED`/`SHARED_BOOKS_ENABLED` gating). Public web fallback for users without the app installed: `GET /account-deletion` on the backend (plain HTML page with in-app instructions + an email-request path).
+
 ---
 
 ## 13. ProfileScreen — `/(app)/settings/profile`
@@ -1356,7 +1363,8 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 | Invite collaborator               | BookDetailScreen user-plus icon           | Not implemented           |
 | Manage Access (free-tier paywall) | ManageAccessScreen                        | ✅ Complete (👑 Pro gate) |
 | Notifications settings            | SettingsScreen                            | Not implemented           |
-| Privacy & Security (Privacy Policy) | PrivacyPolicyScreen                     | ✅ Complete               |
+| Privacy & Security (Privacy Policy) | PrivacyPolicyScreen                     | ✅ Complete — also mirrored publicly at `GET /privacy-policy` on the backend (Play Console requires a live URL, not just an in-app screen) |
+| Delete Account (Danger Zone)      | SettingsScreen                            | ✅ Complete (`DeleteAccountSheet` + `DELETE /api/v1/profile` + `GET /account-deletion` web fallback) |
 | Backup & Sync                     | BackupSyncScreen (`/(app)/settings/backup-sync`) | ✅ Complete (gate card shows "Stored on This Device" info, no upgrade button, while `SUBSCRIPTIONS_ENABLED = false`) |
 | Local Backup & Restore             | LocalBackupScreen (`/(app)/settings/local-backup`) | ✅ Complete (device-local backup/restore file, no cloud, no tier/role gating — unrelated to Backup & Sync above) |
 | Language picker                   | SettingsScreen                            | Not implemented           |

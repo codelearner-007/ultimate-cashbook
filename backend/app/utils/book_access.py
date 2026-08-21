@@ -54,6 +54,44 @@ def get_book_owner_id(sb, book_id: str, user_id: str) -> str:
     raise HTTPException(status_code=404, detail="Book not found")
 
 
+def get_book_owner_id_with_row(sb, book_id: str, user_id: str, select: str = "*") -> tuple[str, dict]:
+    """
+    Like get_book_owner_id, but also returns the book row (selected columns) —
+    one query in the common owner case instead of a separate owner-check query
+    plus a second row-fetch query.
+
+    Raises 404 if the user has no access or the book row can't be found.
+    """
+    owner_check = (
+        sb.table("books")
+        .select(select)
+        .eq("id", book_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    if owner_check.data:
+        return user_id, owner_check.data[0]
+
+    share_check = (
+        sb.table("book_shares")
+        .select("owner_id")
+        .eq("book_id", book_id)
+        .eq("shared_with_id", user_id)
+        .eq("status", "accepted")
+        .limit(1)
+        .execute()
+    )
+    if share_check.data:
+        owner_id = share_check.data[0]["owner_id"]
+        book_res = sb.table("books").select(select).eq("id", book_id).eq("user_id", owner_id).limit(1).execute()
+        if not book_res.data:
+            raise HTTPException(status_code=404, detail="Book not found")
+        return owner_id, book_res.data[0]
+
+    raise HTTPException(status_code=404, detail="Book not found")
+
+
 def get_book_access(sb, book_id: str, user_id: str) -> tuple[str, str]:
     """
     Like get_book_owner_id but also returns the effective rights level.

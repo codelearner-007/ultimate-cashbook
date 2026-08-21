@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
 import { Font } from '../../constants/fonts';
 import { SUBSCRIPTIONS_ENABLED } from '../../constants/buildConfig';
+import { CROWN_COLORS } from './CrownBadge';
 
 /**
  * Bottom sheet shown whenever a user hits a plan limit.
@@ -60,13 +61,19 @@ export default function LimitReachedSheet({ visible, onDismiss, limitType = 'boo
   const emoji       = isBooks ? '📚' : '👥';
   const title       = isBooks ? 'Book Limit Reached' : 'Sharing Limit Reached';
   const description = isBooks
-    ? `Your ${tierLabel(currentTier)} plan includes up to ${currentLimit} cashbook${currentLimit !== 1 ? 's' : ''}. You've used all of them.`
+    ? `Your ${tierLabel(currentTier)} plan includes up to ${currentLimit} cashbook${currentLimit !== 1 ? 's' : ''}. You've used all of them — upgrade to add more.`
     : `Your ${tierLabel(currentTier)} plan allows sharing with up to ${currentLimit} guest${currentLimit !== 1 ? 's' : ''}. You've reached your limit.`;
 
   const upgradeTarget = currentTier === 'pro' ? 'Business' : 'Pro';
   const upgradeDesc   = isBooks
     ? upgradeTarget === 'Pro' ? 'Get up to 15 cashbooks' : 'Get unlimited cashbooks'
     : upgradeTarget === 'Pro' ? 'Share with 1 guest'     : 'Share with up to 10 guests';
+
+  const upgradeIcon = SUBSCRIPTIONS_ENABLED
+    ? <Feather name="zap" size={18} color="#F59E0B" />
+    : <Text style={{ fontSize: 18, lineHeight: 22 }}>👑</Text>;
+  const upgradeTitle = SUBSCRIPTIONS_ENABLED ? `Upgrade to ${upgradeTarget}` : 'Upgrade to add more';
+  const upgradeSub   = SUBSCRIPTIONS_ENABLED ? upgradeDesc : 'Paid plans are launching soon';
 
   return (
     <Modal transparent visible animationType="none" onRequestClose={close} statusBarTranslucent>
@@ -91,21 +98,24 @@ export default function LimitReachedSheet({ visible, onDismiss, limitType = 'boo
           <Text style={[s.desc, { color: C.textMuted, fontFamily: Font.regular }]}>{description}</Text>
 
           {/* Upgrade card */}
-          {SUBSCRIPTIONS_ENABLED && (
-            <View style={[s.upgradeCard, { backgroundColor: '#F59E0B14', borderColor: '#F59E0B44' }]}>
-              <View style={[s.upgradeIconBox, { backgroundColor: '#F59E0B22' }]}>
-                <Feather name="zap" size={18} color="#F59E0B" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.upgradeTier, { color: '#92400E', fontFamily: Font.bold }]}>
-                  Upgrade to {upgradeTarget}
-                </Text>
-                <Text style={[s.upgradeDesc, { color: '#92400E', fontFamily: Font.regular }]}>
-                  {upgradeDesc}
-                </Text>
-              </View>
+          <View style={[s.upgradeCard, { backgroundColor: '#F59E0B14', borderColor: '#F59E0B44' }]}>
+            <View style={[s.upgradeIconBox, { backgroundColor: '#F59E0B22' }]}>
+              {upgradeIcon}
             </View>
-          )}
+            <View style={{ flex: 1 }}>
+              <Text style={[s.upgradeTier, { color: '#92400E', fontFamily: Font.bold }]}>
+                {upgradeTitle}
+              </Text>
+              <Text style={[s.upgradeDesc, { color: '#92400E', fontFamily: Font.regular }]}>
+                {upgradeSub}
+              </Text>
+            </View>
+            {!SUBSCRIPTIONS_ENABLED && (
+              <View style={s.soonPill}>
+                <Text style={[s.soonPillText, { fontFamily: Font.bold }]}>SOON</Text>
+              </View>
+            )}
+          </View>
 
           {/* Actions */}
           {SUBSCRIPTIONS_ENABLED ? (
@@ -174,6 +184,13 @@ const s = StyleSheet.create({
   upgradeIconBox: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   upgradeTier:    { fontSize: 14, marginBottom: 3 },
   upgradeDesc:    { fontSize: 12, lineHeight: 18 },
+
+  soonPill: {
+    backgroundColor: CROWN_COLORS.pro, borderRadius: 8,
+    paddingHorizontal: 7, paddingVertical: 3,
+    alignSelf: 'flex-start',
+  },
+  soonPillText: { fontSize: 9, color: '#fff', letterSpacing: 0.4 },
 
   btnRow: { flexDirection: 'row', gap: 10, width: '100%' },
   btn: {

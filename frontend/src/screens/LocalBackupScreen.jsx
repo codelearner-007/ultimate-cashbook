@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  StatusBar, ScrollView, Alert, Animated, Modal, ActivityIndicator,
+  StatusBar, ScrollView, Alert, Animated, Modal, ActivityIndicator, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -294,8 +294,9 @@ export default function LocalBackupScreen() {
     setIsBackingUp(true);
     setBackupProgress({ done: 0, total: 0 });
     try {
-      const counts = await generateLocalBackup((done, total) => setBackupProgress({ done, total }));
-      Toast.show({ type: 'success', text1: 'Backup Created', text2: summarizeCounts(counts) });
+      const result = await generateLocalBackup((done, total) => setBackupProgress({ done, total }));
+      const title = result.savedToPublicStorage ? 'Backup Saved to Downloads' : 'Backup Saved on Device';
+      Toast.show({ type: 'success', text1: title, text2: summarizeCounts(result) });
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Backup Failed', text2: err?.message ?? 'Could not create the backup file.' });
     } finally {
@@ -347,6 +348,9 @@ export default function LocalBackupScreen() {
   const backupSub = isBackingUp
     ? 'Please keep the app open…'
     : 'Includes all books, entries & attachments';
+  const androidDownloadsNote = Platform.OS === 'android'
+    ? " (including your Downloads folder, once you've picked one)"
+    : '';
 
   return (
     <SafeAreaView applyTop style={st.safe}>
@@ -382,9 +386,9 @@ export default function LocalBackupScreen() {
             </Text>
           </View>
           <Text style={[st.descBody, { color: C.textMuted, fontFamily: Font.regular }]}>
-            Creates a single backup file containing all your books, entries, categories, contacts, payment modes, and attachments — saved right on this device. No internet connection or subscription is required.
+            Creates a single backup file containing all your books, entries, categories, contacts, payment modes, and attachments — saved right on this device{androidDownloadsNote}. No internet connection or subscription is required.
             {'\n\n'}
-            Save the generated file somewhere safe — such as Google Drive, email, or a computer — so you can restore everything later, for example after reinstalling the app or moving to a new device.
+            You can also send the file elsewhere — Google Drive, email, a computer — right after it's created, so you always have a copy off this device too.
           </Text>
         </View>
 

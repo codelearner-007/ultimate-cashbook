@@ -35,7 +35,7 @@ backend/
 │   └── utils/
 │       ├── pdf.py            # generate_pdf(...) → bytes
 │       ├── excel.py          # generate_excel(...) → bytes
-│       └── book_access.py    # get_book_owner_id / get_book_access / require_rights
+│       └── book_access.py    # get_book_owner_id / get_book_owner_id_with_row / get_book_access / require_rights
 ├── requirements.txt
 ├── Procfile                  # web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ├── .env                      # NEVER commit
@@ -286,7 +286,15 @@ Returns `NotificationResponse` with `recipient_count`. Push notifications sent v
 | GET | `/{book_id}/report/pdf` | Download PDF report | ✅ |
 | GET | `/{book_id}/report/excel` | Download Excel report | ✅ |
 
-Query params: `?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD`
+Query params: `?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&entry_type=&contact_name=&contact_type=&category=&payment_mode=`
+
+**`contact_type` actually scopes the query.** `contact_name` alone is ambiguous — customers and suppliers are separate tables with no cross-table name uniqueness, so a customer and supplier sharing a name in the same book previously had their entries merged into one mislabeled report. `_fetch_entries()` now also requires `customer_id IS NOT NULL` when `contact_type=customer` or `supplier_id IS NOT NULL` when `contact_type=supplier` (via `.not_.is_(col, "null")`), in addition to the `contact_name` text match.
+
+**`get_book_owner_id_with_row()` (`utils/book_access.py`)** replaces the old raw `.single().execute()` book lookup in this router — `.single()` raises an uncaught `postgrest.APIError` (→ unhandled 500) on zero rows instead of returning falsy data, which made the coded `404 Book not found` branch unreachable. It resolves owner access and fetches the requested book columns (e.g. `select="name, currency"`) in one query for the common owner case (falling back to a second query only for the rare shared-book-collaborator path, same as `get_book_owner_id`), using `.limit(1).execute()` + a `.data` check so a missing/just-deleted book cleanly 404s instead of 500ing. `get_book_owner_id()` (owner_id only, no extra columns) is unchanged and still used by every other book-data router.
+
+**Report generation sanitizes all user-controlled strings before rendering** (`utils/pdf.py`, `utils/excel.py`) — book name, currency, and every filter display value (category/contact_name/payment_mode/entry_type), not just entry fields:
+- **PDF (`generate_pdf`)** — `_p()` XML-escapes every string before wrapping it in a ReportLab `Paragraph` (`xml.sax.saxutils.escape`); an unescaped `<`/`>`/`&` in a book name, currency symbol, or filter value used to raise an uncaught ReportLab parse `ValueError` (crashes the whole PDF export). Filter *display* values are also clipped to 120 chars (`_clip()` in `_build_filter_items()`) — unlike entry table cells (already truncated at `[:32]`/`[:14]`), filter values were unbounded and a long one (~4–8K+ chars, trivially passed via the unvalidated `?category=`/`?contact_name=`/`?payment_mode=` query params) made the single-row filter table taller than a page, raising an uncaught `reportlab.platypus.doctemplate.LayoutError`.
+- **Excel (`generate_excel`)** — `_clean()` strips XML-illegal control characters (`\x00-\x08`, `\x0b`, `\x0c`, `\x0e-\x1f`) from every cell value (book name banner, filter rows, and the per-row `_d()` helper covering remark/category/contact_name/payment_mode) before assignment; openpyxl raises `IllegalCharacterError` on these otherwise. These characters are genuinely reachable through normal use — `models/entry.py` has no field-level sanitization on `remark`/`category`/`contact_name`, and Postgres only rejects literal `\x00`, so e.g. a `\x0b` typed into a remark survives the full round-trip from entry creation to report export.
 
 ---
 
@@ -417,7 +425,7 @@ owner_id, rights = get_book_access(sb, book_id, user_id)
 require_rights(rights, "view_create_edit_delete")
 ```
 
-`get_book_owner_id` still exists for read-only endpoints that only need the `owner_id`.
+`get_book_owner_id` still exists for read-only endpoints that only need the `owner_id`. `get_book_owner_id_with_row(sb, book_id, user_id, select="...")` is for endpoints that also need book columns (e.g. `reports.py`) — it fetches owner access + those columns in one query instead of two.
 
 **Use DB functions for aggregation:**
 ```python

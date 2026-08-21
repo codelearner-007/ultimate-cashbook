@@ -65,6 +65,8 @@ frontend/
 │           ├── manage-access.jsx # → ManageAccessScreen
 │           ├── subscription.jsx  # → SubscriptionScreen
 │           ├── privacy-policy.jsx # → PrivacyPolicyScreen
+│           ├── backup-sync.jsx   # → BackupSyncScreen (cloud backup — unrelated to local-backup.jsx below)
+│           ├── local-backup.jsx  # → LocalBackupScreen
 ├── src/
 │   ├── screens/                  # All screen components (one file = one screen)
 │   ├── components/
@@ -92,7 +94,7 @@ frontend/
 │   │       └── OfflineSyncModal.jsx   # Themed "You're offline" alert (wifi-off icon, single "Got it" button) shown whenever Upload to Cloud / Restore from Cloud / a book's Sync action is tapped while offline — replaces the old native Alert.alert('No connection', ...); shared by BackupSyncScreen, BooksView (BookMenu Sync item), BookDetailScreen (dots-menu Sync item)
 │   ├── hooks/
 │   │   ├── useBooks.js           # useBooks, useCreateBook, useDeleteBook (React Query)
-│   │   ├── useBookSort.js        # Sort state + sorted list derivation
+│   │   ├── useBookSort.js        # Sort state + sorted list derivation; custom-order snapshot auto-resets when the live book id set no longer matches it (e.g. after a local or cloud restore replaces the data), so BooksView never renders stale/deleted books while in "Custom Order" mode
 │   │   ├── useCategories.js      # useCategories, useCreateCategory, useUpdateCategory, useDeleteCategory, useCategoryEntries, useReorderCategories
 │   │   ├── useContacts.js        # useCustomers/Suppliers, useCreateContact, useDeleteContact, useReorderCustomers, useReorderSuppliers, useReorderContacts, etc.
 │   │   ├── useProfile.js         # useProfile, useUpdateProfile
@@ -102,6 +104,7 @@ frontend/
 │   │   ├── api.js                # All Axios API calls (real backend, no mocks)
 │   │   ├── canAccess.js          # Feature-gate: canAccess(user, feature), getLimit(user, feature) — superadmin always returns true/Infinity
 │   │   ├── dataSource.js         # Data-source router: own books → local SQLite only (no background cloud push — manual upload only via BackupSyncScreen); shared books → cloud API directly (via isLocalBook() check). Entry update/delete use cloud_entry_id for correct cloud targeting.
+│   │   ├── localBackup.js        # Fully offline device-local backup/restore — packages all local SQLite data + local attachments into a single shareable JSON file, and restores from one; entirely separate from the cloud Backup & Sync feature (see Device-Local Backup section below)
 │   │   ├── supabase.js           # Supabase client (SecureStore / localStorage adapter)
 │   │   ├── storage.js            # Provider-agnostic attachment abstraction (uploadAttachment, removeAttachment) — always saves locally first, for every tier; Supabase upload only happens via manual sync
 │   │   └── toast.js              # Toast helper
@@ -264,7 +267,7 @@ frontend/
 - Error state: only shown for collaborators whose cloud fetch fails (owners never error — they read from local SQLite); offline collaborators see a dedicated offline state with "Go Back" button
 
 **Header (two modes):**
-- **Normal:** back chevron, book name + "Add Member, Book Activity etc" subtitle, share icon (owner only; 👑 badge + amber color when canShare is false), dots menu
+- **Normal:** back chevron, book name + "Add Member, Book Activity etc" subtitle, share icon (owner only AND `SHARED_BOOKS_ENABLED`; 👑 badge + amber color when canShare is false), dots menu — the icon is entirely hidden while `SHARED_BOOKS_ENABLED = false` (current build, see `frontend/src/constants/buildConfig.js`)
 - **Selection mode:** X close button, "N entries selected" title, "Select All / Deselect All" text button, trash icon (disabled when 0 selected)
 
 **Search + Filters:**
@@ -378,22 +381,27 @@ Shared `forwardRef` component used by both `AddEntryScreen` and `EditEntryScreen
 - Export: tapping PDF or Excel calls `FileSystem.downloadAsync(backendUrl, cacheDir/filename, { headers: { Authorization } })` then `Sharing.shareAsync(localUri)` — opens native OS share sheet (WhatsApp, Email, Google Drive, Save to Files, etc.)
 - Loading indicator shown inline next to date range label while fetching
 - Both export buttons disabled while any export is in progress
+- **Export access:** `canExport = canAccess(user, 'export_reports')` — `export_reports` is `'free'` in `lib/canAccess.js`'s `FEATURES` map, so `canExport` is `true` for every tier; PDF/Excel export is a free-tier feature in this release. The backend `report/pdf` and `report/excel` endpoints have no tier check of their own (any authenticated owner/collaborator with sufficient rights can call them), so this is a pure frontend gate. The `!canExport` fallback paths (header PDF/XLS buttons via `handleExportGated`, the two export-preview modal buttons, and the "Share hint" text, all `SUBSCRIPTIONS_ENABLED`-aware per `constants/buildConfig.js`) are dead code while `export_reports` stays `'free'` — kept in place so a future paid-tier reintroduction for this feature needs only a `canAccess.js` change, no UI edits.
 
 ---
 
 ### `BackupSyncScreen` → `/(app)/settings/backup-sync`
 - Open to all users; content varies by tier
+- Reads the two build flags from `constants/buildConfig.js`: `SUBSCRIPTIONS_ENABLED`, `SHARED_BOOKS_ENABLED` (both currently `false` for this free-tier-only release)
 - **Status card** (all users): online dot (animated pulse), last-sync time, upload + restore progress bars
   - `lastSyncedAt` is stamped after every **manual** "Upload to Cloud" action from BackupSyncScreen (`finishSync` in `BackupSyncScreen.jsx`)
 - **LOCAL DATA section** (all users): section label separated above card with `marginTop: 24`; card with `marginTop: 8` shows counts for books / entries / categories / customers / suppliers
 - **Backup Data section** (paid / superadmin, not lapsed): retention window (Pro=7 days, Business/Superadmin=15 days) and last backup timestamp
-- **SHARED BOOKS section** (free users with `sharedBookCount > 0` only): shows count of accepted shared books and online/offline sync status row — lets free users confirm their shared data is current
+- **SHARED BOOKS section** (free users with `sharedBookCount > 0` only, **and only when `SHARED_BOOKS_ENABLED` is true**): `freeHasSharedAccess = SHARED_BOOKS_ENABLED && isFreeUser && sharedBookCount > 0` — with the flag `false`, this is always `false`, so the section never renders and the free-tier gate / info-note branches that key off `freeHasSharedAccess` fall through to their non-shared-access paths. Shows count of accepted shared books and online/offline sync status row — lets free users confirm their shared data is current
 - **CLOUD ACTIONS** (paid / superadmin only):
   - "Upload to Cloud" → `SyncConfirmSheet` → `syncLocalToCloud(onProgress)` → toast; if local empty → "Nothing to sync" modal alert; if offline → `OfflineSyncModal` ("You're offline") instead of a native `Alert.alert`. **Manual only — no auto-upload happens.** Owner must come here to push new data.
   - "Restore from Cloud" — conditional render → `RestoreOrFreshSheet` (mode="confirm") → `syncCloudToLocal(onProgress)` → toast; if offline → same `OfflineSyncModal`
 - **Danger Zone** (paid / superadmin only): "Start Fresh" → `FreshStartSheet` (2-step confirm) → `apiGetBooks()` → `apiDeleteBook()` for each → `localClearAll()` → toast
-- **Free-tier gate**: shown only when `!canSync && !freeHasSharedAccess`; shows upgrade card; hidden if free user has shared access (shared books section shown instead)
+- **Free-tier gate**: shown only when `!canSync && !freeHasSharedAccess`. Its inner card branches on `SUBSCRIPTIONS_ENABLED`:
+  - `true` → original "Pro Feature" upgrade card (crown emoji, description, "View Plans" button → `/(app)/settings/subscription`)
+  - `false` (current build) → simpler informational card instead: `Feather "hard-drive"` icon, "Stored on This Device" title, "Your books and entries are saved locally on this device only." subtitle — no button, no navigation
 - **Info note** (all users): text varies by canSync state and whether user has shared access
+- **Lapse overlay** (`LapseOverlay`, shown when subscription lapsed): its "Renew Plan to Keep Data" button only renders when the `onRenew` prop is truthy. The call site passes `onRenew={SUBSCRIPTIONS_ENABLED ? () => router.push('/(app)/settings/subscription') : null}`, so with the flag `false` the button is omitted while the countdown tiles / "Subscription Ended" copy still render unchanged.
 - All sync/restore state in `useSyncStore`: `isSyncing`, `isRestoring`, `progress`, `restoreProgress`
 
 #### "Restore from Cloud" button — visibility logic
@@ -405,8 +413,35 @@ Button renders whenever `hasUnrestoredCloudData` is true — **the `hasRestoredF
 
 ---
 
+### `LocalBackupScreen` → `/(app)/settings/local-backup`
+- **Completely separate from, and unrelated to, `BackupSyncScreen` / cloud "Backup & Sync"** — no network calls, no `syncManager.js`/`api.js` imports, no tier or role gating (`canAccess.js` and `buildConfig.js` are not used here). Open to **every** user regardless of subscription tier or role.
+- Calls exactly three functions from `lib/localBackup.js`: `generateLocalBackup(onProgress)`, `pickBackupFile()`, `restoreLocalBackup(payload, onProgress)` (see Device-Local Backup & Restore section below)
+- **Header:** `C.primary` bg, back chevron (`router.canGoBack() ? router.back() : router.replace('/(app)/settings')`, same fallback logic as `BackupSyncScreen`), title "Backup & Restore Locally"
+- **Description card:** `hard-drive` Feather icon in a `C.primaryLight` circular icon box, "Local Backup & Restore" title, body explaining the backup file contains all books/entries/categories/contacts/payment modes/attachments, needs no internet or subscription, and should be saved somewhere safe (Google Drive, email, a computer) for later restore (e.g. reinstall, new device)
+- **CREATE BACKUP section:** single primary `ActionBtn` ("Backup Locally", `download` icon, sublabel "Includes all books, entries & attachments"):
+  - Tap → guarded against double-tap and against running while a restore is in progress (`isBackingUp || isRestoring` shared busy check) → `generateLocalBackup(onProgress)`; `onProgress(done, total)` updates local `backupProgress` state so the button label live-shows "Creating Backup… (done/total)" (falls back to a plain "Creating Backup…" when `total` is 0/unset — never shows "0/0")
+  - On success → success `Toast` summarizing the returned counts (e.g. "N books, M entries backed up")
+  - On failure → error `Toast` with the thrown error's message
+- **RESTORE FROM BACKUP section:** single secondary-styled `ActionBtn` ("Restore from Backup File", `upload` icon, sublabel "Select a previously created backup file"), disabled under the same busy guard:
+  - Tap → `pickBackupFile()`; `null` result (user cancelled) → no-op; thrown error → `Alert.alert('Invalid File', err.message)`; resolved payload → stored in state and opens `RestoreConfirmSheet` — **never restores immediately**, confirmation is mandatory before any destructive call
+- **`RestoreConfirmSheet`** (local component defined inside `LocalBackupScreen.jsx`, not a shared file — bottom sheet matching this app's handle-bar/rounded-top-corner/`rgba(0,0,0,0.60)`-backdrop pattern, styled after `FreshStartSheet`/`RestoreOrFreshSheet` for visual reference only, no import from either):
+  - Shows the backup's `exported_at` formatted human-readably ("Backup from {date}"), a 7-cell counts grid (books/entries/categories/customers/suppliers/payment_modes/attachments, each with a Feather icon), and a danger-toned warning box: "This will REPLACE all data currently on this device with the contents of this backup. This action cannot be undone." The counts grid is recomputed live from `payload.data`/`payload.attachments` array lengths at render time — it does **not** trust the `counts` object embedded in the backup file by `generateLocalBackup()`, so a hand-edited or stale backup can't show misleading numbers on the last screen before an irreversible restore.
+  - Two buttons: **Cancel** (dismisses, clears the pending payload, only when not already restoring) and danger-styled **Restore Backup**
+  - Confirming → guarded against double-tap (`isRestoring` check) → `restoreLocalBackup(payload, onProgress)`; `onProgress` drives the same sheet's progress bar ("Restoring… (done/total)"), buttons replaced by an `ActivityIndicator` + progress track while running
+  - On success → `qc.invalidateQueries()` with no arguments (same broad-invalidate precedent as `BackupSyncScreen`'s `doRestore`/`doFreshStart`) → closes the sheet → shows the shared `SuccessDialog` ("Backup Restored!" / "All your data has been restored to this device.")
+  - On failure → `Alert.alert('Restore Failed', err.message)`; the sheet is **left open** (payload/state untouched) so the user can see the restore did not complete and retry
+- No server-data query on this screen — the only loading states are the backup-in-progress and restore-in-progress states described above
+
+---
+
 ### `SettingsScreen` → `/(app)/settings` (and `/(app)/dashboard/settings`)
-- Sections: Account | App | Support
+- Sections: Account | (Subscription, only when `SUBSCRIPTIONS_ENABLED`) | App | Support
+- Reads `SUBSCRIPTIONS_ENABLED` and `SHARED_BOOKS_ENABLED` from `constants/buildConfig.js` (this build ships both `false` — free-tier-only release):
+  - **Subscription section** — included in `SECTIONS` only when `SUBSCRIPTIONS_ENABLED` (`...(SUBSCRIPTIONS_ENABLED ? [section] : [])`)
+  - **"Manage Access" row** (App section) — included only when `SHARED_BOOKS_ENABLED`, same spread pattern
+  - **"Backup & Sync" row** — when `SUBSCRIPTIONS_ENABLED` is false, always shows sub "Local data & backup", no crown, and always routes to `/(app)/settings/backup-sync` regardless of tier (no more gating on `hasCloud`/upsell to subscription page). When `SUBSCRIPTIONS_ENABLED` is true, unchanged: sub/route/crown depend on `hasCloud`
+  - **"Backup & Restore Locally" row** (App section, immediately after "Backup & Sync") — unconditional, always rendered for every tier/role (no `SUBSCRIPTIONS_ENABLED`/`SHARED_BOOKS_ENABLED` gating), sub "Save or restore a backup file on this device", routes to `/(app)/settings/local-backup` → `LocalBackupScreen` (device-local backup/restore, separate from cloud sync). Uses new hand-drawn `SaveIcon` component (rounded-square outline with a small notch near the top), defined alongside the file's other icon components
+  - **Tier chip** (avatar card) — wrapper component chosen conditionally: `const TierChipWrapper = SUBSCRIPTIONS_ENABLED ? TouchableOpacity : View`; when `SUBSCRIPTIONS_ENABLED` is false it renders as a plain non-touchable `View` (no `onPress`, avoids a dead link) with identical style/content; when true, behaves as before (`TouchableOpacity` → `/(app)/settings/subscription`)
 - Logout → `supabase.auth.signOut()` → `clearUser()` → AuthGuard redirects to login
 
 ---
@@ -486,6 +521,24 @@ useEffect(() => {
 ```
 
 This ensures that after a create or delete (which invalidates `['books']` and triggers a refetch), the drag list updates to show the real DB state without requiring the user to switch sort modes.
+
+---
+
+## Device-Local Backup & Restore (`src/lib/localBackup.js`)
+
+A second, completely separate backup mechanism from the cloud "Backup & Sync" feature described above. It makes no network calls, has no subscription-tier requirement, and is available to every user regardless of role or plan — it does not import from or touch `syncManager.js` or `api.js`.
+
+- `generateLocalBackup(onProgress)` — reads the full local snapshot via `localGetAllDataForMigration()` (books, entries, categories, customers, suppliers, payment_modes, **and the `deleted_entries` tombstone log**), reads every entry whose `attachment_provider === 'local'` off disk as base64 (skipping any file that fails to read, so one bad attachment never aborts the export), and writes a single JSON file (app id, version, `exported_at`, `user_email`, per-table `counts`, the raw `data` snapshot, and an `attachments` map keyed by entry id) to `FileSystem.cacheDirectory`. Then opens the OS share sheet (`expo-sharing`) so the user can save it to Google Drive, email, a computer, etc. Returns the `counts` object for a summary toast (`LocalBackupScreen`'s confirm sheet does **not** trust this embedded blob for its own display — see below).
+- `pickBackupFile()` — opens `expo-document-picker`, reads and `JSON.parse`s the picked file, and validates its `app` field matches this format before returning the parsed object (throws a user-facing error otherwise).
+- `restoreLocalBackup(payload, onProgress)` — destructive restore, does not prompt itself (callers must confirm first). Rewrites every backed-up attachment to a fresh file under `{documentDirectory}attachments/` on the current install (the JSON's original `attachment_url` pointed at the previous install's sandboxed path, which no longer exists after a reinstall), patches the corresponding entry objects in place with the new path, then calls `localClearAll()` followed by `localImportAllData(payload.data)` to bulk-restore everything.
+
+**`localImportAllData(data)` rewrites `user_id` to the currently logged-in account, not the backup's original value.** Every restored row's `user_id` (books, entries, categories, customers, suppliers, payment_modes) is set to `currentUserId()` at restore time, not the `user_id` baked into the backup JSON. This matters because every read in `localDb.js` filters strictly by `user_id = currentUserId()` — if the backup's original `user_id` were inserted as-is and it ever differed from the session performing the restore (a different account, an account that was deleted/recreated, or a backup taken during the brief unauthenticated app-boot window where `currentUserId()` falls back to the literal string `'local'`), the restore would appear to succeed (no thrown error, success dialog shown) while every restored book/entry would be permanently invisible — silently filtered out of every list in the app. Only `user_id` is rewritten; every `id`/`book_id`/`category_id`/`customer_id`/`supplier_id`/`payment_mode_id` is preserved exactly as backed up, since those rows are restored together in the same operation and stay internally consistent.
+
+**`deleted_entries` (the sync tombstone log) is captured and restored too**, wholesale-replaced (it has no `user_id` column, so it isn't scoped — `localImportAllData` deletes all existing tombstone rows and reinserts the backup's). Without this, a locally-deleted-but-not-yet-cloud-synced entry would lose its tombstone on reinstall+restore, permanently orphaning that entry in the cloud copy (the next "Upload to Cloud" would never know to delete it there) — and it could even be silently resurrected locally by a later "Restore from Cloud", since `getCloudDeltaStats()` treats untombstoned cloud entries as legitimately new data to pull down.
+
+This exists purely as a manual, fully offline "export everything to a file / import it back" escape hatch (e.g. for reinstalling the app) — it is unrelated to the cloud sync **buttons** or `cloud_entry_id` tracking described below (both stay exclusive to the cloud Backup & Sync flow), but it now does carry the tombstone log itself, specifically so a later cloud sync after a local restore behaves correctly.
+
+**Known limitation (not fixed — flagged for awareness):** `restoreLocalBackup()` does not wrap `localClearAll()` + `localImportAllData()` in a database transaction (no code in `localDb.js` uses one). If `localImportAllData` throws partway through (only realistically reachable via a hand-edited/corrupted-but-JSON-valid backup file, since a normal self-exported file has data shaped exactly right), the device's local data has already been wiped by `localClearAll()` with no rollback — the "Restore Failed" alert understates this, since retrying can't recover the pre-restore state. Left unfixed here since `expo-sqlite`'s transaction API can't be verified against a running device/simulator in this environment; revisit with on-device testing before adding one.
 
 ---
 

@@ -17,6 +17,7 @@ import { useSharedBooks, useLeaveSharedBook, useReceivedInvitations } from '../.
 import { useRealtimeInvitations, useRealtimeBooks } from '../../hooks/useRealtimeSync';
 import { useWorkspaceStore } from '../../store/workspaceStore';
 import { useSyncStore } from '../../store/syncStore';
+import { SUBSCRIPTIONS_ENABLED, SHARED_BOOKS_ENABLED } from '../../constants/buildConfig';
 import Toast from '../../lib/toast';
 import { getLimit, canAccess } from '../../lib/canAccess';
 import { syncLocalToCloud, getCloudDeltaStats } from '../../lib/syncManager';
@@ -700,6 +701,7 @@ export default function BooksView({
   ), [s, sortMode, sortLabel, hasArranged, setShowSort]);
 
   const isCloudUser = isSuperAdmin || (tier && tier !== 'free');
+  const TierChipWrapper = SUBSCRIPTIONS_ENABLED ? TouchableOpacity : View;
 
   const ListEmpty = useMemo(() => {
     const icon = activeWorkspace === 'shared'
@@ -756,20 +758,24 @@ export default function BooksView({
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
                 <Text style={[s.bizName, { flexShrink: 1 }]} numberOfLines={1}>{userName || 'My Account'}</Text>
-                <TouchableOpacity
-                  onPress={() => router.push('/(app)/settings/subscription')}
+                <TierChipWrapper
                   style={[s.tierChip, { backgroundColor: 'rgba(255,255,255,0.22)' }]}
-                  activeOpacity={0.75}
-                  hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                  {...(SUBSCRIPTIONS_ENABLED
+                    ? {
+                        onPress: () => router.push('/(app)/settings/subscription'),
+                        activeOpacity: 0.75,
+                        hitSlop: { top: 8, bottom: 8, left: 4, right: 4 },
+                      }
+                    : {})}
                 >
                   <Text style={[s.tierChipText, {
                     color: isSuperAdmin ? '#10B981' : tier === 'pro' ? '#F59E0B' : tier === 'business' ? '#8B5CF6' : C.onPrimary,
                   }]}>
                     {isSuperAdmin ? 'ADMIN' : tier === 'free' ? 'FREE' : tier === 'pro' ? 'PRO' : 'BUSINESS'}
                   </Text>
-                </TouchableOpacity>
+                </TierChipWrapper>
               </View>
-              {sharedBooks.length > 0 && isOnline ? (
+              {SHARED_BOOKS_ENABLED && sharedBooks.length > 0 && isOnline ? (
                 <TouchableOpacity onPress={() => setShowWorkspaceSwitcher(true)} activeOpacity={0.7}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
                     <Text style={s.bizSub}>
@@ -807,8 +813,12 @@ export default function BooksView({
         {/* Stats */}
         <View style={s.statsRow}>
           <StatItem label="My Books"     value={isLoading ? '—' : stats.personal}  dotColor={C.onPrimary}      s={s} />
-          <View style={s.statDivider} />
-          <StatItem label="Shared Books" value={sharedLoading ? '—' : sharedBooks.length} dotColor={C.onPrimaryMuted} s={s} />
+          {SHARED_BOOKS_ENABLED && (
+            <>
+              <View style={s.statDivider} />
+              <StatItem label="Shared Books" value={sharedLoading ? '—' : sharedBooks.length} dotColor={C.onPrimaryMuted} s={s} />
+            </>
+          )}
         </View>
       </View>
 
@@ -816,7 +826,7 @@ export default function BooksView({
       {ListHeader}
 
       {/* ── Free tier banner ────────────────────────────────────────────── */}
-      {!isSuperAdmin && tier === 'free' && (
+      {SUBSCRIPTIONS_ENABLED && !isSuperAdmin && tier === 'free' && (
         <TouchableOpacity
           style={[s.freeBanner, { backgroundColor: C.cashInLight, borderColor: C.cashIn }]}
           onPress={() => router.push('/(app)/settings/subscription')}
@@ -831,7 +841,7 @@ export default function BooksView({
       )}
 
       {/* ── Pending invitations banner ──────────────────────────────────── */}
-      {pendingInviteCount > 0 && (
+      {SHARED_BOOKS_ENABLED && pendingInviteCount > 0 && (
         <TouchableOpacity
           style={[s.inviteBanner, { backgroundColor: C.primaryLight, borderColor: C.primaryMid }]}
           onPress={() => router.push('/(app)/settings/manage-access')}
@@ -915,7 +925,9 @@ export default function BooksView({
               Toast.show({
                 type: 'info',
                 text1: 'Book limit reached',
-                text2: `Your ${tier === 'pro' ? 'Pro' : 'Free'} plan allows up to ${bookLimit} book${bookLimit !== 1 ? 's' : ''}. Upgrade to add more.`,
+                text2: SUBSCRIPTIONS_ENABLED
+                  ? `Your ${tier === 'pro' ? 'Pro' : 'Free'} plan allows up to ${bookLimit} book${bookLimit !== 1 ? 's' : ''}. Upgrade to add more.`
+                  : `You've reached the ${bookLimit}-book limit for this plan.`,
               });
               return;
             }

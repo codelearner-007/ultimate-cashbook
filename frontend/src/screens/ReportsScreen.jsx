@@ -19,6 +19,7 @@ import { useCustomers, useSuppliers } from '../hooks/useContacts';
 import SearchBar from '../components/ui/SearchBar';
 import { useAuthStore } from '../store/authStore';
 import { canAccess } from '../lib/canAccess';
+import { SUBSCRIPTIONS_ENABLED } from '../constants/buildConfig';
 import CrownBadge from '../components/ui/CrownBadge';
 import { useBooks } from '../hooks/useBooks';
 
@@ -201,7 +202,11 @@ export default function ReportsScreen() {
 
   const handleExportGated = (type) => {
     if (!canExport) {
-      router.push('/(app)/settings/subscription');
+      if (SUBSCRIPTIONS_ENABLED) {
+        router.push('/(app)/settings/subscription');
+      } else {
+        Alert.alert('Not Available', 'PDF & Excel export is not included in your current plan.');
+      }
       return;
     }
     handleExport(type);
@@ -745,7 +750,16 @@ export default function ReportsScreen() {
                     style={[s.pvBottomBtn, { borderWidth: 1.5, borderColor: canExport ? C.cashOut : '#F59E0B' }, busy && { opacity: 0.5 }]}
                     onPress={() => {
                       setShowPreview(false);
-                      if (!canExport) { setTimeout(() => router.push('/(app)/settings/subscription'), Platform.OS === 'ios' ? 350 : 0); return; }
+                      if (!canExport) {
+                        setTimeout(() => {
+                          if (SUBSCRIPTIONS_ENABLED) {
+                            router.push('/(app)/settings/subscription');
+                          } else {
+                            Alert.alert('Not Available', 'PDF & Excel export is not included in your current plan.');
+                          }
+                        }, Platform.OS === 'ios' ? 350 : 0);
+                        return;
+                      }
                       setTimeout(() => handleExport('pdf'), Platform.OS === 'ios' ? 350 : 0);
                     }}
                     disabled={busy}
@@ -758,7 +772,16 @@ export default function ReportsScreen() {
                     style={[s.pvBottomBtn, { borderWidth: 1.5, borderColor: canExport ? C.cashIn : '#F59E0B' }, busy && { opacity: 0.5 }]}
                     onPress={() => {
                       setShowPreview(false);
-                      if (!canExport) { setTimeout(() => router.push('/(app)/settings/subscription'), Platform.OS === 'ios' ? 350 : 0); return; }
+                      if (!canExport) {
+                        setTimeout(() => {
+                          if (SUBSCRIPTIONS_ENABLED) {
+                            router.push('/(app)/settings/subscription');
+                          } else {
+                            Alert.alert('Not Available', 'PDF & Excel export is not included in your current plan.');
+                          }
+                        }, Platform.OS === 'ios' ? 350 : 0);
+                        return;
+                      }
                       setTimeout(() => handleExport('excel'), Platform.OS === 'ios' ? 350 : 0);
                     }}
                     disabled={busy}
@@ -994,7 +1017,9 @@ export default function ReportsScreen() {
           {!canExport && (
             <View style={[s.shareHint, { backgroundColor: '#F59E0B1A', borderRadius: 10, padding: 10, marginTop: 4 }]}>
               <Text style={[s.shareHintText, { color: '#F59E0B' }]}>
-                👑 PDF & Excel export requires Pro or Enterprise. Tap any export button to upgrade.
+                {SUBSCRIPTIONS_ENABLED
+                  ? '👑 PDF & Excel export requires Pro or Enterprise. Tap any export button to upgrade.'
+                  : '👑 PDF & Excel export is not available on your current plan.'}
               </Text>
             </View>
           )}

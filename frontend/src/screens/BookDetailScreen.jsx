@@ -19,6 +19,7 @@ import { useSharedBooks } from '../hooks/useSharing';
 import { useAuthStore } from '../store/authStore';
 import { useSyncStore } from '../store/syncStore';
 import { canAccess } from '../lib/canAccess';
+import { SHARED_BOOKS_ENABLED } from '../constants/buildConfig';
 import { useRealtimeEntries } from '../hooks/useRealtimeSync';
 import { useCustomers, useSuppliers } from '../hooks/useContacts';
 import SuccessDialog from '../components/ui/SuccessDialog';
@@ -681,7 +682,7 @@ export default function BookDetailScreen() {
             <Text style={s.headerSub}>Add Member, Book Activity etc</Text>
           </View>
           <View style={s.headerRight}>
-            {isOwner && (
+            {isOwner && SHARED_BOOKS_ENABLED && (
               <TouchableOpacity
                 style={s.headerIconBtn}
                 onPress={() => {

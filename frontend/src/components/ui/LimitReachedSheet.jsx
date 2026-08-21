@@ -6,6 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
 import { Font } from '../../constants/fonts';
+import { SUBSCRIPTIONS_ENABLED } from '../../constants/buildConfig';
 
 /**
  * Bottom sheet shown whenever a user hits a plan limit.
@@ -90,39 +91,53 @@ export default function LimitReachedSheet({ visible, onDismiss, limitType = 'boo
           <Text style={[s.desc, { color: C.textMuted, fontFamily: Font.regular }]}>{description}</Text>
 
           {/* Upgrade card */}
-          <View style={[s.upgradeCard, { backgroundColor: '#F59E0B14', borderColor: '#F59E0B44' }]}>
-            <View style={[s.upgradeIconBox, { backgroundColor: '#F59E0B22' }]}>
-              <Feather name="zap" size={18} color="#F59E0B" />
+          {SUBSCRIPTIONS_ENABLED && (
+            <View style={[s.upgradeCard, { backgroundColor: '#F59E0B14', borderColor: '#F59E0B44' }]}>
+              <View style={[s.upgradeIconBox, { backgroundColor: '#F59E0B22' }]}>
+                <Feather name="zap" size={18} color="#F59E0B" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.upgradeTier, { color: '#92400E', fontFamily: Font.bold }]}>
+                  Upgrade to {upgradeTarget}
+                </Text>
+                <Text style={[s.upgradeDesc, { color: '#92400E', fontFamily: Font.regular }]}>
+                  {upgradeDesc}
+                </Text>
+              </View>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.upgradeTier, { color: '#92400E', fontFamily: Font.bold }]}>
-                Upgrade to {upgradeTarget}
-              </Text>
-              <Text style={[s.upgradeDesc, { color: '#92400E', fontFamily: Font.regular }]}>
-                {upgradeDesc}
-              </Text>
-            </View>
-          </View>
+          )}
 
           {/* Actions */}
-          <View style={s.btnRow}>
-            <TouchableOpacity
-              style={[s.btn, { borderColor: C.border }]}
-              onPress={close}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.btnText, { color: C.textMuted, fontFamily: Font.semiBold }]}>Maybe Later</Text>
-            </TouchableOpacity>
+          {SUBSCRIPTIONS_ENABLED ? (
+            <View style={s.btnRow}>
+              <TouchableOpacity
+                style={[s.btn, { borderColor: C.border }]}
+                onPress={close}
+                activeOpacity={0.8}
+              >
+                <Text style={[s.btnText, { color: C.textMuted, fontFamily: Font.semiBold }]}>Maybe Later</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[s.btn, s.btnFill, { backgroundColor: '#F59E0B' }]}
-              onPress={handleUpgrade}
-              activeOpacity={0.85}
-            >
-              <Text style={{ fontSize: 14, marginRight: 6 }}>👑</Text>
-              <Text style={[s.btnText, { color: '#fff', fontFamily: Font.bold }]}>View Plans</Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={[s.btn, s.btnFill, { backgroundColor: '#F59E0B' }]}
+                onPress={handleUpgrade}
+                activeOpacity={0.85}
+              >
+                <Text style={{ fontSize: 14, marginRight: 6 }}>👑</Text>
+                <Text style={[s.btnText, { color: '#fff', fontFamily: Font.bold }]}>View Plans</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={s.btnRow}>
+              <TouchableOpacity
+                style={[s.btn, s.btnFill, { backgroundColor: C.primary }]}
+                onPress={close}
+                activeOpacity={0.85}
+              >
+                <Text style={[s.btnText, { color: '#fff', fontFamily: Font.bold }]}>Got it</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </Animated.View>
       </View>
     </Modal>

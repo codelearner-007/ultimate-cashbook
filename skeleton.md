@@ -150,16 +150,22 @@ App Start
 |----------------------------------------|--------|-----------------------------------------------------------------|
 | Avatar (top-left)                      | Tap    | Navigate to `/(app)/settings/profile`                           |
 | User name                              | —      | Display only                                                    |
-| Tier chip (FREE / PRO / BUSINESS)      | Tap    | Navigate to `/(app)/settings/subscription`                      |
-| "Personal Workspace" subtitle          | —      | Display only; tappable workspace switcher if shared books exist  |
+| Tier chip (FREE / PRO / BUSINESS)      | Tap (only when `SUBSCRIPTIONS_ENABLED`) | Navigate to `/(app)/settings/subscription`. When `SUBSCRIPTIONS_ENABLED` is `false` (current build), renders as a plain non-touchable `View` — same text/colours, no navigation. |
+| "Personal Workspace" subtitle          | Tap (only when `SHARED_BOOKS_ENABLED` AND the user has shared books) | Opens workspace switcher. Trigger is unreachable while `SHARED_BOOKS_ENABLED` is `false` (current build) — subtitle always renders as plain "Personal Workspace" text. |
+| "Shared Books" header stat             | —      | Only rendered when `SHARED_BOOKS_ENABLED` is `true`; hidden in the current build ("My Books" stat always shows alone) |
 | Theme toggle (moon/sun icon)           | Tap    | `toggleTheme()` — switches dark/light mode globally             |
 
 **Tier chip colours (on teal header):** FREE → semi-transparent white pill; PRO → amber pill (`#FCD34D`); BUSINESS → purple pill (`#C4B5FD`). Always visible.
 
-### Free Plan Banner (free tier only)
+### Free Plan Banner (free tier only, `SUBSCRIPTIONS_ENABLED` only)
 | Element                                                              | Action | Result                                     |
 |----------------------------------------------------------------------|--------|--------------------------------------------|
 | "Free plan · Data stored on this device only. Tap to upgrade."       | Tap    | Navigate to `/(app)/settings/subscription` |
+
+Hidden entirely in the current build (`frontend/src/constants/buildConfig.js`: `SUBSCRIPTIONS_ENABLED = false`) — this build ships free-tier-only with no upgrade path, so the banner never renders.
+
+### Pending Invitations Banner (`SHARED_BOOKS_ENABLED` only)
+Bell icon + "{N} pending book invitation(s) — tap to respond" → navigates to `/(app)/settings/manage-access`. Hidden entirely in the current build (`SHARED_BOOKS_ENABLED = false`).
 
 ### Search Bar
 | Element           | Action | Result                                            |
@@ -207,7 +213,7 @@ App Start
 | Element              | State        | Appearance                                          | Action | Result                                              |
 |----------------------|--------------|-----------------------------------------------------|--------|-----------------------------------------------------|
 | FAB button           | Under limit  | Primary colour bg, white `+` icon + "ADD NEW BOOK"  | Tap    | Opens "Add New Book" modal                          |
-| FAB button (disabled)| Limit reached| Grey (`C.cardAlt`) bg, no shadow, dimmed icon+label | Tap    | `Toast.info` — "Book limit reached" with tier/limit message; no sheet or navigation |
+| FAB button (disabled)| Limit reached| Grey (`C.cardAlt`) bg, no shadow, dimmed icon+label | Tap    | `Toast.info` — "Book limit reached" with tier/limit message (mentions upgrading only when `SUBSCRIPTIONS_ENABLED`; current build shows "You've reached the N-book limit for this plan." with no upgrade wording); no sheet or navigation |
 
 #### Add New Book Modal
 | Element          | Action | Result                                                                                    |
@@ -735,10 +741,12 @@ Data loaded: React Query key `['report-entries', bookId, dateFrom, dateTo]` via 
 
 | Button                              | Action | Result                                                                                                                                                   |
 |-------------------------------------|--------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Export as PDF** (red border)      | Tap    | `FileSystem.downloadAsync` → `GET /api/v1/books/:id/report/pdf?date_from=&date_to=` with Bearer token → saves to cache dir → `Sharing.shareAsync()` opens native share sheet |
-| **Export as Excel** (green border)  | Tap    | Same flow but `GET /api/v1/books/:id/report/excel` → `.xlsx` → `Sharing.shareAsync()`                                                                   |
+| **Export as PDF** (red border)      | Tap    | `canExport` is now `true` for every tier (`export_reports: 'free'` in `frontend/src/lib/canAccess.js`) — `FileSystem.downloadAsync` → `GET /api/v1/books/:id/report/pdf?date_from=&date_to=` with Bearer token → saves to cache dir → `Sharing.shareAsync()` opens native share sheet. The backend endpoint has no tier check of its own (any authenticated owner/collaborator with rights can call it), so this was a pure frontend unlock. |
+| **Export as Excel** (green border)  | Tap    | Same flow but `GET /api/v1/books/:id/report/excel` → `.xlsx` → `Sharing.shareAsync()`; unlocked for every tier the same way as PDF above                 |
 
 Both buttons show `ActivityIndicator` while downloading.  Both buttons disabled while an export is in progress.  Share sheet includes: Save to Files, WhatsApp, Email, Google Drive, Dropbox, and any installed app that handles PDF or XLSX.
+
+Header PDF/XLS buttons and the export-preview modal's PDF/Excel buttons all read the same `canExport` (now always `true`), so they render as fully active (chevron icons, no 👑 `CrownBadge`) and export directly with no gate. The `!canExport` fallback paths (`SUBSCRIPTIONS_ENABLED`-conditional navigate-vs-`Alert.alert` logic added for the free-tier-only build, and the "not available on your current plan" Share-hint copy) are now dead code — harmless, left in place since `canAccess.js` could reintroduce a paid tier for this feature later without any UI changes needed.
 
 ### Loading / Error / Empty States
 | State                  | UI                                                |
@@ -813,6 +821,8 @@ BookSettingsScreen has multiple tabs:
 
 Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 
+**Build flags (`frontend/src/constants/buildConfig.js`):** this free-tier-only release ships with `SUBSCRIPTIONS_ENABLED = false` and `SHARED_BOOKS_ENABLED = false`. Rows/sections gated by these flags are noted below; flipping a flag back to `true` restores the corresponding UI with no other code changes.
+
 ### Avatar Card
 | Element                                        | Action | Result                                     |
 |------------------------------------------------|--------|--------------------------------------------|
@@ -820,17 +830,16 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 | Full name                                      | —      | Display only                               |
 | Email                                          | —      | Display only                               |
 | Admin badge                                    | —      | Shown if superadmin                        |
-| **Tier chip** (Free / 👑 Pro / 👑 Enterprise)  | Tap    | Navigate to `/(app)/settings/subscription` |
+| **Tier chip** (Free / 👑 Pro / 👑 Enterprise)  | Tap (`SUBSCRIPTIONS_ENABLED` only) | `SUBSCRIPTIONS_ENABLED=true`: `TouchableOpacity` → navigate to `/(app)/settings/subscription`. `SUBSCRIPTIONS_ENABLED=false`: renders as a plain non-touchable `View` (same style/content) — not a dead link. |
 | **"Edit Profile"** button                      | Tap    | Navigate to `/(app)/settings/profile`      |
 
 ### Account Section
 | Row                    | Action | Result                                  |
 |------------------------|--------|-----------------------------------------|
 | **Profile**            | Tap    | Navigate to `/(app)/settings/profile`   |
-| **Business Settings**  | Tap    | Navigate to `/(app)/settings/business`  |
 | **Currency**           | Tap    | Navigate to `/(app)/settings/currency`  |
 
-### Subscription Section
+### Subscription Section — shown only when `SUBSCRIPTIONS_ENABLED = true`
 | Row                       | Icon                       | Action | Result                                     |
 |---------------------------|----------------------------|--------|--------------------------------------------|
 | **Subscription & Plans**  | Diamond icon (tier color)  | Tap    | Navigate to `/(app)/settings/subscription` |
@@ -838,10 +847,11 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 ### App Section
 | Row                   | Crown?             | Action | Result                                                               |
 |-----------------------|--------------------|--------|----------------------------------------------------------------------|
-| **Manage Access**     | 👑 Pro (if free)  | Tap    | Always navigates to `/(app)/settings/manage-access`; free users see inline paywall overlay with "Upgrade to Pro" CTA |
+| **Manage Access** (shown only when `SHARED_BOOKS_ENABLED = true`) | 👑 Pro (if free)  | Tap    | Always navigates to `/(app)/settings/manage-access`; free users see inline paywall overlay with "Upgrade to Pro" CTA |
 | **Notifications**     | —                  | Tap    | Navigate to notifications                                            |
 | **Privacy & Security** | —                 | Tap    | Navigate to `/(app)/settings/privacy-policy` (PrivacyPolicyScreen)  |
-| **Backup & Sync**     | 👑 Pro (if free)  | Tap    | Navigate to subscription (if free), navigate to `/(app)/settings/backup-sync` (BackupSyncScreen) otherwise |
+| **Backup & Sync**     | 👑 Pro (if free, `SUBSCRIPTIONS_ENABLED` only)  | Tap    | `SUBSCRIPTIONS_ENABLED=true`: sub "Cloud sync active"/"Requires Pro or Business", navigates to subscription (if free) or `/(app)/settings/backup-sync` (if has cloud). `SUBSCRIPTIONS_ENABLED=false`: sub is always "Local data & backup", no crown, always navigates to `/(app)/settings/backup-sync` (BackupSyncScreen) regardless of tier. |
+| **Backup & Restore Locally** | — (no gating, always visible) | Tap | Sub "Save or restore a backup file on this device"; navigates to `/(app)/settings/local-backup` (LocalBackupScreen) — device-local backup/restore, unconditional for every tier/role, separate from the cloud "Backup & Sync" row above |
 | Language              | —                  | TODO   | —                                                                    |
 
 ### Support Section (all TODO)
@@ -945,12 +955,12 @@ Retention windows: **Pro = 7 days**, **Business = 15 days**, **Superadmin = 15 d
 - **"CLOUD DATA DELETED IN"** label strip
 - Digital clock row: DD : HH : MM : SS — tiles with ghost-digit depth, colons flash at 1 Hz, themed in `C.danger`
 - Deadline row: calendar icon + exact datetime stamp (`fmtDeadline`)
-- **"Renew Plan to Keep Data"** full-width red button → `/(app)/settings/subscription`
+- **"Renew Plan to Keep Data"** full-width red button → `/(app)/settings/subscription` — only rendered when the `onRenew` prop is non-null; the call site passes `onRenew={SUBSCRIPTIONS_ENABLED ? () => router.push('/(app)/settings/subscription') : null}`, so in this build (`SUBSCRIPTIONS_ENABLED = false`) the button does not render — countdown tiles, "Subscription Ended" title/copy, and expired-state text are unaffected
 - Footer note: "Your local data on this device is safe regardless of your subscription."
 - When `timeLeft.expired`: clock hidden, message changes to "Your cloud data has been permanently deleted.", button hidden
 
 ### SHARED BOOKS Section (free users with shared access only)
-Shown when `isFreeUser === true` AND `sharedBookCount > 0` (fetched via `apiGetSharedBooks()`):
+Shown when `SHARED_BOOKS_ENABLED === true` (build flag, `constants/buildConfig.js`) AND `isFreeUser === true` AND `sharedBookCount > 0` (fetched via `apiGetSharedBooks()`). `freeHasSharedAccess = SHARED_BOOKS_ENABLED && isFreeUser && sharedBookCount > 0`. In this build `SHARED_BOOKS_ENABLED = false`, so this section never renders and the Free-Tier Gate / Info Note below always take their "no shared access" branch regardless of `sharedBookCount`:
 
 | Element | Content |
 |---|---|
@@ -998,8 +1008,10 @@ The old `hasRestoredFromCloud` session flag is **no longer a gate**. The button 
 - On confirm: deletes all cloud books via `apiDeleteBook()` for each, then `localClearAll()`
 
 ### Free-Tier Gate (free users WITHOUT any shared book access)
-- Shows upgrade card with crown emoji, description, "View Plans 👑" button → subscription screen
-- Hidden when free user has shared book access (SHARED BOOKS section shown instead)
+- Shown when `!canSync && !freeHasSharedAccess`; hidden when free user has shared book access (SHARED BOOKS section shown instead) — moot in this build since `freeHasSharedAccess` is always `false` while `SHARED_BOOKS_ENABLED = false`
+- Inner card branches on `SUBSCRIPTIONS_ENABLED` (build flag, `constants/buildConfig.js`):
+  - `SUBSCRIPTIONS_ENABLED = true` → upgrade card: crown emoji, "Pro Feature" title, description, "View Plans 👑" button → `/(app)/settings/subscription`
+  - `SUBSCRIPTIONS_ENABLED = false` (current build) → informational card instead: `hard-drive` Feather icon, "Stored on This Device" title, "Your books and entries are saved locally on this device only." subtitle — **no button, no navigation**
 
 ### Info Note (always shown — all users)
 - Blue info box at the bottom of the scroll
@@ -1040,6 +1052,55 @@ The old `hasRestoredFromCloud` session flag is **no longer a gate**. The button 
 | `SyncConfirmSheet`   | Confirm upload local → cloud                 |
 | `RestoreOrFreshSheet`| Confirm restore cloud → local (mode="confirm") |
 | `FreshStartSheet`    | 2-step confirm delete cloud + local          |
+
+---
+
+## 13c. LocalBackupScreen — `/(app)/settings/local-backup`
+
+**Component:** `LocalBackupScreen.jsx`
+**Access:** All users, every role and subscription tier — no `canAccess`/tier gating of any kind. **Completely separate from and unrelated to BackupSyncScreen** (cloud Backup & Sync, `/(app)/settings/backup-sync`) — no network calls, no cloud account required; reads/writes a single backup file entirely on-device via `lib/localBackup.js`.
+
+### Header
+- Primary-color bg, back chevron (`router.canGoBack() ? router.back() : router.replace('/(app)/settings')`), "Backup & Restore Locally" title
+
+### Description Card (always shown)
+- `hard-drive` Feather icon in a `C.primaryLight` circular icon box
+- Bold title "Local Backup & Restore"
+- Body: explains the backup file contains all books, entries, categories, contacts, payment modes, and attachments, saved on this device; no internet connection or subscription required; advises saving the file somewhere safe (Google Drive, email, a computer) to restore later, e.g. after reinstalling the app or moving to a new device
+
+### CREATE BACKUP Section
+| Button              | State                        | Action                                                                                  |
+|---------------------|-------------------------------|------------------------------------------------------------------------------------------|
+| **Backup Locally**  | Default (icon `download`)     | Tap → `generateLocalBackup(onProgress)` — reads all local data + local attachment files, writes a backup JSON file, opens the OS share sheet |
+| **Backup Locally**  | Running                       | Disabled; label "Creating Backup… (done/total)" (or plain "Creating Backup…" if `total` is 0/unset — never shows "0/0"); disabled while a restore is running too (shared busy guard, since both touch the same SQLite DB) |
+| **Backup Locally**  | Success                       | Success toast summarizing counts, e.g. "N books, M entries backed up"                    |
+| **Backup Locally**  | Failure                       | Error toast with the thrown error's message                                              |
+
+### RESTORE FROM BACKUP Section
+| Button                          | State                     | Action                                                                                     |
+|----------------------------------|---------------------------|----------------------------------------------------------------------------------------------|
+| **Restore from Backup File**    | Default (icon `upload`, secondary style) | Tap → `pickBackupFile()` opens a file picker                                    |
+| **Restore from Backup File**    | User cancels picker       | No-op                                                                                         |
+| **Restore from Backup File**    | Picked file invalid       | `Alert.alert('Invalid File', err.message)`                                                   |
+| **Restore from Backup File**    | Picked file valid         | Payload stored in state → opens **RestoreConfirmSheet** (never restores immediately)         |
+| **Restore from Backup File**    | Disabled                  | While a backup or restore is already running (shared busy guard)                             |
+
+### RestoreConfirmSheet (bottom sheet, local to this screen)
+Handle bar, rounded top corners, `rgba(0,0,0,0.60)` backdrop — same bottom-sheet pattern as the rest of the app. Shows:
+- The backup's `exported_at` timestamp, formatted human-readably ("Backup from {date}")
+- A 7-cell counts grid: Cashbooks, Entries, Categories, Customers, Suppliers, Payment Modes, Attachments (each with a Feather icon + count recomputed live from the picked file's actual data, not the embedded counts summary — protects against a stale/hand-edited backup showing misleading numbers)
+- A danger-toned warning box: "This will REPLACE all data currently on this device with the contents of this backup. This action cannot be undone."
+
+| Button               | Action | Result                                                                                          |
+|-----------------------|--------|---------------------------------------------------------------------------------------------------|
+| **Cancel**             | Tap    | Dismisses the sheet, clears the pending payload — no data changed                                 |
+| **Restore Backup** (danger) | Tap | Guarded against double-tap → `restoreLocalBackup(payload, onProgress)` — progress bar replaces the buttons while running ("Restoring… (done/total)") |
+
+On restore success: `qc.invalidateQueries()` (no arguments, same broad-invalidate precedent as `BackupSyncScreen`'s restore/fresh-start) → sheet closes → shared `SuccessDialog` shown ("Backup Restored!" / "All your data has been restored to this device.").
+On restore failure: `Alert.alert('Restore Failed', err.message)` — the sheet is **left open** with the payload intact so the user can see the restore did not complete and retry.
+
+### Loading / Error / Empty States
+- No server-data query on this screen — only the backup-in-progress and restore-in-progress states above; no skeleton loaders
 
 ---
 
@@ -1164,7 +1225,7 @@ Triggered when a **free-tier user** activates any paid plan.
 
 `src/screens/ManageAccessScreen.jsx`
 
-**Navigation in:** SettingsScreen → Manage Access row (always navigates here; paywall is inline).
+**Navigation in:** SettingsScreen → Manage Access row (always navigates here; paywall is inline). The Manage Access row itself is only rendered when `SHARED_BOOKS_ENABLED` is `true` (`frontend/src/constants/buildConfig.js`) — hidden entirely in the current free-tier-only build, making this screen unreachable from the UI (file left intact, not deleted).
 
 ### Free-Tier Gate (book_sharing feature)
 - Free users land on the screen but the entire content area below the header is covered by a `PaywallOverlay` (absolute, `zIndex: 10`).
@@ -1237,7 +1298,7 @@ Active tab underlined in `C.primary`; inactive label in `C.textMuted`.
 
 `src/screens/ManageSharesScreen.jsx`
 
-**Navigation in:** BookDetailScreen header share icon, or BookSettingsScreen → Manage Access row (owner only).
+**Navigation in:** BookDetailScreen header share icon, or BookSettingsScreen → Manage Access row (owner only). Both entry points are only rendered when `SHARED_BOOKS_ENABLED` is `true` (`frontend/src/constants/buildConfig.js`) — hidden entirely in the current free-tier-only build, making this screen unreachable from the UI (file left intact, not deleted).
 
 ### Free-Tier Gate (book_sharing feature)
 - Free users see a full-screen "Pro Feature" block (👑 icon in amber circle, title, description, "Upgrade to Pro" button → subscription screen) in place of the collaborator list.
@@ -1288,15 +1349,16 @@ This component is used in both AddEntryScreen and EditEntryScreen. It exposes a 
 | Feature                           | Screen                                    | Status                    |
 |-----------------------------------|-------------------------------------------|---------------------------|
 | Backup Entry                      | EntryDetailScreen ⋮ menu                  | Not implemented           |
-| Export PDF                        | ReportsScreen                             | ✅ Complete (👑 Pro gate) |
-| Export Excel                      | ReportsScreen                             | ✅ Complete (👑 Pro gate) |
+| Export PDF                        | ReportsScreen                             | ✅ Complete (free tier)   |
+| Export Excel                      | ReportsScreen                             | ✅ Complete (free tier)   |
 | Subscription plans page           | SubscriptionScreen                        | ✅ Complete               |
 | Crown gates on locked features    | SettingsScreen, ReportsScreen, BooksView  | ✅ Complete               |
 | Invite collaborator               | BookDetailScreen user-plus icon           | Not implemented           |
 | Manage Access (free-tier paywall) | ManageAccessScreen                        | ✅ Complete (👑 Pro gate) |
 | Notifications settings            | SettingsScreen                            | Not implemented           |
 | Privacy & Security (Privacy Policy) | PrivacyPolicyScreen                     | ✅ Complete               |
-| Backup & Sync                     | BackupSyncScreen (`/(app)/settings/backup-sync`) | ✅ Complete (👑 Pro gate) |
+| Backup & Sync                     | BackupSyncScreen (`/(app)/settings/backup-sync`) | ✅ Complete (gate card shows "Stored on This Device" info, no upgrade button, while `SUBSCRIPTIONS_ENABLED = false`) |
+| Local Backup & Restore             | LocalBackupScreen (`/(app)/settings/local-backup`) | ✅ Complete (device-local backup/restore file, no cloud, no tier/role gating — unrelated to Backup & Sync above) |
 | Language picker                   | SettingsScreen                            | Not implemented           |
 | Help & FAQ                        | SettingsScreen                            | Not implemented           |
 | Rate the App                      | SettingsScreen                            | Not implemented           |

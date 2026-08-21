@@ -55,7 +55,8 @@
         "expo-image-picker",
         {
           "photosPermission": "Ultimate CashBook accesses your photos to set a profile photo and attach receipts to entries.",
-          "cameraPermission": "Ultimate CashBook uses your camera to take a profile photo and capture receipts for entries."
+          "cameraPermission": "Ultimate CashBook uses your camera to take a profile photo and capture receipts for entries.",
+          "microphonePermission": false
         }
       ],
       [
@@ -72,7 +73,9 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.729677181390-oi5va7a0s6tc2a6c8kv5tsu19cqk5sch"
         }
-      ]
+      ],
+      "expo-contacts",
+      "./plugins/withoutContactsWrite"
     ],
     "extra": {
       "router": {},

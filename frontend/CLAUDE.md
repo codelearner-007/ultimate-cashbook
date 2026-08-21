@@ -140,6 +140,17 @@ frontend/
 
 ---
 
+## Native Permissions & Config Plugins (`app.json`)
+
+Any native permission a screen relies on **must** be backed by an entry in `app.json`'s `plugins` array (or `android.permissions` / `ios.infoPlist` directly) — a permission only reaches the compiled `AndroidManifest.xml` / `Info.plist` if a config plugin actually declares it during `expo prebuild`. A library being listed in `package.json` is not sufficient by itself if it ships an Expo config plugin that must be registered.
+
+- **`expo-contacts`** (`plugins` array) — backs `ContactPickerModal`'s "From Phone" import (search device contacts, dedupe against existing customers/suppliers by phone before import). Declares `NSContactsUsageDescription` (falls back to the manual `ios.infoPlist` string already set here) and, on Android, `READ_CONTACTS` **and** `WRITE_CONTACTS` unconditionally.
+- **`./plugins/withoutContactsWrite.js`** (local config plugin, listed immediately after `expo-contacts`) — blocks `WRITE_CONTACTS` from the compiled Android manifest via `AndroidConfig.Permissions.withBlockedPermissions` (adds a `tools:node="remove"` entry), since the app only ever reads contacts and never writes to the device address book. `READ_CONTACTS` is left declared — it's genuinely used.
+
+**Rule:** when adding a new library that needs a native permission, verify its config plugin is registered in `plugins` (not just installed), and if it requests a permission the app doesn't use, add a local blocking plugin the same way rather than accepting the unused permission.
+
+---
+
 ## Auth & Navigation Logic
 
 ### Root Layout (`app/_layout.jsx`)

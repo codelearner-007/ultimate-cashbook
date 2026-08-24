@@ -13,8 +13,15 @@ import { useTheme } from '../hooks/useTheme';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { apiGetProfile } from '../lib/api';
+import { resolveDevUrl } from '../lib/devHost';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
+// Web browser can't reach a LAN IP (e.g. http://192.168.x.x) — fall back to
+// the localhost override meant for running the backend on the same machine.
+// Native dev builds auto-detect the current LAN IP instead of trusting the
+// (DHCP-assigned, easily stale) hardcoded value in .env — see lib/devHost.js.
+const API_BASE_URL = Platform.OS === 'web'
+  ? (process.env.EXPO_PUBLIC_API_URL_WEB || process.env.EXPO_PUBLIC_API_URL)
+  : resolveDevUrl(8000, process.env.EXPO_PUBLIC_API_URL);
 
 // Google Sign-In is a native module — unavailable in Expo Go
 const IS_EXPO_GO = Constants.appOwnership === 'expo';

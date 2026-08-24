@@ -1,7 +1,8 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity, Platform,
   StatusBar, ScrollView, ActivityIndicator, Alert, Modal, Pressable,
+  Animated, Keyboard,
 } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -116,6 +117,20 @@ export default function ReportsScreen() {
   const [fileName,    setFileName]    = useState('');
   const [showSaved,   setShowSaved]   = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+
+  // Keyboard-aware offset for the "Ready" export bottom sheet (filename input)
+  const kbOffset = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const up   = Keyboard.addListener(showEvent, (e) =>
+      Animated.timing(kbOffset, { toValue: e.endCoordinates.height, duration: Platform.OS === 'ios' ? e.duration : 150, useNativeDriver: false }).start()
+    );
+    const down = Keyboard.addListener(hideEvent, (e) =>
+      Animated.timing(kbOffset, { toValue: 0, duration: Platform.OS === 'ios' ? e.duration : 150, useNativeDriver: false }).start()
+    );
+    return () => { up.remove(); down.remove(); };
+  }, []);
 
   const { from: dateFrom, to: dateTo } = useMemo(() => {
     if (filterDate) return getDateRangeForFilter(filterDate);
@@ -413,6 +428,7 @@ export default function ReportsScreen() {
         ) : (
           <View style={s.readyOverlay}>
             <TouchableOpacity style={s.readyDismissArea} onPress={closeExportModal} activeOpacity={1} />
+            <Animated.View style={{ marginBottom: kbOffset }}>
             <View style={[s.readySheet, { paddingBottom: 12 + insets.bottom }]}>
 
               {/* Handle */}
@@ -478,6 +494,7 @@ export default function ReportsScreen() {
               </TouchableOpacity>
 
             </View>
+            </Animated.View>
           </View>
         )}
       </Modal>

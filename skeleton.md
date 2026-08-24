@@ -779,6 +779,8 @@ Header PDF/XLS buttons and the export-preview modal's PDF/Excel buttons all read
 
 **Safe-area fix:** the export-ready sheet (`s.readySheet`, base `paddingBottom: 12`) and the date/filter picker sheet (`s.pickerSheet`, base `paddingBottom: 24`) each add `useSafeAreaInsets().bottom` on top of their base padding (one shared `insets` call in the screen) so their controls clear the Android 3-button nav bar / gesture bar.
 
+**Keyboard fix (export-ready sheet's filename field):** the "File name" `TextInput` (`s.fileNameInput`) in the export-ready sheet used to be covered by the on-screen keyboard, since the sheet had no keyboard-avoidance. It now uses the app's standard keyboard-aware bottom-sheet pattern: an `Animated.Value` (`kbOffset`) driven by `keyboardWillShow/Hide` (iOS) / `keyboardDidShow/Hide` (Android) listeners animates `marginBottom` on a wrapper `Animated.View` around `s.readySheet`. Tapping the filename field now smoothly lifts the whole sheet to sit just above the keyboard (matching how the "New Book" modal on BooksScreen already behaved); dismissing the keyboard smoothly returns the sheet to its resting position at the bottom.
+
 ### Loading / Error / Empty States
 | State                  | UI                                                |
 |------------------------|---------------------------------------------------|

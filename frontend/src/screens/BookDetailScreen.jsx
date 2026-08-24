@@ -5,6 +5,7 @@ import {
   Modal, Pressable, ScrollView, Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SearchBar from '../components/ui/SearchBar';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
@@ -286,6 +287,7 @@ export default function BookDetailScreen() {
   const canViewReports = isOwner || (screens?.reports ?? false);
   const { C, Font, isDark } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
+  const insets = useSafeAreaInsets();
   const qc = useQueryClient();
   const isOnline = useSyncStore(s => s.isOnline);
   const { isSyncing, startSync, finishSync, failSync, setProgress } = useSyncStore(s => ({
@@ -790,7 +792,7 @@ export default function BookDetailScreen() {
         onRequestClose={() => setActivePicker(null)}
       >
         <Pressable style={s.pickerOverlay} onPress={() => setActivePicker(null)}>
-          <Pressable style={[s.pickerSheet, { backgroundColor: C.card }]} onPress={() => { }}>
+          <Pressable style={[s.pickerSheet, { backgroundColor: C.card, paddingBottom: 24 + insets.bottom }]} onPress={() => { }}>
             <View style={[s.pickerHandle, { backgroundColor: C.border }]} />
             <View style={s.pickerHeader}>
               <Text style={[s.pickerTitle, { color: C.text, fontFamily: Font.bold }]}>

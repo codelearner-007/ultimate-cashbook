@@ -5,6 +5,7 @@ import {
   Keyboard, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../hooks/useTheme';
 import { useCategories, useCreateCategory } from '../../hooks/useCategories';
 import SearchBar from '../ui/SearchBar';
@@ -20,6 +21,7 @@ export default function CategoryPickerModal({
 }) {
   const { C, Font } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
+  const insets = useSafeAreaInsets();
 
   const [view,      setView]      = useState('list');   // 'list' | 'create'
   const [search,    setSearch]    = useState('');
@@ -86,7 +88,7 @@ export default function CategoryPickerModal({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose} statusBarTranslucent>
       <Pressable style={[s.overlay, { backgroundColor: C.overlay }]} onPress={handleClose}>
         <Pressable
-          style={[s.sheet, { backgroundColor: C.card, marginBottom: kbHeight }]}
+          style={[s.sheet, { backgroundColor: C.card, marginBottom: kbHeight, paddingBottom: 20 + insets.bottom }]}
           onPress={() => {}}
         >
           <View style={[s.handle, { backgroundColor: C.border }]} />

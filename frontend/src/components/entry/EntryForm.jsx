@@ -6,6 +6,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as DocumentPicker from 'expo-document-picker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppInput from '../ui/Input';
 import DatePickerModal from '../ui/DatePickerModal';
 import TimePickerModal from '../ui/TimePickerModal';
@@ -35,6 +36,7 @@ const EntryForm = forwardRef(function EntryForm(
 ) {
   const { C, Font } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
+  const insets = useSafeAreaInsets();
   const qc = useQueryClient();
   const _book = qc.getQueryData(['books'])?.find(b => b.id === bookId)
             ?? qc.getQueryData(['shared-books'])?.find(b => b.id === bookId);
@@ -592,7 +594,7 @@ const EntryForm = forwardRef(function EntryForm(
           <TouchableOpacity style={s.pickerBackdrop} activeOpacity={1} onPress={() => closeAttachPicker()} />
 
           {/* Sheet */}
-          <Animated.View style={[s.pickerSheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
+          <Animated.View style={[s.pickerSheet, { backgroundColor: C.card, paddingBottom: 32 + insets.bottom, transform: [{ translateY: slideY }] }]}>
             {/* Handle bar */}
             <View style={[s.pickerHandle, { backgroundColor: C.border }]} />
 

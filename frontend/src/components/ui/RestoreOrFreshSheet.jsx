@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Modal,
   Animated, ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 
 /**
@@ -25,6 +26,7 @@ export default function RestoreOrFreshSheet({
   visible, mode = 'launch', onRestore, onLater, isLoading,
   progress, cloudBookCount, C, Font,
 }) {
+  const insets    = useSafeAreaInsets();
   const slideY    = useRef(new Animated.Value(600)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
 
@@ -66,7 +68,7 @@ export default function RestoreOrFreshSheet({
 
       {/* Sheet */}
       <View style={s.anchor} pointerEvents="box-none">
-        <Animated.View style={[s.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
+        <Animated.View style={[s.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }], paddingBottom: 40 + insets.bottom }]}>
           <View style={[s.handle, { backgroundColor: C.border }]} />
 
           {/* Header */}

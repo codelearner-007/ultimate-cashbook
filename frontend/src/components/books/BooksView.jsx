@@ -5,6 +5,7 @@ import {
   Keyboard, Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SafeAreaView from '../ui/AppSafeAreaView';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useTheme } from '../../hooks/useTheme';
@@ -418,6 +419,7 @@ export default function BooksView({
   const router = useRouter();
   const { C, Font, isDark, toggleTheme } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
+  const insets = useSafeAreaInsets();
 
   const user = useAuthStore((st) => st.user);
   const qc   = useQueryClient();
@@ -944,7 +946,7 @@ export default function BooksView({
 
       {/* ── Bottom nav (regular user only) ──────────────────────────────── */}
       {showBottomNav && (
-        <View style={s.bottomNav}>
+        <View style={[s.bottomNav, { paddingBottom: 16 + insets.bottom }]}>
           {[
             { label: 'My Books', Icon: BookIcon, active: true,  onPress: () => {} },
             { label: 'Help',      Icon: HelpIcon, active: false, onPress: () => {} },

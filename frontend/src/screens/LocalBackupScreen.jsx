@@ -6,6 +6,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import { useTheme } from '../hooks/useTheme';
 import { Font } from '../constants/fonts';
@@ -105,6 +106,7 @@ function ActionBtn({ icon, label, sublabel, onPress, variant, disabled, C, Font 
 // tap before restoreLocalBackup() (destructive, wipes local data) is ever called.
 
 function RestoreConfirmSheet({ visible, payload, isLoading, progress, onCancel, onConfirm, C, Font }) {
+  const insets    = useSafeAreaInsets();
   const slideY    = useRef(new Animated.Value(600)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
 
@@ -146,7 +148,7 @@ function RestoreConfirmSheet({ visible, payload, isLoading, progress, onCancel, 
 
       {/* Sheet */}
       <View style={rs.anchor} pointerEvents="box-none">
-        <Animated.View style={[rs.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
+        <Animated.View style={[rs.sheet, { backgroundColor: C.card, paddingBottom: 40 + insets.bottom, transform: [{ translateY: slideY }] }]}>
           <View style={[rs.handle, { backgroundColor: C.border }]} />
 
           {/* Header */}

@@ -5,6 +5,7 @@ import {
   Keyboard, Platform, Dimensions,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../hooks/useTheme';
 import { useCustomers, useSuppliers, useCreateCustomer, useCreateSupplier } from '../../hooks/useContacts';
 import SearchBar from '../ui/SearchBar';
@@ -35,6 +36,7 @@ export default function ContactPickerModal({
 }) {
   const { C, Font } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
+  const insets = useSafeAreaInsets();
 
   const [view,         setView]         = useState('list');
   const [activeTab,    setActiveTab]    = useState(allowedTypes[0] || 'customer');
@@ -196,7 +198,7 @@ export default function ContactPickerModal({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose} statusBarTranslucent>
       <Pressable style={[s.overlay, { backgroundColor: C.overlay }]} onPress={handleClose}>
         <Pressable
-          style={[s.sheet, { backgroundColor: C.card, maxHeight: maxSheetH, bottom: kbHeight }]}
+          style={[s.sheet, { backgroundColor: C.card, maxHeight: maxSheetH, bottom: kbHeight, paddingBottom: 20 + insets.bottom }]}
           onPress={() => {}}
         >
           {/* ── Handle ── */}

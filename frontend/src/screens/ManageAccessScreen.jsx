@@ -6,6 +6,7 @@ import {
   StatusBar, ActivityIndicator, Alert, Modal, Animated,
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
@@ -113,6 +114,7 @@ const bx = StyleSheet.create({
 // ── Decline confirmation sheet ─────────────────────────────────────────────────
 
 const DeclineSheet = ({ visible, invitation, isLoading, onConfirm, onDismiss, C, Font }) => {
+  const insets    = useSafeAreaInsets();
   const slideY    = useRef(new Animated.Value(500)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
 
@@ -149,7 +151,7 @@ const DeclineSheet = ({ visible, invitation, isLoading, onConfirm, onDismiss, C,
 
       {/* Sheet pinned to bottom */}
       <View style={ds.anchor} pointerEvents="box-none">
-        <Animated.View style={[ds.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
+        <Animated.View style={[ds.sheet, { backgroundColor: C.card, paddingBottom: 36 + insets.bottom, transform: [{ translateY: slideY }] }]}>
           {/* Handle bar */}
           <View style={[ds.handle, { backgroundColor: C.border }]} />
 
@@ -255,6 +257,7 @@ const ds = StyleSheet.create({
 // ── Leave book confirmation sheet ─────────────────────────────────────────────
 
 const LeaveBookSheet = ({ visible, item, isLoading, onConfirm, onDismiss, C, Font }) => {
+  const insets    = useSafeAreaInsets();
   const slideY    = useRef(new Animated.Value(500)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
 
@@ -289,7 +292,7 @@ const LeaveBookSheet = ({ visible, item, isLoading, onConfirm, onDismiss, C, Fon
       </Animated.View>
 
       <View style={ls.anchor} pointerEvents="box-none">
-        <Animated.View style={[ls.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
+        <Animated.View style={[ls.sheet, { backgroundColor: C.card, paddingBottom: 36 + insets.bottom, transform: [{ translateY: slideY }] }]}>
           {/* Handle */}
           <View style={[ls.handle, { backgroundColor: C.border }]} />
 

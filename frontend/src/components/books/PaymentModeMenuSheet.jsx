@@ -4,6 +4,7 @@ import {
   Modal, ActivityIndicator, Keyboard, Platform, Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppInput from '../ui/Input';
 
 function SummaryPill({ label, value, color, Font }) {
@@ -24,6 +25,7 @@ export default function PaymentModeMenuSheet({
   canEdit = true, canDelete = true,
   C, Font,
 }) {
+  const insets = useSafeAreaInsets();
   const [view,     setView]     = useState('menu');
   const [name,     setName]     = useState('');
   const [kbHeight, setKbHeight] = useState(0);
@@ -59,7 +61,7 @@ export default function PaymentModeMenuSheet({
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={s.overlay} onPress={onClose}>
-        <Pressable style={[s.sheet, { backgroundColor: C.card, marginBottom: kbHeight }]} onPress={() => {}}>
+        <Pressable style={[s.sheet, { backgroundColor: C.card, marginBottom: kbHeight, paddingBottom: 24 + insets.bottom }]} onPress={() => {}}>
 
           <View style={[s.handle, { backgroundColor: C.border }]} />
 

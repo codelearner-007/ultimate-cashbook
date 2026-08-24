@@ -4,6 +4,7 @@ import {
   Modal, ActivityIndicator, Keyboard, Platform, TextInput,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 
 function SummaryPill({ label, value, color, Font }) {
@@ -32,6 +33,7 @@ export default function CategoryMenuSheet({
   C,
   Font,
 }) {
+  const insets = useSafeAreaInsets();
   const [view,     setView]     = useState('menu');   // 'menu' | 'rename'
   const [newName,  setNewName]  = useState('');
   const [kbHeight, setKbHeight] = useState(0);
@@ -67,7 +69,7 @@ export default function CategoryMenuSheet({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={s.overlay} onPress={onClose}>
-        <Pressable style={[s.sheet, { backgroundColor: C.card, marginBottom: kbHeight }]} onPress={() => {}}>
+        <Pressable style={[s.sheet, { backgroundColor: C.card, marginBottom: kbHeight, paddingBottom: 24 + insets.bottom }]} onPress={() => {}}>
 
           {/* Handle */}
           <View style={[s.handle, { backgroundColor: C.border }]} />

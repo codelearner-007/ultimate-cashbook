@@ -4,6 +4,7 @@ import {
   Animated, ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
  * Bottom-sheet confirmation for deleting a single entry or a bulk selection.
@@ -20,6 +21,7 @@ import { Feather } from '@expo/vector-icons';
 export default function DeleteEntrySheet({
   visible, entry, bulkCount, isLoading, onDismiss, onConfirm, C, Font,
 }) {
+  const insets    = useSafeAreaInsets();
   const slideY    = useRef(new Animated.Value(500)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
 
@@ -63,7 +65,7 @@ export default function DeleteEntrySheet({
 
       {/* Sheet */}
       <View style={s.anchor} pointerEvents="box-none">
-        <Animated.View style={[s.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
+        <Animated.View style={[s.sheet, { backgroundColor: C.card, paddingBottom: 36 + insets.bottom, transform: [{ translateY: slideY }] }]}>
           <View style={[s.handle, { backgroundColor: C.border }]} />
 
           {/* Header */}

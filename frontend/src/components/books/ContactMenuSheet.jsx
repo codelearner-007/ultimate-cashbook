@@ -4,6 +4,7 @@ import {
   Modal, ActivityIndicator, Keyboard, Platform, Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppInput from '../ui/Input';
 
 const TYPE_CONFIG = {
@@ -42,6 +43,7 @@ export default function ContactMenuSheet({
   C,
   Font,
 }) {
+  const insets = useSafeAreaInsets();
   const [view,     setView]    = useState('menu');  // 'menu' | 'edit'
   const [name,     setName]    = useState('');
   const [phone,    setPhone]   = useState('');
@@ -79,7 +81,7 @@ export default function ContactMenuSheet({
   return (
     <Modal visible={visible} transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
       <Pressable style={s.overlay} onPress={onClose}>
-        <Pressable style={[s.sheet, { backgroundColor: C.card, marginBottom: kbHeight }]} onPress={() => {}}>
+        <Pressable style={[s.sheet, { backgroundColor: C.card, marginBottom: kbHeight, paddingBottom: 24 + insets.bottom }]} onPress={() => {}}>
 
           <View style={[s.handle, { backgroundColor: C.border }]} />
 

@@ -4,6 +4,7 @@ import {
   Modal, Animated, ActivityIndicator,
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from '../lib/toast';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -24,6 +25,7 @@ export default function EditEntryScreen() {
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
   const qc = useQueryClient();
   const formRef = useRef();
+  const insets = useSafeAreaInsets();
 
   const { data: books = [], isLoading: booksLoading } = useBooks();
   const { data: sharedBooks = [] } = useSharedBooks();
@@ -178,7 +180,7 @@ export default function EditEntryScreen() {
 
           <Animated.View style={s.sheetWrap}>
             <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={closeDeleteSheet} />
-            <Animated.View style={[s.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
+            <Animated.View style={[s.sheet, { backgroundColor: C.card, paddingBottom: 36 + insets.bottom, transform: [{ translateY: slideY }] }]}>
               <View style={[s.sheetHandle, { backgroundColor: C.border }]} />
 
               <View style={s.sheetHeaderRow}>

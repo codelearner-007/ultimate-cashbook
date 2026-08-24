@@ -4,10 +4,12 @@ import {
   TextInput, Animated, Keyboard, Platform, ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function DeleteBookSheet({
   visible, onDismiss, onConfirm, bookName, isLoading, C, Font, closeRef,
 }) {
+  const insets    = useSafeAreaInsets();
   const slideY    = useRef(new Animated.Value(500)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
   const kbOffset  = useRef(new Animated.Value(0)).current;
@@ -64,7 +66,7 @@ export default function DeleteBookSheet({
 
       <View style={s.anchor} pointerEvents="box-none">
         <Animated.View style={{ marginBottom: kbOffset }}>
-          <Animated.View style={[s.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
+          <Animated.View style={[s.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }], paddingBottom: 36 + insets.bottom }]}>
             <View style={[s.handle, { backgroundColor: C.border }]} />
 
             <View style={s.headerRow}>

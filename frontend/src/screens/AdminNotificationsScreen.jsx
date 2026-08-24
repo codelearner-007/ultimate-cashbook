@@ -4,6 +4,7 @@ import {
   FlatList, Modal, ScrollView, Animated,
   Keyboard, Platform, ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import { useTheme } from '../hooks/useTheme';
 import { useSendNotification, useSentNotifications } from '../hooks/useNotifications';
@@ -104,6 +105,7 @@ function initials(name) {
 // ── Specific Target Modal ─────────────────────────────────────────────────────
 
 function SpecificModal({ visible, users, initialFilter, initialDays, initialIds, onApply, onClose, C }) {
+  const insets = useSafeAreaInsets();
   const [filter, setFilter]         = useState(initialFilter);
   const [days, setDays]             = useState(initialDays);
   const [pickedIds, setPickedIds]   = useState(initialIds);
@@ -158,7 +160,7 @@ function SpecificModal({ visible, users, initialFilter, initialDays, initialIds,
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>
         <TouchableOpacity style={{ ...StyleSheet.absoluteFillObject, backgroundColor: C.overlay }} activeOpacity={1} onPress={onClose} />
 
-        <View style={{ backgroundColor: C.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 24 }}>
+        <View style={{ backgroundColor: C.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '85%', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 24 + insets.bottom }}>
           {/* Handle */}
           <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: C.border, alignSelf: 'center', marginBottom: 14 }} />
 

@@ -6,6 +6,7 @@ import {
 import { useReceivedInvitations } from '../hooks/useSharing';
 import { useRealtimeInvitations } from '../hooks/useRealtimeSync';
 import { Image as ExpoImage } from 'expo-image';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import { useRouter, useSegments } from 'expo-router';
 import { useTheme } from '../hooks/useTheme';
@@ -231,6 +232,7 @@ const rowStyles = StyleSheet.create({
 export default function SettingsScreen({ applyTop = true, showBottomNav = false, profileRoute = '/(app)/settings/profile' }) {
   const router    = useRouter();
   const segments  = useSegments();
+  const insets    = useSafeAreaInsets();
   const { C, isDark }     = useTheme();
   // Tab-root screens have no back stack — hide the back button so it doesn't
   // mislead admins on the dashboard/settings tab into a wrong fallback route.
@@ -490,7 +492,7 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
 
       {/* ── Bottom nav (regular user only) ──────────────────────────────── */}
       {showBottomNav && (
-        <View style={s.bottomNav}>
+        <View style={[s.bottomNav, { paddingBottom: 16 + insets.bottom }]}>
           {[
             { label: 'My Books', Icon: BookIcon, active: false, onPress: () => router.replace('/(app)/books') },
             { label: 'Help',     Icon: HelpIcon, active: false, onPress: () => {} },

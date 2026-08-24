@@ -4,10 +4,12 @@ import {
   TextInput, Animated, Keyboard, Platform, ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function DeleteAllEntriesSheet({
   visible, onDismiss, onConfirm, bookName, entryCount, isLoading, C, Font, closeRef,
 }) {
+  const insets      = useSafeAreaInsets();
   const slideY      = useRef(new Animated.Value(500)).current;
   const bgOpacity   = useRef(new Animated.Value(0)).current;
   // Non-native driver — drives marginBottom, not transform
@@ -82,7 +84,7 @@ export default function DeleteAllEntriesSheet({
         {/* kbOffset uses non-native driver (marginBottom) */}
         <Animated.View style={{ marginBottom: kbOffset }}>
           {/* slideY uses native driver (transform) — separate Animated.View required */}
-          <Animated.View style={[s.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
+          <Animated.View style={[s.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }], paddingBottom: 36 + insets.bottom }]}>
             <View style={[s.handle, { backgroundColor: C.border }]} />
 
             {isEmpty ? (

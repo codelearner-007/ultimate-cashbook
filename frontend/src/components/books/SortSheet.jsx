@@ -1,5 +1,6 @@
 import React, { useMemo, memo } from 'react';
 import { View, Text, Modal, TouchableOpacity, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../hooks/useTheme';
 
 // ── Sort options ──────────────────────────────────────────────────────────────
@@ -100,6 +101,7 @@ const OptionRow = memo(({ option, active, onSelect, C, s }) => {
 export default function SortSheet({ visible, current, onSelect, onClose }) {
   const { C, Font } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
+  const insets = useSafeAreaInsets();
 
   const handleSelect = (key) => {
     onSelect(key);
@@ -116,7 +118,7 @@ export default function SortSheet({ visible, current, onSelect, onClose }) {
     >
       <View style={s.overlay}>
         <TouchableOpacity style={s.backdrop} activeOpacity={1} onPress={onClose} />
-        <View style={s.sheet}>
+        <View style={[s.sheet, { paddingBottom: 32 + insets.bottom }]}>
           <View style={s.handle} />
 
           <View style={s.titleRow}>

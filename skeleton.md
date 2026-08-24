@@ -82,6 +82,8 @@ App Start
 | "Send Code" button     | Tap    | `POST /api/v1/auth/send-otp` → advances to OTP step; if backend returns 503 falls back to `supabase.auth.signInWithOtp()` |
 | Cancel button          | Tap    | Resets form and closes modal                                                                                                  |
 
+**Safe-area fix:** the sheet's outer box (`styles.pickerBox`) adds the device's real bottom inset on top of its base `paddingBottom: 36` (`useSafeAreaInsets()`, applied as `[styles.pickerBox, { paddingBottom: 36 + insets.bottom }]`) so the Send Code/Verify & Sign In and Cancel/Change Email rows clear the Android 3-button nav bar / gesture bar instead of being crowded by it.
+
 ### EmailModal — Step 2 (OTP verification)
 | Element                 | Action | Result                                                                                                                                 |
 |-------------------------|--------|----------------------------------------------------------------------------------------------------------------------------------------|
@@ -116,6 +118,8 @@ App Start
 |------------------|--------|---------------------------------------------------------------------------------|
 | **Restore** card | Tap    | Sheet dismisses → `syncCloudToLocal()` runs with `RestoreCompletionOverlay` → toast → `router.replace(target)` |
 | **Later** card   | Tap    | Sheet dismisses → `router.replace(target)` (no sync); restore available from Backup & Sync |
+
+**Safe-area fix:** `RestoreOrFreshSheet`'s sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 40` so its buttons clear the Android 3-button nav bar / gesture bar (applies in both `mode="launch"` here and `mode="confirm"` in Backup & Sync, §13b).
 
 ### B) Post-login cloud modal (`app/_layout.jsx`)
 
@@ -182,6 +186,8 @@ Bell icon + "{N} pending book invitation(s) — tap to respond" → navigates to
 | **Alphabetical** option     | Tap    | Sorts A→Z by book name                    |
 | **Drag to Reorder** option  | Tap    | Activates drag-handle on each card        |
 
+**Safe-area fix:** `SortSheet`'s outer box (`s.sheet`) adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 32` so the Done button and sort rows clear the Android 3-button nav bar / gesture bar.
+
 ### Book Card
 | Element          | Action | Result                                             |
 |------------------|--------|----------------------------------------------------|
@@ -209,13 +215,15 @@ Bell icon + "{N} pending book invitation(s) — tap to respond" → navigates to
 | "Delete" confirm button  | Tap    | `useDeleteBook().mutate(bookId)` → optimistic removal → `DELETE /api/v1/books/:id` → refetch |
 | Cancel                   | Tap    | Closes modal                                                                                 |
 
+Backed by `DeleteBookSheet.jsx` (type-to-confirm). Its sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 36` so the Cancel/Delete Book buttons clear the Android 3-button nav bar / gesture bar.
+
 ### FAB ("+ Add New Book")
 | Element              | State        | Appearance                                          | Action | Result                                              |
 |----------------------|--------------|-----------------------------------------------------|--------|-----------------------------------------------------|
 | FAB button           | Under limit  | Primary colour bg, white `+` icon + "ADD NEW BOOK"  | Tap    | Opens "Add New Book" modal                          |
 | FAB button (disabled)| Limit reached| Grey (`C.cardAlt`) bg, no shadow, dimmed icon+label | Tap    | `Toast.info` — title "Book limit reached 👑"; body: `SUBSCRIPTIONS_ENABLED=true` → "Your {tier} plan allows up to N books. Upgrade to add more."; `SUBSCRIPTIONS_ENABLED=false` (current build) → "You've used all N free books. Upgrade to add more — coming soon!"; no sheet or navigation |
 
-Free-tier book limit is 5 (`getLimit(user, 'books')` in `lib/canAccess.js`, mirrored server-side in `backend/app/routers/books.py`'s `BOOK_LIMITS`). If a create request somehow reaches the backend past the disabled FAB (e.g. stale client state) and returns `BOOK_LIMIT_REACHED:{n}` (403), `LimitReachedSheet` opens as a fallback — its amber "Upgrade" card always renders now (previously gated on `SUBSCRIPTIONS_ENABLED`): a 👑 crown icon + "Upgrade to add more" / "Paid plans are launching soon" + an amber "SOON" pill badge when `SUBSCRIPTIONS_ENABLED=false` (current build); the original ⚡ zap icon + "Upgrade to Pro/Business" + "View Plans" flow still renders unchanged when `SUBSCRIPTIONS_ENABLED=true`. The description line above the card also now ends with "— upgrade to add more" for the books case regardless of the flag.
+Free-tier book limit is 5 (`getLimit(user, 'books')` in `lib/canAccess.js`, mirrored server-side in `backend/app/routers/books.py`'s `BOOK_LIMITS`). If a create request somehow reaches the backend past the disabled FAB (e.g. stale client state) and returns `BOOK_LIMIT_REACHED:{n}` (403), `LimitReachedSheet` opens as a fallback — its amber "Upgrade" card always renders now (previously gated on `SUBSCRIPTIONS_ENABLED`): a 👑 crown icon + "Upgrade to add more" / "Paid plans are launching soon" + an amber "SOON" pill badge when `SUBSCRIPTIONS_ENABLED=false` (current build); the original ⚡ zap icon + "Upgrade to Pro/Business" + "View Plans" flow still renders unchanged when `SUBSCRIPTIONS_ENABLED=true`. The description line above the card also now ends with "— upgrade to add more" for the books case regardless of the flag. Its sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 40` so its buttons clear the Android 3-button nav bar / gesture bar.
 
 #### Add New Book Modal
 | Element          | Action | Result                                                                                    |
@@ -230,6 +238,8 @@ Free-tier book limit is 5 (`getLimit(user, 'books')` in `lib/canAccess.js`, mirr
 | **Cashbooks** (active)  | Tap    | Already on this screen         |
 | **Help**                | Tap    | (TODO — no-op or placeholder)  |
 | **Settings**            | Tap    | Navigate to `/(app)/settings`  |
+
+**Safe-area fix:** the bar (`s.bottomNav`, `position:'absolute'`/`bottom:0`) adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 16` (`[s.bottomNav, { paddingBottom: 16 + insets.bottom }]`) so the tab icons/labels clear the Android 3-button nav bar / gesture bar instead of being crowded by it.
 
 ### Loading / Error / Empty States
 | State                        | Display                                                                                   |
@@ -323,6 +333,8 @@ Each card shows: avatar (or initials), full name, **subscription plan pill** (Fr
 Superadmin `adminItem` derives `shared_books_count` from `adminProfile?.shared_books_count` (not hardcoded 0).
 No Account Status card — users are differentiated by subscription tier (Free / Pro / Business), not by `is_active`.
 
+**Safe-area fix:** the User Detail Modal (`s.modalBox`, base `paddingBottom: 24`) and the Date Picker Sheet (`s.pickerBox`, base `paddingBottom: 28`) each add `useSafeAreaInsets().bottom` on top of their base padding (one shared `insets` call in the screen component) so their rows/buttons clear the Android 3-button nav bar / gesture bar.
+
 ### Data source
 - User list: `GET /api/v1/admin/users` — returns `book_count`, `entry_count`, `storage_mb` (real bytes via RPC), `shared_books_count` (accepted `book_shares` where user is owner)
 - `shared_books_count` counts accepted `book_shares` rows where `owner_id = user.id`
@@ -373,12 +385,16 @@ No Account Status card — users are differentiated by subscription tier (Free /
 | "Delete All" confirm  | Tap    | `localDeleteAllEntries()` — records tombstones for every previously-synced entry, then bulk-deletes from SQLite → animated sheet close → `SuccessDialog`. Cloud entries removed on next manual sync. |
 | Cancel / drag down    | —      | Closes sheet                                                                      |
 
+**Safe-area fix:** the sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 36` so the Cancel/Delete All buttons clear the Android 3-button nav bar / gesture bar.
+
 ### DeleteEntrySheet (single or bulk)
 | Element               | Action | Result                                                              |
 |-----------------------|--------|---------------------------------------------------------------------|
 | Entry info / count    | —      | Shows remark + amount for single; "X entries" for bulk              |
 | Confirm delete        | Tap    | Single: `DELETE /api/v1/books/:id/entries/:id`; Bulk: sequential deletes |
 | Cancel                | —      | Closes sheet, clears selection mode                                 |
+
+Sheet bottom padding = 36 + device safe-area bottom inset (`useSafeAreaInsets()`), so the Cancel/Delete buttons clear the Android 3-button nav bar / gesture bar.
 
 ### Search Bar
 | Element       | Action | Result                                                                       |
@@ -399,6 +415,8 @@ Left-anchored "All" chip (always visible) + scrollable chips with right-side fad
 | **Payment**       | Grid of payment modes used in this book's entries                | `payment_mode`                           |
 
 Active chips show selected value + × to clear inline. Inactive chips show label + chevron-down. "All" chip is highlighted when no filters are active.
+
+**Safe-area fix:** the filter picker sheet (`s.pickerSheet`) adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 24` so its date/type/contact/category/payment rows clear the Android 3-button nav bar / gesture bar. The separate ⋮ dropdown menu (top-anchored, not a bottom sheet) is unaffected.
 
 ### Balance Summary Card
 | Element                | Action | Result                                                                   |
@@ -479,6 +497,8 @@ Shown only when `canCreate && (isOwner || isOnline)`.
 | Category row         | Tap    | Selects category, closes modal        |
 | "+ Create Category"  | Tap    | Creates category inline + selects it  |
 
+**Safe-area fix:** `CategoryPickerModal`'s sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 20` so its rows/buttons clear the Android 3-button nav bar / gesture bar.
+
 #### ContactPickerModal
 | Tab            | Content                             |
 |----------------|-------------------------------------|
@@ -491,6 +511,8 @@ Shown only when `canCreate && (isOwner || isOnline)`.
 | Contact row                | Tap    | Selects contact, closes modal        |
 | "+ Add Customer/Supplier"  | Tap    | Navigates to contact creation screen |
 
+**Safe-area fix:** `ContactPickerModal`'s sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 20` so its rows/buttons clear the Android 3-button nav bar / gesture bar.
+
 #### Attachment Picker Sheet
 | Option                      | Action | Result                                                                              |
 |-----------------------------|--------|-------------------------------------------------------------------------------------|
@@ -498,6 +520,8 @@ Shown only when `canCreate && (isOwner || isOnline)`.
 | **Choose from Gallery**     | Tap    | Opens image picker; image compressed same way                                       |
 | **Choose PDF / Document**   | Tap    | Opens file picker; PDF uploaded as-is                                               |
 | Max size                    | —      | 6 MB limit; over-limit shows toast error                                            |
+
+**Safe-area fix:** the picker sheet (`s.pickerSheet` in `EntryForm.jsx`) adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 32` so the Camera/Gallery/PDF/Remove/Cancel rows clear the Android 3-button nav bar / gesture bar. The separate full-screen image viewer modal (centered) is unaffected.
 
 ### Save Button
 | State     | Behavior                                                                                                         |
@@ -542,6 +566,8 @@ Shown only when `canCreate && (isOwner || isOnline)`.
 |------------------------|--------|-------------------------------------------------------------------------------|
 | "Delete Entry" button  | Tap    | Alert confirm → `DELETE /api/v1/books/:id/entries/:entry_id` → navigate back  |
 | Cancel                 | Tap    | Closes sheet                                                                  |
+
+**Safe-area fix:** the sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 36` so the Cancel/Delete Entry buttons clear the Android 3-button nav bar / gesture bar.
 
 ---
 
@@ -681,6 +707,7 @@ Shown only when `canCreate && (isOwner || isOnline)`.
 - Visible only when `canDelete`
 - "Delete Category" row → opens `DeleteCategorySheet` (requires typing category name to confirm)
 - On confirm: `DELETE /api/v1/books/:id/categories/:id` → `router.back()`
+- **Safe-area fix:** the sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 36` so the Cancel/Delete Category buttons clear the Android 3-button nav bar / gesture bar.
 
 ### States
 | State                   | Behaviour                                                     |
@@ -750,6 +777,8 @@ Both buttons show `ActivityIndicator` while downloading.  Both buttons disabled 
 
 Header PDF/XLS buttons and the export-preview modal's PDF/Excel buttons all read the same `canExport` (now always `true`), so they render as fully active (chevron icons, no 👑 `CrownBadge`) and export directly with no gate. The `!canExport` fallback paths (`SUBSCRIPTIONS_ENABLED`-conditional navigate-vs-`Alert.alert` logic added for the free-tier-only build, and the "not available on your current plan" Share-hint copy) are now dead code — harmless, left in place since `canAccess.js` could reintroduce a paid tier for this feature later without any UI changes needed.
 
+**Safe-area fix:** the export-ready sheet (`s.readySheet`, base `paddingBottom: 12`) and the date/filter picker sheet (`s.pickerSheet`, base `paddingBottom: 24`) each add `useSafeAreaInsets().bottom` on top of their base padding (one shared `insets` call in the screen) so their controls clear the Android 3-button nav bar / gesture bar.
+
 ### Loading / Error / Empty States
 | State                  | UI                                                |
 |------------------------|---------------------------------------------------|
@@ -804,6 +833,8 @@ BookSettingsScreen has multiple tabs:
 | Balance pill             | Tap           | Navigate to `CategoryProfileScreen`                             |
 | Search bar               | Type          | Filters list client-side; drag disabled while searching         |
 
+**Safe-area fix:** the Add Category bottom sheet's outer box (`s.modalSheet`) adds the device's real bottom inset on top of its base `paddingBottom: 24` (own `useSafeAreaInsets()` call, applied as `[s.modalSheet, { backgroundColor: C.card, paddingBottom: 24 + insets.bottom }]`) so the Cancel/Add buttons clear the Android 3-button nav bar / gesture bar instead of being crowded by it. The screen's separate floating "+" FAB is unaffected — unchanged, `bottom: 24`.
+
 #### Customers / Suppliers Tabs (`ContactsListScreen`)
 - Drag-reorder enabled per type: drag handle (≡) on left of each card; order saved to backend via `PATCH /api/v1/books/:id/customers/reorder` or `.../suppliers/reorder`
 - Optimistic update on drag-end; order persists and reflects in the contact picker inside AddEntryScreen / EditEntryScreen
@@ -817,11 +848,17 @@ BookSettingsScreen has multiple tabs:
 | Balance pill      | Tap           | Navigate to `ContactBalanceScreen`                        |
 | **Delete**        | Tap in menu   | Opens `DeleteContactSheet` confirm → `DELETE`             |
 
+**Safe-area fix:** the "+ Add Contact" modal (`s.modalSheet`), `ContactMenuSheet` (`s.sheet`, base `paddingBottom: 24`), and `DeleteContactSheet` (`s.sheet`, base `paddingBottom: 36`) each add `useSafeAreaInsets().bottom` on top of their base padding so their buttons/rows clear the Android 3-button nav bar / gesture bar. The screen's separate floating "+" FAB is unaffected.
+
+Payment Modes tab: its "+ Add Payment Mode" modal sheet has the same fix (`s.modalSheet`, `paddingBottom: 24 + insets.bottom`); its own floating "+" FAB is unaffected.
+
 ---
 
 ## 12. SettingsScreen — `/(app)/settings`
 
 Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
+
+**Safe-area fix (regular-user bottom nav):** the bar adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 16` (same fix as BooksScreen's bottom nav) so it clears the Android 3-button nav bar / gesture bar. The superadmin dashboard tab bar (`AdminTabBar` in `dashboard/_layout.jsx`) has the equivalent fix, added independently since it's a separate component.
 
 **Build flags (`frontend/src/constants/buildConfig.js`):** this free-tier-only release ships with `SUBSCRIPTIONS_ENABLED = false` and `SHARED_BOOKS_ENABLED = false`. Rows/sections gated by these flags are noted below; flipping a flag back to `true` restores the corresponding UI with no other code changes.
 
@@ -866,7 +903,9 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 ### Logout
 | Element                  | Action | Result                                                                                    |
 |--------------------------|--------|-------------------------------------------------------------------------------------------|
-| **Logout** button / row  | Tap    | Alert "Are you sure?" → confirm → `supabase.auth.signOut()` + `clearUser()` → redirect to `/login` |
+| **Logout** button / row  | Tap    | Opens `LogoutSheet` confirm → `supabase.auth.signOut()` + `clearUser()` → redirect to `/login` |
+
+**Safe-area fix:** `LogoutSheet`'s sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 36` so its buttons clear the Android 3-button nav bar / gesture bar.
 
 ### Danger Zone
 | Element                       | Action | Result                                                                                    |
@@ -874,6 +913,8 @@ Used by both regular users (bottom nav) and superadmin (dashboard Settings tab).
 | **Delete Account** button / row | Tap    | Opens `DeleteAccountSheet` (2-step confirm, same pattern as `FreshStartSheet`) → on final confirm: `DELETE /api/v1/profile` (deletes the Supabase Auth user; cascades profile, all owned books/entries/categories/contacts/payment modes, shared-book access, notifications, push tokens; removes Storage attachments + avatar) → `localClearAll()` → `supabase.auth.signOut()` → `clearUser()` → redirect to `/login` |
 
 Unconditional — shown for every tier and role, always visible (no `SUBSCRIPTIONS_ENABLED`/`SHARED_BOOKS_ENABLED` gating). Public web fallback for users without the app installed: `GET /account-deletion` on the backend (plain HTML page with in-app instructions + an email-request path).
+
+**Safe-area fix:** `DeleteAccountSheet`'s sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 40` so its buttons clear the Android 3-button nav bar / gesture bar.
 
 ---
 
@@ -982,7 +1023,7 @@ This section is shown because free users with shared book access need visibility
 ### CLOUD ACTIONS Section (paid / superadmin only)
 | Button                  | State                                                     | Action                                                                               |
 |-------------------------|-----------------------------------------------------------|--------------------------------------------------------------------------------------|
-| **Sync to Cloud**       | Default                                                   | Tap → `SyncConfirmSheet` → `syncLocalToCloud()` with progress                       |
+| **Sync to Cloud**       | Default                                                   | Tap → `SyncConfirmSheet` (its sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 36` so its buttons clear the Android 3-button nav bar / gesture bar) → `syncLocalToCloud()` with progress |
 | **Sync to Cloud**       | Already synced (`delta.toUpload === 0 && localTotal > 0`) | Icon changes to check-circle, sublabel "Local and cloud are in sync"; tap shows toast "Already synced" |
 | **Sync to Cloud**       | Syncing in progress                                       | Disabled + icon "loader", shows "Syncing…"                                           |
 | **Sync to Cloud**       | No local data (`stats.total === 0`)                       | Tap → shows "Nothing to sync" centered modal alert                                   |
@@ -1015,6 +1056,7 @@ The old `hasRestoredFromCloud` session flag is **no longer a gate**. The button 
 - Red box: "Last chance — confirm deletion"
 - Buttons: Go Back / Delete Everything (red)
 - On confirm: deletes all cloud books via `apiDeleteBook()` for each, then `localClearAll()`
+- **Safe-area fix:** the sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 40` so its buttons clear the Android 3-button nav bar / gesture bar. The same fix applies to `RestoreOrFreshSheet` (§1b, base `paddingBottom: 40`). `ClearLocalDataSheet.jsx` (base `paddingBottom: 36`) got the identical fix too, but currently has no importer anywhere in the app — not wired into this or any screen.
 
 ### Free-Tier Gate (free users WITHOUT any shared book access)
 - Shown when `!canSync && !freeHasSharedAccess`; hidden when free user has shared book access (SHARED BOOKS section shown instead) — moot in this build since `freeHasSharedAccess` is always `false` while `SHARED_BOOKS_ENABLED = false`
@@ -1104,6 +1146,8 @@ Handle bar, rounded top corners, `rgba(0,0,0,0.60)` backdrop — same bottom-she
 |-----------------------|--------|---------------------------------------------------------------------------------------------------|
 | **Cancel**             | Tap    | Dismisses the sheet, clears the pending payload — no data changed                                 |
 | **Restore Backup** (danger) | Tap | Guarded against double-tap → `restoreLocalBackup(payload, onProgress)` — progress bar replaces the buttons while running ("Restoring… (done/total)") |
+
+**Safe-area fix:** the sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 40` so the Cancel/Restore Backup buttons clear the Android 3-button nav bar / gesture bar.
 
 On restore success: `qc.invalidateQueries()` (no arguments, same broad-invalidate precedent as `BackupSyncScreen`'s restore/fresh-start) → sheet closes → shared `SuccessDialog` shown ("Backup Restored!" / "All your data has been restored to this device.").
 On restore failure: `Alert.alert('Restore Failed', err.message)` — the sheet is **left open** with the payload intact so the user can see the restore did not complete and retry.
@@ -1223,10 +1267,13 @@ Each card shows:
 4. Dev convenience: also fires `PATCH /api/v1/profile/subscription` to simulate the update locally
 5. `onSuccess`: `setUser(updatedProfile, session)` + `qc.setQueryData(['profile'], updatedProfile)`
 
+**Safe-area fix:** `CancelSheet` and `ActivateSheet` (both defined inline in `SubscriptionScreen.jsx`, sharing one style object, base `paddingBottom: 38`) each independently call `useSafeAreaInsets()` and add `insets.bottom` on top so their buttons clear the Android 3-button nav bar / gesture bar.
+
 ### Post-Upgrade: UpgradeSyncSheet (welcome modal)
 Triggered when a **free-tier user** activates any paid plan.
 - "Upload N Item(s)" button — uploads local SQLite data to cloud
 - "Later" outline button → dismisses to SuccessDialog
+- **Safe-area fix:** the sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 40` so its buttons clear the Android 3-button nav bar / gesture bar.
 
 ---
 
@@ -1279,12 +1326,14 @@ Active tab underlined in `C.primary`; inactive label in `C.textMuted`.
 - Book info card (book name + owner)
 - Body text with owner name
 - "Cancel" + "Decline Invitation" (danger) buttons; spinner while declining
+- **Safe-area fix:** adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 36` so the buttons clear the Android 3-button nav bar / gesture bar
 
 **LeaveBookSheet** (bottom sheet modal):
 - Handle bar, "Leave Book" header, danger icon
 - Book info card (book name + owner)
 - Body text with owner name
 - "Cancel" + "Leave Book" (danger) buttons; spinner while leaving
+- **Safe-area fix:** adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 36` so the buttons clear the Android 3-button nav bar / gesture bar
 
 ### Given Tab
 **Empty state:** share-2 icon, "No access given", "Books you share with others will appear here with their response status."
@@ -1295,7 +1344,7 @@ Active tab underlined in `C.primary`; inactive label in `C.textMuted`.
 - Trash button (`C.dangerLight` bg) → Alert confirm → `DELETE /api/v1/books/:id/shares/:shareId`
   - Alert title: "Cancel Invitation" (pending) or "Remove Access" (accepted)
 
-**EditShareSheet** — updates rights/screens for an accepted collaborator.
+**EditShareSheet** — updates rights/screens for an accepted collaborator. **Safe-area fix:** it has no `paddingBottom` of its own — its bottom clearance is a hardcoded spacer after the "Save Changes" button; that spacer now adds `useSafeAreaInsets().bottom` on top of its base `height: 24` so the button clears the Android 3-button nav bar / gesture bar.
 
 ### Real-time
 - `useRealtimeInvitations(user.id)` — live subscription for received invitations
@@ -1318,7 +1367,7 @@ Active tab underlined in `C.primary`; inactive label in `C.textMuted`.
 - **Info banner:** "Tap any row to edit their access, or use the buttons to edit or remove." (`C.primaryLight`)
 - **Guest limit banner** (Pro tier at 1-guest limit only): amber card + "Upgrade →" link
 - **Empty state:** `users` icon, "No collaborators yet", "Add Collaborator" button (hidden if at guest limit)
-- **CollaboratorRow list:** avatar, name, email, Rights badge + Status badge (pending only); tap row or edit icon → `EditShareSheet`; remove icon → `RemoveAccessSheet`
+- **CollaboratorRow list:** avatar, name, email, Rights badge + Status badge (pending only); tap row or edit icon → `EditShareSheet`; remove icon → `RemoveAccessSheet` (its sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 36` so its buttons clear the Android 3-button nav bar / gesture bar)
 - Header shows `{count}/{guestLimit}` when a numeric limit applies (Pro/Business); unlimited (superadmin) shows count only
 
 ---

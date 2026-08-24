@@ -8,6 +8,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
 import SuccessDialog from '../components/ui/SuccessDialog';
 import { ReportsSkeleton } from '../components/ui/Shimmer';
@@ -92,6 +93,7 @@ export default function ReportsScreen() {
     initialType, initialContact, initialCategory, initialPayment,
   } = useLocalSearchParams();
   const { C, Font, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   useRealtimeEntries(id);
 
   const user       = useAuthStore(s => s.user);
@@ -411,7 +413,7 @@ export default function ReportsScreen() {
         ) : (
           <View style={s.readyOverlay}>
             <TouchableOpacity style={s.readyDismissArea} onPress={closeExportModal} activeOpacity={1} />
-            <View style={s.readySheet}>
+            <View style={[s.readySheet, { paddingBottom: 12 + insets.bottom }]}>
 
               {/* Handle */}
               <View style={s.readyHandle} />
@@ -492,7 +494,7 @@ export default function ReportsScreen() {
       {/* ── Filter Picker Modal ── */}
       <Modal visible={!!activePicker} transparent animationType="slide" onRequestClose={() => setActivePicker(null)}>
         <Pressable style={s.pickerOverlay} onPress={() => setActivePicker(null)}>
-          <Pressable style={[s.pickerSheet, { backgroundColor: C.card }]} onPress={() => {}}>
+          <Pressable style={[s.pickerSheet, { backgroundColor: C.card, paddingBottom: 24 + insets.bottom }]} onPress={() => {}}>
             <View style={[s.pickerHandle, { backgroundColor: C.border }]} />
             <View style={s.pickerHeader}>
               <Text style={[s.pickerTitle, { color: C.text, fontFamily: Font.bold }]}>

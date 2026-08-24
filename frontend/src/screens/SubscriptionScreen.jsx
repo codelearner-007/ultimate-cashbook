@@ -8,6 +8,7 @@ import UpgradeSyncSheet from '../components/ui/UpgradeSyncSheet';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../hooks/useTheme';
 import { useAuthStore } from '../store/authStore';
 import { apiUpdateSubscription } from '../lib/api';
@@ -421,6 +422,7 @@ const cardStyles = StyleSheet.create({
 // ── Cancel Confirmation Sheet ─────────────────────────────────────────────────
 
 function CancelSheet({ visible, planName, expiresAt, isLoading, onDismiss, onConfirm, C }) {
+  const insets    = useSafeAreaInsets();
   const slideY    = useRef(new Animated.Value(600)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
 
@@ -454,7 +456,7 @@ function CancelSheet({ visible, planName, expiresAt, isLoading, onDismiss, onCon
       </Animated.View>
 
       <View style={sheetS.anchor} pointerEvents="box-none">
-        <Animated.View style={[sheetS.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
+        <Animated.View style={[sheetS.sheet, { backgroundColor: C.card, paddingBottom: 38 + insets.bottom, transform: [{ translateY: slideY }] }]}>
           <View style={[sheetS.handle, { backgroundColor: C.border }]} />
 
           <Text style={[sheetS.title, { color: C.text, fontFamily: Font.bold }]}>
@@ -517,6 +519,7 @@ function CancelSheet({ visible, planName, expiresAt, isLoading, onDismiss, onCon
 // ── Activate / Upgrade Confirmation Sheet ─────────────────────────────────────
 
 function ActivateSheet({ visible, plan, billing, action, isLoading, onDismiss, onConfirm, C }) {
+  const insets    = useSafeAreaInsets();
   const slideY    = useRef(new Animated.Value(600)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
 
@@ -556,7 +559,7 @@ function ActivateSheet({ visible, plan, billing, action, isLoading, onDismiss, o
       </Animated.View>
 
       <View style={sheetS.anchor} pointerEvents="box-none">
-        <Animated.View style={[sheetS.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
+        <Animated.View style={[sheetS.sheet, { backgroundColor: C.card, paddingBottom: 38 + insets.bottom, transform: [{ translateY: slideY }] }]}>
           <View style={[sheetS.handle, { backgroundColor: C.border }]} />
 
           <Text style={[sheetS.title, { color: C.text, fontFamily: Font.bold }]}>

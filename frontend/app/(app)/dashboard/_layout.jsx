@@ -49,6 +49,7 @@ const TAB_DEFS = [
 function AdminTabBar({ state, navigation }) {
   const { C, Font } = useTheme();
   const segments = useSegments();
+  const insets = useSafeAreaInsets();
   const s = useMemo(() => StyleSheet.create({
     bar: {
       flexDirection: 'row',
@@ -76,7 +77,7 @@ function AdminTabBar({ state, navigation }) {
   if (isNestedRoute) return null;
 
   return (
-    <View style={s.bar}>
+    <View style={[s.bar, { paddingBottom: 16 + insets.bottom }]}>
       {TAB_DEFS.map((tab) => {
         const routeIdx = state.routes.findIndex(r => r.name === tab.name);
         const active   = state.index === routeIdx;

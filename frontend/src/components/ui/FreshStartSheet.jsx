@@ -4,6 +4,7 @@ import {
   Animated, ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
  * Two-step destructive confirmation sheet for "Start Fresh".
@@ -20,6 +21,7 @@ import { Feather } from '@expo/vector-icons';
  *   C, Font    — theme objects
  */
 export default function FreshStartSheet({ visible, onDismiss, onConfirm, isLoading, statusLabel, C, Font }) {
+  const insets    = useSafeAreaInsets();
   const slideY    = useRef(new Animated.Value(600)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
   const [step, setStep] = useState(1);  // 1 = warning, 2 = final confirm
@@ -55,7 +57,7 @@ export default function FreshStartSheet({ visible, onDismiss, onConfirm, isLoadi
 
       {/* Sheet */}
       <View style={s.anchor} pointerEvents="box-none">
-        <Animated.View style={[s.sheet, { backgroundColor: C.card, transform: [{ translateY: slideY }] }]}>
+        <Animated.View style={[s.sheet, { backgroundColor: C.card, paddingBottom: 40 + insets.bottom, transform: [{ translateY: slideY }] }]}>
           <View style={[s.handle, { backgroundColor: C.border }]} />
 
           {/* Icon + Title */}

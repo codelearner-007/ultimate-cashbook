@@ -4,6 +4,7 @@ import {
   Switch, ActivityIndicator, Modal, Pressable,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../hooks/useTheme';
 import { useUpdateShare } from '../../hooks/useSharing';
 import { RIGHTS, SCREENS, RIGHTS_MAP, getInitials } from '../../constants/sharing';
@@ -22,6 +23,7 @@ import SuccessDialog from '../ui/SuccessDialog';
 
 export default function EditShareSheet({ visible, share, bookId, onClose }) {
   const { C, Font, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
   const updateShare = useUpdateShare(bookId);
 
   const [localScreens, setLocalScreens] = useState({});
@@ -216,7 +218,7 @@ export default function EditShareSheet({ visible, share, bookId, onClose }) {
                 )}
               </TouchableOpacity>
 
-              <View style={{ height: 24 }} />
+              <View style={{ height: 24 + insets.bottom }} />
             </ScrollView>
           </Pressable>
         </Pressable>

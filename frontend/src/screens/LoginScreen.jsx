@@ -5,6 +5,7 @@ import {
   Keyboard, Animated, Platform, Image, ScrollView,
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Ellipse } from 'react-native-svg';
 import Constants from 'expo-constants';
 import { LightColors } from '../constants/colors';
@@ -83,6 +84,7 @@ function EmailModal({ visible, onClose }) {
   const [step,    setStep]    = useState('email'); // 'email' | 'otp'
   const [loading, setLoading] = useState(false);
 
+  const insets = useSafeAreaInsets();
   const kbOffset = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -197,7 +199,7 @@ function EmailModal({ visible, onClose }) {
       </View>
       <View style={styles.sheetAnchor} pointerEvents="box-none">
         <Animated.View style={{ marginBottom: kbOffset }}>
-          <View style={styles.pickerBox}>
+          <View style={[styles.pickerBox, { paddingBottom: 36 + insets.bottom }]}>
             <View style={styles.pickerHandle} />
             <Text style={styles.pickerTitle}>
               {step === 'email' ? 'Continue with Email' : 'Enter OTP Code'}

@@ -20,6 +20,7 @@ import { SUPER_ADMIN_GOLD as SAG } from '../constants/colors';
 import { UserRowSkeleton } from '../components/ui/Shimmer';
 import { useSyncStore } from '../store/syncStore';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ── Super Admin header badge ──────────────────────────────────────────────────
 
@@ -260,6 +261,7 @@ export default function AdminUsersScreen() {
   const { data: adminProfile } = useProfile();
   const updateProfile = useUpdateProfile();
   const isOnline = useSyncStore((st) => st.isOnline);
+  const insets = useSafeAreaInsets();
 
   const handleThemeToggle = useCallback(() => {
     const next = !isDark;
@@ -561,7 +563,7 @@ export default function AdminUsersScreen() {
           onRequestClose={() => setSelectedUserId(null)}
         >
           <Pressable style={s.modalOverlay} onPress={() => setSelectedUserId(null)}>
-            <Pressable style={s.modalBox} onPress={() => {}}>
+            <Pressable style={[s.modalBox, { paddingBottom: 24 + insets.bottom }]} onPress={() => {}}>
               <View style={s.modalHandle} />
 
               {/* Close */}
@@ -696,7 +698,7 @@ export default function AdminUsersScreen() {
       {planPickerOpen && (
         <Modal visible animationType="slide" transparent onRequestClose={() => setPlanPickerOpen(false)}>
           <Pressable style={s.pickerOverlay} onPress={() => setPlanPickerOpen(false)}>
-            <Pressable style={s.pickerBox} onPress={() => {}}>
+            <Pressable style={[s.pickerBox, { paddingBottom: 28 + insets.bottom }]} onPress={() => {}}>
               <View style={s.modalHandle} />
               <Text style={s.pickerTitle}>Subscription Plan</Text>
               {planFilter !== 'all' && (
@@ -732,7 +734,7 @@ export default function AdminUsersScreen() {
       {datePickerOpen && (
         <Modal visible animationType="slide" transparent onRequestClose={() => setDatePickerOpen(false)}>
           <Pressable style={s.pickerOverlay} onPress={() => setDatePickerOpen(false)}>
-            <Pressable style={s.pickerBox} onPress={() => {}}>
+            <Pressable style={[s.pickerBox, { paddingBottom: 28 + insets.bottom }]} onPress={() => {}}>
               <View style={s.modalHandle} />
               <Text style={s.pickerTitle}>Join Date</Text>
               {dateFilter !== 'all' && (

@@ -5,6 +5,7 @@ import {
   Keyboard, Platform, TextInput, Switch,
 } from 'react-native';
 import SafeAreaView from '../components/ui/AppSafeAreaView';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import SearchBar from '../components/ui/SearchBar';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useBookBasePath } from '../hooks/useBookBasePath';
@@ -55,6 +56,7 @@ export default function ContactsListScreen() {
   const { id: bookId, name: bookName, type } = useLocalSearchParams();
   const { C, Font, isDark } = useTheme();
   const s = useMemo(() => makeStyles(), []);
+  const insets = useSafeAreaInsets();
 
   const cfg = TYPE_CONFIG[type] || TYPE_CONFIG.customer;
 
@@ -459,7 +461,7 @@ export default function ContactsListScreen() {
           <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => { setAddVisible(false); setNewName(''); setNewPhone(''); }} />
           <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }} pointerEvents="box-none">
           <Animated.View style={{ marginBottom: kbOffset }}>
-          <View style={[s.modalSheet, { backgroundColor: C.card }]}>
+          <View style={[s.modalSheet, { backgroundColor: C.card, paddingBottom: 24 + insets.bottom }]}>
             <View style={[s.modalHandle, { backgroundColor: C.border }]} />
             <View style={s.modalHeader}>
               <Text style={[s.modalTitle, { color: C.text, fontFamily: Font.bold }]}>

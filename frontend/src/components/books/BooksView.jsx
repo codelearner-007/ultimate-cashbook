@@ -427,12 +427,18 @@ export default function BooksView({
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
   const insets = useSafeAreaInsets();
   const navInset = Math.min(insets.bottom, MAX_NAV_INSET);
-  // `fabBottom`/`listPaddingBottom` are tuned against the bars' pre-insets height;
-  // both bars now add navInset to their own paddingBottom (gesture nav / 3-button nav
-  // safe area), so these offsets must grow by the same amount to keep the original visual
-  // gap instead of the FAB / list content crowding or overlapping the taller bar.
-  const fabBottomWithInset = fabBottom + navInset;
-  const listPaddingBottomWithInset = listPaddingBottom + navInset;
+  // `fabBottom`/`listPaddingBottom` are tuned against the bottom bar's pre-insets height.
+  // `bottomNav` (showBottomNav=true, BooksScreen) is rendered *inside* BooksView as an
+  // absolutely-positioned overlay on top of the content, so it grows taller on devices with
+  // a gesture/3-button nav inset (it adds navInset to its own paddingBottom) — the FAB and
+  // list padding must grow by the same amount or they'd crowd/hide behind the taller bar.
+  // AdminBooksScreen (showBottomNav=false) has no such overlay: its tab bar is a sibling
+  // rendered by the outer dashboard Tabs navigator, which already reserves its own inset-aware
+  // space below BooksView's content — so BooksView's own bottom edge already sits flush above
+  // it. Adding navInset again here would double-count that inset and float the FAB/list
+  // further from the tab bar than the free-tier screen's tuned gap.
+  const fabBottomWithInset = showBottomNav ? fabBottom + navInset : fabBottom;
+  const listPaddingBottomWithInset = showBottomNav ? listPaddingBottom + navInset : listPaddingBottom;
 
   const user = useAuthStore((st) => st.user);
   const qc   = useQueryClient();

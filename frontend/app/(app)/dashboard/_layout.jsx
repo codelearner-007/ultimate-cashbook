@@ -39,6 +39,13 @@ const BellIcon = ({ color, size = 22 }) => (
   </View>
 );
 
+// Some devices (notably 3-button-nav phones on certain Android skins) report a much
+// taller `insets.bottom` than the nav bar actually needs, which made this tab bar's
+// padding look bloated. Cap how much of the raw inset we honor so it still clears any
+// real nav bar (gesture pill or 3-button row) without over-padding — same constant as
+// `components/books/BooksView.jsx` / `screens/SettingsScreen.jsx`.
+const MAX_NAV_INSET = 24;
+
 const TAB_DEFS = [
   { name: 'users',         label: 'Users',    Icon: PeopleIcon },
   { name: 'books',         label: 'My Books', Icon: BookIcon   },
@@ -50,6 +57,7 @@ function AdminTabBar({ state, navigation }) {
   const { C, Font } = useTheme();
   const segments = useSegments();
   const insets = useSafeAreaInsets();
+  const navInset = Math.min(insets.bottom, MAX_NAV_INSET);
   const s = useMemo(() => StyleSheet.create({
     bar: {
       flexDirection: 'row',
@@ -77,7 +85,7 @@ function AdminTabBar({ state, navigation }) {
   if (isNestedRoute) return null;
 
   return (
-    <View style={[s.bar, { paddingBottom: 16 + insets.bottom }]}>
+    <View style={[s.bar, { paddingBottom: 16 + navInset }]}>
       {TAB_DEFS.map((tab) => {
         const routeIdx = state.routes.findIndex(r => r.name === tab.name);
         const active   = state.index === routeIdx;

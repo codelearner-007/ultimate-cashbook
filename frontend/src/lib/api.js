@@ -5,10 +5,20 @@
  */
 
 import axios from 'axios';
+import { Platform } from 'react-native';
 import { supabase } from './supabase';
+import { resolveDevUrl } from './devHost';
+
+// Web browser can't reach a LAN IP (e.g. http://192.168.x.x) — fall back to
+// the localhost override meant for running the backend on the same machine.
+// Native dev builds auto-detect the current LAN IP instead of trusting the
+// (DHCP-assigned, easily stale) hardcoded value in .env — see devHost.js.
+const API_URL = Platform.OS === 'web'
+  ? (process.env.EXPO_PUBLIC_API_URL_WEB || process.env.EXPO_PUBLIC_API_URL)
+  : resolveDevUrl(8000, process.env.EXPO_PUBLIC_API_URL);
 
 export const api = axios.create({
-  baseURL: process.env.EXPO_PUBLIC_API_URL,
+  baseURL: API_URL,
   timeout: 30000,
 });
 

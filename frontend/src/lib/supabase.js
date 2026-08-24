@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { resolveDevUrl } from './devHost';
 
 // Native (iOS / Android) — encrypted hardware storage
 const NativeStorage = {
@@ -16,8 +17,16 @@ const WebStorage = {
   removeItem: (key)        => Promise.resolve(localStorage.removeItem(key)),
 };
 
+// Web browser can't reach a LAN IP (e.g. http://192.168.x.x) — fall back to
+// the localhost override meant for running Supabase on the same machine.
+// Native dev builds auto-detect the current LAN IP instead of trusting the
+// (DHCP-assigned, easily stale) hardcoded value in .env — see devHost.js.
+const SUPABASE_URL = Platform.OS === 'web'
+  ? (process.env.EXPO_PUBLIC_SUPABASE_URL_WEB || process.env.EXPO_PUBLIC_SUPABASE_URL)
+  : resolveDevUrl(54321, process.env.EXPO_PUBLIC_SUPABASE_URL);
+
 export const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL,
+  SUPABASE_URL,
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
   {
     auth: {

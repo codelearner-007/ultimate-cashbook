@@ -38,6 +38,12 @@ import { BookCardSkeleton } from '../ui/Shimmer';
 
 const fmt = (n) => (n < 0 ? '-' : '+') + Math.abs(n).toLocaleString();
 
+// Some devices (notably 3-button-nav phones on certain Android skins) report a much
+// taller `insets.bottom` than the nav bar actually needs, which made the bottom nav /
+// FAB padding look bloated. Cap how much of the raw inset we honor for this bar so it
+// still clears any real nav bar (gesture pill or 3-button row) without over-padding.
+const MAX_NAV_INSET = 24;
+
 const getInitials = (str = '') =>
   str.split(' ').map(w => w[0]).filter(Boolean).join('').slice(0, 2).toUpperCase() || '?';
 
@@ -420,6 +426,13 @@ export default function BooksView({
   const { C, Font, isDark, toggleTheme } = useTheme();
   const s = useMemo(() => makeStyles(C, Font), [C, Font]);
   const insets = useSafeAreaInsets();
+  const navInset = Math.min(insets.bottom, MAX_NAV_INSET);
+  // `fabBottom`/`listPaddingBottom` are tuned against the bars' pre-insets height;
+  // both bars now add navInset to their own paddingBottom (gesture nav / 3-button nav
+  // safe area), so these offsets must grow by the same amount to keep the original visual
+  // gap instead of the FAB / list content crowding or overlapping the taller bar.
+  const fabBottomWithInset = fabBottom + navInset;
+  const listPaddingBottomWithInset = listPaddingBottom + navInset;
 
   const user = useAuthStore((st) => st.user);
   const qc   = useQueryClient();
@@ -882,7 +895,7 @@ export default function BooksView({
               />
             )}
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: listPaddingBottom }}
+            contentContainerStyle={{ paddingBottom: listPaddingBottomWithInset }}
             ListEmptyComponent={ListEmpty}
           />
         )
@@ -903,7 +916,7 @@ export default function BooksView({
           onReorder={setCustomBooks}
           onBookPress={handleBookPress}
           onBookMenu={(book, anchor) => setMenuState({ book, anchor, isShared: false })}
-          listPaddingBottom={listPaddingBottom}
+          listPaddingBottom={listPaddingBottomWithInset}
           C={C}
           Font={Font}
         />
@@ -913,7 +926,7 @@ export default function BooksView({
           keyExtractor={item => item.id}
           renderItem={renderBook}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: listPaddingBottom }}
+          contentContainerStyle={{ paddingBottom: listPaddingBottomWithInset }}
           ListEmptyComponent={ListEmpty}
         />
       )}
@@ -921,7 +934,7 @@ export default function BooksView({
       {/* ── FAB (personal workspace only) ───────────────────────────────── */}
       {activeWorkspace === 'personal' && (
         <TouchableOpacity
-          style={[s.fab, !canAddBook && s.fabDisabled, { bottom: fabBottom }]}
+          style={[s.fab, !canAddBook && s.fabDisabled, { bottom: fabBottomWithInset }]}
           onPress={() => {
             if (!canAddBook) {
               Toast.show({
@@ -946,7 +959,7 @@ export default function BooksView({
 
       {/* ── Bottom nav (regular user only) ──────────────────────────────── */}
       {showBottomNav && (
-        <View style={[s.bottomNav, { paddingBottom: 16 + insets.bottom }]}>
+        <View style={[s.bottomNav, { paddingBottom: 16 + navInset }]}>
           {[
             { label: 'My Books', Icon: BookIcon, active: true,  onPress: () => {} },
             { label: 'Help',      Icon: HelpIcon, active: false, onPress: () => {} },
@@ -1027,36 +1040,51 @@ export default function BooksView({
         onClose={() => setShowSort(false)}
       />
 
-      {/* ── Rename dialog ───────────────────────────────────────────────── */}
-      <Modal visible={!!renameDialog} transparent animationType="fade" onRequestClose={() => setRenameDialog(null)}>
-        <Pressable style={s.dialogOverlay} onPress={() => setRenameDialog(null)}>
-          <Pressable style={s.dialogCard} onPress={() => {}}>
-            <Text style={s.dialogTitle}>Rename</Text>
-            <Text style={s.dialogSub}>Enter a new name for this book</Text>
-            <TextInput
-              style={s.dialogInput}
-              placeholder="Book name"
-              placeholderTextColor={C.textSubtle}
-              value={renameText}
-              onChangeText={setRenameText}
-              autoFocus
-              maxLength={40}
-            />
-            <Text style={s.charCount}>{renameText.length}/40</Text>
-            <View style={s.dialogBtns}>
-              <TouchableOpacity style={s.dlgCancel} onPress={() => setRenameDialog(null)}>
-                <Text style={s.dlgCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.dlgAction, !renameText.trim() && s.dlgActionDisabled]}
-                onPress={handleRenameSubmit}
-                disabled={!renameText.trim() || renameBook.isPending}
-              >
-                <Text style={s.dlgActionText}>{renameBook.isPending ? 'Saving…' : 'Save'}</Text>
-              </TouchableOpacity>
+      {/* ── Rename dialog (slide-up, keyboard-aware — matches "New Book" modal) ── */}
+      <Modal visible={!!renameDialog} transparent animationType="none" onRequestClose={() => setRenameDialog(null)} statusBarTranslucent>
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: C.overlay }]}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setRenameDialog(null)} activeOpacity={1} />
+        </Animated.View>
+        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }} pointerEvents="box-none">
+          <Animated.View style={{ marginBottom: kbOffset }}>
+            <View style={[s.modalBox, { paddingBottom: 24 + insets.bottom }]}>
+              <View style={s.modalHandle} />
+              <View style={s.modalTitleRow}>
+                <Text style={s.modalTitle}>Rename</Text>
+                <TouchableOpacity
+                  style={s.modalCloseBtn}
+                  onPress={() => setRenameDialog(null)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <XIcon color={C.textMuted} size={16} />
+                </TouchableOpacity>
+              </View>
+              <Text style={s.modalSub}>Enter a new name for this book</Text>
+              <TextInput
+                style={s.modalInput}
+                placeholder="Book name"
+                placeholderTextColor={C.textSubtle}
+                value={renameText}
+                onChangeText={setRenameText}
+                autoFocus
+                maxLength={40}
+              />
+              <Text style={s.charCount}>{renameText.length}/40</Text>
+              <View style={s.modalActions}>
+                <TouchableOpacity style={s.cancelBtn} onPress={() => setRenameDialog(null)}>
+                  <Text style={s.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.createBtn, !renameText.trim() && s.createBtnDisabled]}
+                  onPress={handleRenameSubmit}
+                  disabled={!renameText.trim() || renameBook.isPending}
+                >
+                  <Text style={s.createBtnText}>{renameBook.isPending ? 'Saving…' : 'Save'}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </Pressable>
-        </Pressable>
+          </Animated.View>
+        </View>
       </Modal>
 
       {/* ── Delete book sheet ───────────────────────────────────────────── */}
@@ -1102,7 +1130,7 @@ export default function BooksView({
         </Animated.View>
         <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }} pointerEvents="box-none">
           <Animated.View style={{ marginBottom: kbOffset }}>
-            <View style={s.modalBox}>
+            <View style={[s.modalBox, { paddingBottom: 24 + insets.bottom }]}>
               <View style={s.modalHandle} />
               <View style={s.modalTitleRow}>
                 <Text style={s.modalTitle}>New Book</Text>
@@ -1264,19 +1292,7 @@ const makeStyles = (C, Font) => StyleSheet.create({
   navLabel:       { fontSize: 11, fontFamily: Font.medium, color: C.textMuted, lineHeight: 16 },
   navLabelActive: { fontSize: 11, fontFamily: Font.bold,   color: C.primary,   lineHeight: 16 },
 
-  // Centered dialog (rename / duplicate / delete / placeholder)
-  dialogOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  dialogCard:    { width: '100%', backgroundColor: C.card, borderRadius: 20, padding: 24 },
-  dialogTitle:   { fontSize: 18, fontFamily: Font.extraBold, color: C.text, lineHeight: 26, marginBottom: 8 },
-  dialogSub:     { fontSize: 13, fontFamily: Font.regular, color: C.textMuted, lineHeight: 20, marginBottom: 20 },
-  dialogInput:   { borderWidth: 1.5, borderColor: C.border, borderRadius: 12, padding: 14, fontSize: 15, fontFamily: Font.regular, color: C.text, backgroundColor: C.background, marginBottom: 6, lineHeight: 22 },
   charCount:     { fontSize: 11, fontFamily: Font.regular, color: C.textSubtle, textAlign: 'right', marginBottom: 20, lineHeight: 16 },
-  dialogBtns:    { flexDirection: 'row', gap: 12 },
-  dlgCancel:     { flex: 1, borderWidth: 1.5, borderColor: C.border, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  dlgCancelText: { fontFamily: Font.semiBold, fontSize: 14, color: C.textMuted },
-  dlgAction:     { flex: 1, backgroundColor: C.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  dlgActionDisabled: { backgroundColor: C.border },
-  dlgActionText: { fontFamily: Font.bold, fontSize: 14, color: C.onPrimary },
   dlgDanger:     { flex: 1, backgroundColor: '#E53935', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   dlgDangerText: { fontFamily: Font.bold, fontSize: 14, color: '#fff' },
 

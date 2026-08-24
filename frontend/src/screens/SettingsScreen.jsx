@@ -25,6 +25,13 @@ import { apiDeleteAccount } from '../lib/api';
 import { localClearAll } from '../lib/localDb';
 import Toast from '../lib/toast';
 
+// Some devices (notably 3-button-nav phones on certain Android skins) report a much
+// taller `insets.bottom` than the nav bar actually needs, which made the bottom nav
+// padding look bloated. Cap how much of the raw inset we honor so it still clears any
+// real nav bar (gesture pill or 3-button row) without over-padding — same constant as
+// `components/books/BooksView.jsx`.
+const MAX_NAV_INSET = 24;
+
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
 const BookIcon = ({ color, size = 20 }) => (
@@ -233,6 +240,7 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
   const router    = useRouter();
   const segments  = useSegments();
   const insets    = useSafeAreaInsets();
+  const navInset  = Math.min(insets.bottom, MAX_NAV_INSET);
   const { C, isDark }     = useTheme();
   // Tab-root screens have no back stack — hide the back button so it doesn't
   // mislead admins on the dashboard/settings tab into a wrong fallback route.
@@ -492,7 +500,7 @@ export default function SettingsScreen({ applyTop = true, showBottomNav = false,
 
       {/* ── Bottom nav (regular user only) ──────────────────────────────── */}
       {showBottomNav && (
-        <View style={[s.bottomNav, { paddingBottom: 16 + insets.bottom }]}>
+        <View style={[s.bottomNav, { paddingBottom: 16 + navInset }]}>
           {[
             { label: 'My Books', Icon: BookIcon, active: false, onPress: () => router.replace('/(app)/books') },
             { label: 'Help',     Icon: HelpIcon, active: false, onPress: () => {} },

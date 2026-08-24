@@ -207,7 +207,9 @@ Bell icon + "{N} pending book invitation(s) — tap to respond" → navigates to
 |--------------------------|--------|--------------------------------------------------------------------------|
 | Name input               | Edit   | Updates new name state                                                   |
 | "Save" / confirm button  | Tap    | `useRenameBook().mutate({ bookId, name })` → optimistic update + refetch |
-| Cancel                   | Tap    | Closes modal without saving                                              |
+| Cancel / × close         | Tap    | Closes modal without saving                                              |
+
+Redesigned to match the "New Book" modal exactly (previously a centered card, `s.dialogCard`, with no keyboard-avoidance): now a slide-up bottom sheet (handle bar, × close button in the title row, `s.modalBox`/`s.modalTitle`/`s.modalInput`/`s.modalActions`/`s.cancelBtn`/`s.createBtn` — the same style objects the "New Book" modal uses, title text swapped to "Rename" and subtitle to "Enter a new name for this book"), reusing the same `kbOffset` keyboard-aware lift and the same `paddingBottom: 24 + insets.bottom` safe-area fix. The old centered-dialog styles (`dialogOverlay`, `dialogCard`, `dialogTitle`, `dialogSub`, `dialogInput`, `dialogBtns`, `dlgCancel*`, `dlgAction*`) were removed as dead code.
 
 #### Delete Confirmation Modal
 | Element                  | Action | Result                                                                                       |
@@ -225,12 +227,18 @@ Backed by `DeleteBookSheet.jsx` (type-to-confirm). Its sheet adds `useSafeAreaIn
 
 Free-tier book limit is 5 (`getLimit(user, 'books')` in `lib/canAccess.js`, mirrored server-side in `backend/app/routers/books.py`'s `BOOK_LIMITS`). If a create request somehow reaches the backend past the disabled FAB (e.g. stale client state) and returns `BOOK_LIMIT_REACHED:{n}` (403), `LimitReachedSheet` opens as a fallback — its amber "Upgrade" card always renders now (previously gated on `SUBSCRIPTIONS_ENABLED`): a 👑 crown icon + "Upgrade to add more" / "Paid plans are launching soon" + an amber "SOON" pill badge when `SUBSCRIPTIONS_ENABLED=false` (current build); the original ⚡ zap icon + "Upgrade to Pro/Business" + "View Plans" flow still renders unchanged when `SUBSCRIPTIONS_ENABLED=true`. The description line above the card also now ends with "— upgrade to add more" for the books case regardless of the flag. Its sheet adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 40` so its buttons clear the Android 3-button nav bar / gesture bar.
 
+**FAB position fix:** the FAB's `bottom` offset (`fabBottom` prop, default `80` for `BooksScreen` / `16` for `AdminBooksScreen`) used to be a fixed number tuned to the bottom bar's height before that bar added `insets.bottom` to its own padding. On a device with a tall gesture-nav or home-indicator inset, the taller bar crowded — nearly touched — the FAB instead of leaving the original gap. `BooksView.jsx` now adds a capped inset (`navInset`, see below) on top of `fabBottom` (and the same to `listPaddingBottom`, so scrolled list content still clears the FAB) so the gap stays visually consistent on every device.
+
+**Nav-bar padding cap (`MAX_NAV_INSET`):** some real 3-button-nav phones report a `insets.bottom` far taller than their visible nav bar, which made the tab row's bottom padding (and the FAB gap above it) look bloated. All three real navigation bars in the app — this bottom nav, `SettingsScreen`'s bottom nav, and the superadmin dashboard's `AdminTabBar` — now cap the inset they honor at `24` (`navInset = Math.min(insets.bottom, 24)`) before adding it to their padding/FAB offsets, so the bar still clears a real gesture pill or 3-button row without over-padding on devices that inflate the reported inset. Bottom sheets/modals elsewhere in the app are unaffected — they still use the raw `insets.bottom`.
+
 #### Add New Book Modal
 | Element          | Action | Result                                                                                    |
 |------------------|--------|-------------------------------------------------------------------------------------------|
 | Book name input  | Type   | Updates `newBookName` state                                                               |
 | "Create" button  | Tap    | `useCreateBook().mutate({ name })` → optimistic prepend → `POST /api/v1/books` → refetch |
 | Cancel / close   | Tap    | Closes modal, clears input                                                                |
+
+Keyboard-aware (slides up above the keyboard via `kbOffset`) and safe-area-aware: its sheet (`s.modalBox`, base `padding: 24`) now also adds `insets.bottom` on top of its base bottom padding (`paddingBottom: 24 + insets.bottom`) so the Cancel/Create buttons clear the Android 3-button nav bar / gesture bar when the keyboard is closed — previously missing from this one modal even though every other bottom sheet in the app already had it.
 
 ### Bottom Navigation Bar
 | Tab                     | Action | Result                         |
@@ -239,7 +247,7 @@ Free-tier book limit is 5 (`getLimit(user, 'books')` in `lib/canAccess.js`, mirr
 | **Help**                | Tap    | (TODO — no-op or placeholder)  |
 | **Settings**            | Tap    | Navigate to `/(app)/settings`  |
 
-**Safe-area fix:** the bar (`s.bottomNav`, `position:'absolute'`/`bottom:0`) adds `useSafeAreaInsets().bottom` on top of its base `paddingBottom: 16` (`[s.bottomNav, { paddingBottom: 16 + insets.bottom }]`) so the tab icons/labels clear the Android 3-button nav bar / gesture bar instead of being crowded by it.
+**Safe-area fix:** the bar (`s.bottomNav`, `position:'absolute'`/`bottom:0`) adds a capped safe-area inset on top of its base `paddingBottom: 16` (`navInset = Math.min(insets.bottom, 24)`, then `[s.bottomNav, { paddingBottom: 16 + navInset }]`) so the tab icons/labels clear the Android 3-button nav bar / gesture bar instead of being crowded by it, without over-padding on devices that report an inflated inset — see the "Nav-bar padding cap" note above.
 
 ### Loading / Error / Empty States
 | State                        | Display                                                                                   |

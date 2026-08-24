@@ -22,20 +22,21 @@ backend/
 │   │   ├── contacts.py       # GET/POST/PUT/DELETE /api/v1/books/{id}/customers + /suppliers
 │   │   ├── categories.py     # GET/POST/PUT/DELETE /api/v1/books/{id}/categories + /{id}/entries
 │   │   ├── admin.py          # GET/PATCH /api/v1/admin/* (superadmin only)
-│   │   ├── reports.py        # GET /api/v1/books/{id}/report/pdf + /excel
+│   │   ├── reports.py        # POST /api/v1/books/{id}/report/pdf + /excel (stateless — renders client-supplied entries, no DB read)
 │   │   └── upload.py         # POST /api/v1/upload/attachment
 │   ├── models/
 │   │   ├── profile.py        # ProfileResponse, ProfileUpdate, UserWithStats, StatusUpdate
 │   │   ├── book.py           # BookCreate, BookUpdate, BookResponse
 │   │   ├── entry.py          # EntryCreate, EntryUpdate, EntryResponse, BookSummary
 │   │   ├── contact.py        # ContactCreate, ContactUpdate, ContactResponse, ContactWithBalance
-│   │   └── category.py       # CategoryCreate, CategoryUpdate, CategoryResponse
+│   │   ├── category.py       # CategoryCreate, CategoryUpdate, CategoryResponse
+│   │   └── report.py         # ReportEntry, ReportFilters, ReportRequest — request body for reports.py
 │   ├── db/
 │   │   └── supabase.py       # Supabase service client singleton
 │   └── utils/
 │       ├── pdf.py            # generate_pdf(...) → bytes
 │       ├── excel.py          # generate_excel(...) → bytes
-│       └── book_access.py    # get_book_owner_id / get_book_owner_id_with_row / get_book_access / require_rights
+│       └── book_access.py    # get_book_owner_id / get_book_access / require_rights
 ├── requirements.txt
 ├── Procfile                  # web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ├── .env                      # NEVER commit
@@ -283,17 +284,17 @@ Returns `NotificationResponse` with `recipient_count`. Push notifications sent v
 
 | Method | Path | Description | Auth |
 |---|---|---|---|
-| GET | `/{book_id}/report/pdf` | Download PDF report | ✅ |
-| GET | `/{book_id}/report/excel` | Download Excel report | ✅ |
+| POST | `/{book_id}/report/pdf` | Render a PDF report from client-supplied entries | ✅ |
+| POST | `/{book_id}/report/excel` | Render an Excel report from client-supplied entries | ✅ |
 
-Query params: `?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD&entry_type=&contact_name=&contact_type=&category=&payment_mode=`
+**Stateless renderer — no DB query.** These endpoints do **not** read `books`/`entries` from Supabase at all; `book_id` in the URL is unused (kept only for REST-path consistency with the rest of the book-scoped API). The request body (`ReportRequest` in `models/report.py`: `book_name`, `currency`, `date_from`, `date_to`, `filters`, `entries: List[ReportEntry]`) supplies everything needed — the router just recomputes `total_in`/`total_out`/`net_balance` from `entries` and calls `generate_pdf()`/`generate_excel()`. `get_current_user` is still required (auth/rate-limiting only, not an ownership check).
 
-**`contact_type` actually scopes the query.** `contact_name` alone is ambiguous — customers and suppliers are separate tables with no cross-table name uniqueness, so a customer and supplier sharing a name in the same book previously had their entries merged into one mislabeled report. `_fetch_entries()` now also requires `customer_id IS NOT NULL` when `contact_type=customer` or `supplier_id IS NOT NULL` when `contact_type=supplier` (via `.not_.is_(col, "null")`), in addition to the `contact_name` text match.
+**Why:** the previous implementation looked the book and its entries up in the cloud DB, which 404'd for any of a free-tier user's own books — those live in local SQLite only (`shouldBackupToCloud()` always returns `false`, and `cloud_sync` is a `'pro'`-tier feature per `frontend/src/lib/canAccess.js`) while `export_reports` is advertised as a `'free'`-tier feature. A free user's own (never-synced) book could never generate a report. The frontend (`ReportsScreen.jsx`) already has the correct entries in hand — loaded via `apiGetEntries()` from `lib/dataSource.js`, which transparently resolves local SQLite for own books or the cloud API for shared books — so it now POSTs that already-loaded, already-filtered data directly instead of asking the backend to re-fetch it. This works uniformly for own (local) and shared (cloud) books.
 
-**`get_book_owner_id_with_row()` (`utils/book_access.py`)** replaces the old raw `.single().execute()` book lookup in this router — `.single()` raises an uncaught `postgrest.APIError` (→ unhandled 500) on zero rows instead of returning falsy data, which made the coded `404 Book not found` branch unreachable. It resolves owner access and fetches the requested book columns (e.g. `select="name, currency"`) in one query for the common owner case (falling back to a second query only for the rare shared-book-collaborator path, same as `get_book_owner_id`), using `.limit(1).execute()` + a `.data` check so a missing/just-deleted book cleanly 404s instead of 500ing. `get_book_owner_id()` (owner_id only, no extra columns) is unchanged and still used by every other book-data router.
+**`contact_type` still labels the report correctly.** The frontend applies all filters (date, type, contact, category, payment mode) client-side before sending `entries`, so the backend no longer filters anything — `filters` in the request body is display-only (drives the "Applied Filters" section of the rendered document; `contact_type` picks the "Customer"/"Supplier"/"Contact" label).
 
 **Report generation sanitizes all user-controlled strings before rendering** (`utils/pdf.py`, `utils/excel.py`) — book name, currency, and every filter display value (category/contact_name/payment_mode/entry_type), not just entry fields:
-- **PDF (`generate_pdf`)** — `_p()` XML-escapes every string before wrapping it in a ReportLab `Paragraph` (`xml.sax.saxutils.escape`); an unescaped `<`/`>`/`&` in a book name, currency symbol, or filter value used to raise an uncaught ReportLab parse `ValueError` (crashes the whole PDF export). Filter *display* values are also clipped to 120 chars (`_clip()` in `_build_filter_items()`) — unlike entry table cells (already truncated at `[:32]`/`[:14]`), filter values were unbounded and a long one (~4–8K+ chars, trivially passed via the unvalidated `?category=`/`?contact_name=`/`?payment_mode=` query params) made the single-row filter table taller than a page, raising an uncaught `reportlab.platypus.doctemplate.LayoutError`.
+- **PDF (`generate_pdf`)** — `_p()` XML-escapes every string before wrapping it in a ReportLab `Paragraph` (`xml.sax.saxutils.escape`); an unescaped `<`/`>`/`&` in a book name, currency symbol, or filter value used to raise an uncaught ReportLab parse `ValueError` (crashes the whole PDF export). Filter *display* values are also clipped to 120 chars (`_clip()` in `_build_filter_items()`) — unlike entry table cells (already truncated at `[:32]`/`[:14]`), filter values were unbounded and a long one (~4–8K+ chars, trivially passed via the `filters.category`/`filters.contact_name`/`filters.payment_mode` request body fields — unvalidated `str` fields on `ReportFilters`) made the single-row filter table taller than a page, raising an uncaught `reportlab.platypus.doctemplate.LayoutError`.
 - **Excel (`generate_excel`)** — `_clean()` strips XML-illegal control characters (`\x00-\x08`, `\x0b`, `\x0c`, `\x0e-\x1f`) from every cell value (book name banner, filter rows, and the per-row `_d()` helper covering remark/category/contact_name/payment_mode) before assignment; openpyxl raises `IllegalCharacterError` on these otherwise. These characters are genuinely reachable through normal use — `models/entry.py` has no field-level sanitization on `remark`/`category`/`contact_name`, and Postgres only rejects literal `\x00`, so e.g. a `\x0b` typed into a remark survives the full round-trip from entry creation to report export.
 
 ---
@@ -355,6 +356,14 @@ class CategoryUpdate:   name? (str, optional)
 class CategoryReorder:  ordered_ids: List[str]
 class CategoryResponse: id, book_id, user_id, name, display_order (int, default 0), total_in, total_out, net_balance, created_at
 ```
+
+### `models/report.py`
+```python
+class ReportEntry:   type, amount, remark?, category?, payment_mode?, contact_name?, entry_date?, entry_time?
+class ReportFilters: entry_type?, contact_name?, contact_type?, category?, payment_mode?  — display-only, not applied server-side
+class ReportRequest: book_name, currency (default 'PKR'), date_from?, date_to?, filters?: ReportFilters, entries: List[ReportEntry] = []
+```
+Request body for `POST /api/v1/books/{id}/report/pdf` and `/excel` — see the Reports section above for why this is POST + client-supplied data rather than a server-side DB read.
 
 ### Categories (`routers/categories.py`) — prefix `/api/v1/books`
 
@@ -425,7 +434,7 @@ owner_id, rights = get_book_access(sb, book_id, user_id)
 require_rights(rights, "view_create_edit_delete")
 ```
 
-`get_book_owner_id` still exists for read-only endpoints that only need the `owner_id`. `get_book_owner_id_with_row(sb, book_id, user_id, select="...")` is for endpoints that also need book columns (e.g. `reports.py`) — it fetches owner access + those columns in one query instead of two.
+`get_book_owner_id` still exists for read-only endpoints that only need the `owner_id`. `reports.py` no longer calls into `book_access.py` at all — see the Reports section above.
 
 **Use DB functions for aggregation:**
 ```python

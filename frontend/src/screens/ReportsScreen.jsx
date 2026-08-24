@@ -13,6 +13,7 @@ import SuccessDialog from '../components/ui/SuccessDialog';
 import { ReportsSkeleton } from '../components/ui/Shimmer';
 import { useTheme } from '../hooks/useTheme';
 import { apiGetEntries } from '../lib/dataSource';
+import { api } from '../lib/api';
 import { useRealtimeEntries } from '../hooks/useRealtimeSync';
 import { supabase } from '../lib/supabase';
 import { useCustomers, useSuppliers } from '../hooks/useContacts';
@@ -26,7 +27,15 @@ import { useBooks } from '../hooks/useBooks';
 const PAYMENT_LABEL = { cash: 'Cash', online: 'Online', cheque: 'Cheque', other: 'Other' };
 const PAYMENT_ICON  = { cash: 'dollar-sign', online: 'wifi', cheque: 'file-text', check: 'file-text', other: 'more-horizontal' };
 const DATE_LABELS   = { today: 'Today', yesterday: 'Yesterday', week: 'This Week', month: 'This Month' };
-const BASE_URL = (process.env.EXPO_PUBLIC_API_URL || '').replace(/\/$/, '');
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read the server response.'));
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.readAsDataURL(blob);
+  });
+}
 
 function matchesDatePeriod(entryDate, period) {
   const d = new Date(entryDate + 'T00:00:00');
@@ -217,44 +226,62 @@ export default function ReportsScreen() {
     setExportPhase('generating');
     try {
       // Refresh session first so the token is always valid on iOS
-      let { data: sd } = await supabase.auth.getSession();
-      let token = sd.session?.access_token;
-      if (!token) {
-        const { data: refreshed } = await supabase.auth.refreshSession();
-        token = refreshed.session?.access_token;
+      const { data: sd } = await supabase.auth.getSession();
+      if (!sd.session?.access_token) {
+        await supabase.auth.refreshSession();
       }
-      if (!token) throw new Error('Not authenticated');
 
-      const params = new URLSearchParams();
-      if (dateFrom)       params.append('date_from', dateFrom);
-      if (dateTo)         params.append('date_to', dateTo);
-      if (filterType)        params.append('entry_type', filterType);
-      if (filterContact)     params.append('contact_name', filterContact);
-      if (filterContactType) params.append('contact_type', filterContactType);
-      if (filterCategory)    params.append('category', filterCategory);
-      if (filterPayment)     params.append('payment_mode', filterPayment);
-      const qs      = params.toString();
-      const ext     = type === 'pdf' ? 'pdf' : 'xlsx';
+      const ext      = type === 'pdf' ? 'pdf' : 'xlsx';
       const safeName = (name || id || 'report').replace(/[^a-zA-Z0-9_-]/g, '_');
-      const filename  = `cashbook-${safeName}-${Date.now()}.${ext}`;
-      const localUri  = `${FileSystem.cacheDirectory}${filename}`;
-      const url = `${BASE_URL}/api/v1/books/${id}/report/${type}${qs ? '?' + qs : ''}`;
+      const filename = `cashbook-${safeName}-${Date.now()}.${ext}`;
+      const localUri = `${FileSystem.cacheDirectory}${filename}`;
+      const currency = ownBooks.find(b => b.id === id)?.currency || 'PKR';
 
-      const result = await FileSystem.downloadAsync(url, localUri, {
-        headers: { Authorization: `Bearer ${token}` },
+      // Report data is rendered server-side from the entries already loaded here —
+      // it never re-fetches from the cloud, so it works the same for own (local-only)
+      // books and shared (cloud) books alike.
+      const body = {
+        book_name: name || 'Cashbook',
+        currency,
+        date_from: dateFrom || null,
+        date_to: dateTo || null,
+        filters: {
+          entry_type: filterType || null,
+          contact_name: filterContact || null,
+          contact_type: filterContactType || null,
+          category: filterCategory || null,
+          payment_mode: filterPayment || null,
+        },
+        entries: filtered.map(e => ({
+          type: e.type,
+          amount: Number(e.amount) || 0,
+          remark: e.remark || null,
+          category: e.category || null,
+          payment_mode: e.payment_mode || null,
+          contact_name: e.contact_name || null,
+          entry_date: e.entry_date || null,
+          entry_time: e.entry_time || null,
+        })),
+      };
+
+      const response = await api.post(`/api/v1/books/${id}/report/${type}`, body, {
+        responseType: 'blob',
       });
 
-      if (!result.uri) throw new Error('Download failed — no file received.');
-      if (result.status !== undefined && result.status !== 200) {
-        throw new Error(`Server returned ${result.status}. Make sure the backend is running.`);
-      }
+      const base64 = await blobToBase64(response.data);
+      await FileSystem.writeAsStringAsync(localUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
 
       setFileName(`cashbook-${safeName}.${ext}`);
-      setReadyUri(result.uri);
+      setReadyUri(localUri);
       // Use setTimeout so iOS doesn't try to change modal content mid-animation
       setTimeout(() => setExportPhase('ready'), Platform.OS === 'ios' ? 50 : 0);
     } catch (err) {
-      Alert.alert('Export Failed', err.message || 'Please check your connection and try again.');
+      const message = err.response?.status
+        ? `Server returned ${err.response.status}. Please try again.`
+        : err.message || 'Please check your connection and try again.';
+      Alert.alert('Export Failed', message);
       closeExportModal();
     }
   };

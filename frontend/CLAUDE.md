@@ -108,7 +108,7 @@ frontend/
 │   │   ├── dataSource.js         # Data-source router: own books → local SQLite only (no background cloud push — manual upload only via BackupSyncScreen); shared books → cloud API directly (via isLocalBook() check). Entry update/delete use cloud_entry_id for correct cloud targeting.
 │   │   ├── devHost.js            # Native-dev LAN IP auto-detection (getDevLanHost, resolveDevUrl) — reads Constants.expoConfig.hostUri so api.js/supabase.js/LoginScreen.jsx never rely on the DHCP-assigned IP hardcoded in .env going stale; see API Layer section below
 │   │   ├── localBackup.js        # Fully offline device-local backup/restore — packages all local SQLite data + local attachments into a single shareable JSON file, and restores from one; entirely separate from the cloud Backup & Sync feature (see Device-Local Backup section below)
-│   │   ├── supabase.js           # Supabase client (SecureStore / localStorage adapter)
+│   │   ├── supabase.js           # Supabase client (chunked SecureStore / localStorage adapter, AppState-driven auto-refresh — see Session Persistence section below)
 │   │   ├── storage.js            # Provider-agnostic attachment abstraction (uploadAttachment, removeAttachment) — always saves locally first, for every tier; Supabase upload only happens via manual sync
 │   │   └── toast.js              # Toast helper
 │   ├── store/
@@ -179,6 +179,13 @@ Any native permission a screen relies on **must** be backed by an entry in `app.
 - ~~`AutoSyncMonitor`~~ — **removed**; cloud upload is now **manual only**. The owner must go to Backup & Sync and press "Upload to Cloud". No automatic background pushes occur.
 - `AutoDeleteMonitor` — on reconnect, deletes from cloud any books removed locally while offline (only runs when device has previously synced, i.e. `localCloudIds.size > 0`)
 - `NotificationPopup` — centered modal card for unread notifications; auto-shows for regular users; also shows tapped notifications from the OS tray for any logged-in user
+
+### Session persistence & auto-refresh (`lib/supabase.js`)
+
+Fixes a real bug: users were occasionally found signed out after reopening the app despite never tapping Logout. Two gaps, either of which alone can produce this symptom:
+
+- **Storage size limit.** `expo-secure-store` enforces a per-key size ceiling on Android (Keystore-backed values are historically capped around ~2048 bytes). A Supabase session (access token + refresh token + full user record — larger for Google OAuth logins carrying `avatar_url`/`full_name` metadata) can exceed this. An uncaught write failure meant the session silently never persisted; the next cold start found nothing to restore. Fixed by `secureSetItem`/`secureGetItem`/`secureRemoveItem`: values over `CHUNK_SIZE` (1800 bytes) are split across `key__c0`, `key__c1`, … plus a `key__cc` count key and reassembled on read; every operation is wrapped so a storage failure degrades to "session won't survive a restart" (recoverable by re-login) instead of a silent, undiagnosable loss.
+- **Background token refresh.** `autoRefreshToken: true` only drives a JS timer, and React Native suspends JS timers while the app is backgrounded (and drops them if the OS kills the app). A session could sit un-refreshed through a long background period; on reopen, a stale access token could get rejected before a refresh had a chance to run. Fixed by an `AppState` listener (native only) that calls `supabase.auth.startAutoRefresh()` on `'active'` and `supabase.auth.stopAutoRefresh()` otherwise, forcing a refresh attempt the moment the app comes back to the foreground — ahead of any screen's first API call. (`api.js`'s request interceptor already calls `supabase.auth.getSession()` before every request, which itself refreshes an expired-but-refreshable token — this listener closes the gap for the specific case where the background timer never got the chance to.)
 
 ### Offline-resilient profile resolution (`resolveProfile()` + `SupabaseAuthListener`)
 - `resolveProfile(session)` tries `apiGetProfile()` → direct Supabase `profiles` select → a minimal fallback object built from session metadata only, in that order. The fallback preserves `role` from `user_metadata`/`app_metadata` **and** `subscription_tier` read from `SecureStore` (`TIER_KEY`, exported from `authStore.js`) — this prevents a paid/superadmin user from being shown the free-tier UI just because the app was opened (or `SIGNED_IN` fired) while offline. Previously the fallback object had no `subscription_tier` field at all, which made `canAccess.js`/`BooksView.jsx` treat any offline paid user as free tier.
@@ -749,7 +756,6 @@ All functions call the real FastAPI backend. Axios interceptor attaches the Supa
 | `apiGetSupplierEntries(bookId, id)` | GET | `/api/v1/books/:id/suppliers/:id/entries` |
 | `apiReorderSuppliers(bookId, orderedIds)` | PATCH | `/api/v1/books/:id/suppliers/reorder` |
 | `apiGetAllUsers()` | GET | `/api/v1/admin/users` |
-| `apiToggleUserStatus(userId, is_active)` | PATCH | `/api/v1/admin/users/:id/status` |
 | `apiGetUserBooks(userId)` | GET | `/api/v1/admin/users/:id/books` |
 | `apiSendNotification(payload)` | POST | `/api/v1/admin/notifications` — `{ title, body, target_type, user_ids? }` |
 | `apiGetSentNotifications()` | GET | `/api/v1/admin/notifications` |

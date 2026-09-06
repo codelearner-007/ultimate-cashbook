@@ -88,7 +88,7 @@ Three tabs rendered by `app/(app)/dashboard/_layout.jsx` (Expo Router `<Tabs>`):
 
 | Tab | Route file | Screen component | Purpose |
 |---|---|---|---|
-| Users | `dashboard/users.jsx` | `AdminUsersScreen` | View all non-superadmin users, toggle active/inactive, view their books |
+| Users | `dashboard/users.jsx` | `AdminUsersScreen` | View all non-superadmin users, view their books |
 | My Books | `dashboard/books.jsx` | `AdminBooksScreen` | Admin's own books — identical CRUD to regular BooksScreen |
 | Settings | `dashboard/settings.jsx` | `SettingsScreen` | Same settings screen reused |
 
@@ -96,8 +96,7 @@ Three tabs rendered by `app/(app)/dashboard/_layout.jsx` (Expo Router `<Tabs>`):
 - Lists all non-superadmin users fetched from `GET /api/v1/admin/users`
 - Polls every **10 seconds** (`refetchInterval: 10000`) so new users appear near-instantly without full-page refresh
 - Header stats: Total Users, Active Users, Total Books, Storage
-- Each row shows: avatar initials, full name, email, book count, storage, entry count, active toggle
-- Toggle switch → `PATCH /api/v1/admin/users/:id/status` → optimistic cache update + refetch
+- Each row shows: avatar initials, full name, email, book count, storage, entry count
 - Tap user card → modal showing that user's books (fetched from `GET /api/v1/admin/users/:id/books`)
 
 ### My Books Tab (`AdminBooksScreen`)

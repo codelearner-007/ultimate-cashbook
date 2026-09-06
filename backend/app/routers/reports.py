@@ -4,8 +4,12 @@ from app.auth.jwt import get_current_user
 from app.models.report import ReportRequest
 from app.utils.pdf import generate_pdf
 from app.utils.excel import generate_excel
+from app.utils.rate_limit import InMemoryRateLimiter
 
 router = APIRouter()
+
+# Report rendering (PDF/Excel) is CPU/memory-heavy; cap how often one user can trigger it.
+_report_rate_limiter = InMemoryRateLimiter(max_calls=10, window_seconds=60)
 
 
 def _summary(entries):
@@ -20,6 +24,7 @@ async def pdf_report(
     body: ReportRequest,
     user_id: str = Depends(get_current_user),
 ):
+    _report_rate_limiter.check(user_id)
     entries = [e.model_dump() for e in body.entries]
     summary = _summary(body.entries)
     active_filters = body.filters.model_dump() if body.filters else {}
@@ -40,6 +45,7 @@ async def excel_report(
     body: ReportRequest,
     user_id: str = Depends(get_current_user),
 ):
+    _report_rate_limiter.check(user_id)
     entries = [e.model_dump() for e in body.entries]
     summary = _summary(body.entries)
     active_filters = body.filters.model_dump() if body.filters else {}

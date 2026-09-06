@@ -25,7 +25,7 @@ backend/
 │   │   ├── reports.py        # POST /api/v1/books/{id}/report/pdf + /excel (stateless — renders client-supplied entries, no DB read)
 │   │   └── upload.py         # POST /api/v1/upload/attachment
 │   ├── models/
-│   │   ├── profile.py        # ProfileResponse, ProfileUpdate, UserWithStats, StatusUpdate
+│   │   ├── profile.py        # ProfileResponse, ProfileUpdate, UserWithStats
 │   │   ├── book.py           # BookCreate, BookUpdate, BookResponse
 │   │   ├── entry.py          # EntryCreate, EntryUpdate, EntryResponse, BookSummary
 │   │   ├── contact.py        # ContactCreate, ContactUpdate, ContactResponse, ContactWithBalance
@@ -36,7 +36,8 @@ backend/
 │   └── utils/
 │       ├── pdf.py            # generate_pdf(...) → bytes
 │       ├── excel.py          # generate_excel(...) → bytes
-│       └── book_access.py    # get_book_owner_id / get_book_access / require_rights
+│       ├── book_access.py    # get_book_owner_id / get_book_access / require_rights
+│       └── rate_limit.py     # InMemoryRateLimiter — per-process, per-key sliding window (used by reports.py)
 ├── requirements.txt
 ├── Procfile                  # web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ├── .env                      # NEVER commit
@@ -287,7 +288,11 @@ Returns `NotificationResponse` with `recipient_count`. Push notifications sent v
 | POST | `/{book_id}/report/pdf` | Render a PDF report from client-supplied entries | ✅ |
 | POST | `/{book_id}/report/excel` | Render an Excel report from client-supplied entries | ✅ |
 
-**Stateless renderer — no DB query.** These endpoints do **not** read `books`/`entries` from Supabase at all; `book_id` in the URL is unused (kept only for REST-path consistency with the rest of the book-scoped API). The request body (`ReportRequest` in `models/report.py`: `book_name`, `currency`, `date_from`, `date_to`, `filters`, `entries: List[ReportEntry]`) supplies everything needed — the router just recomputes `total_in`/`total_out`/`net_balance` from `entries` and calls `generate_pdf()`/`generate_excel()`. `get_current_user` is still required (auth/rate-limiting only, not an ownership check).
+**Stateless renderer — no DB query.** These endpoints do **not** read `books`/`entries` from Supabase at all; `book_id` in the URL is unused (kept only for REST-path consistency with the rest of the book-scoped API). The request body (`ReportRequest` in `models/report.py`: `book_name`, `currency`, `date_from`, `date_to`, `filters`, `entries: List[ReportEntry]`) supplies everything needed — the router just recomputes `total_in`/`total_out`/`net_balance` from `entries` and calls `generate_pdf()`/`generate_excel()`. `get_current_user` is still required (auth only — there's no DB-side book to check ownership against, since a free-tier user's own book may exist only in local SQLite).
+
+**Abuse hardening (no DB-backed ownership check is possible here, so the limits live in the request shape and call frequency instead):**
+- `ReportRequest`/`ReportEntry`/`ReportFilters` fields all carry `max_length` caps (`models/report.py`) — `entries` is capped at `MAX_REPORT_ENTRIES` (5000) and every string field (book_name, currency, remark, category, contact_name, payment_mode, filter values, dates) has a hard length limit. A request over any of these caps is rejected by Pydantic with a 422 before any PDF/Excel rendering starts.
+- `POST /{book_id}/report/pdf` and `/excel` are both rate-limited per user via `InMemoryRateLimiter` (`utils/rate_limit.py`) — 10 calls per 60s per `user_id`, checked first thing in each handler; over the limit returns `429`. This is in-process only (resets on restart, not shared across multiple server instances) — enough to blunt a single client hammering the endpoint, not a substitute for a distributed limiter if the service is ever scaled to multiple dynos.
 
 **Why:** the previous implementation looked the book and its entries up in the cloud DB, which 404'd for any of a free-tier user's own books — those live in local SQLite only (`shouldBackupToCloud()` always returns `false`, and `cloud_sync` is a `'pro'`-tier feature per `frontend/src/lib/canAccess.js`) while `export_reports` is advertised as a `'free'`-tier feature. A free user's own (never-synced) book could never generate a report. The frontend (`ReportsScreen.jsx`) already has the correct entries in hand — loaded via `apiGetEntries()` from `lib/dataSource.js`, which transparently resolves local SQLite for own books or the cloud API for shared books — so it now POSTs that already-loaded, already-filtered data directly instead of asking the backend to re-fetch it. This works uniformly for own (local) and shared (cloud) books.
 
@@ -359,11 +364,11 @@ class CategoryResponse: id, book_id, user_id, name, display_order (int, default 
 
 ### `models/report.py`
 ```python
-class ReportEntry:   type, amount, remark?, category?, payment_mode?, contact_name?, entry_date?, entry_time?
-class ReportFilters: entry_type?, contact_name?, contact_type?, category?, payment_mode?  — display-only, not applied server-side
-class ReportRequest: book_name, currency (default 'PKR'), date_from?, date_to?, filters?: ReportFilters, entries: List[ReportEntry] = []
+class ReportEntry:   type (≤20), amount, remark? (≤500), category? (≤100), payment_mode? (≤50), contact_name? (≤100), entry_date? (≤20), entry_time? (≤20)
+class ReportFilters: entry_type?, contact_name?, contact_type?, category?, payment_mode?  (all ≤120) — display-only, not applied server-side
+class ReportRequest: book_name (≤200), currency (default 'PKR', ≤10), date_from? (≤20), date_to? (≤20), filters?: ReportFilters, entries: List[ReportEntry] = [] (max MAX_REPORT_ENTRIES = 5000)
 ```
-Request body for `POST /api/v1/books/{id}/report/pdf` and `/excel` — see the Reports section above for why this is POST + client-supplied data rather than a server-side DB read.
+Request body for `POST /api/v1/books/{id}/report/pdf` and `/excel` — see the Reports section above for why this is POST + client-supplied data rather than a server-side DB read. All `max_length` caps exist purely to bound how much work a single report request can trigger (see "Abuse hardening" in the Reports section).
 
 ### Categories (`routers/categories.py`) — prefix `/api/v1/books`
 

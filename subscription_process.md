@@ -57,7 +57,7 @@
 | Book Settings (field visibility, categories, contacts, payment modes) | Done |
 | Settings Screen | Done |
 | Profile Screen (name, avatar, phone) | Done |
-| Admin Dashboard (users, books, status toggle) | Done |
+| Admin Dashboard (users, books) | Done |
 | Real-time sync for collaborator sharing (hooks) | Done |
 | Theme (dark / light toggle) | Done |
 
